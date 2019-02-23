@@ -10,13 +10,11 @@ import arrow.effects.IO
 import arrow.effects.extensions.io.applicative.applicative
 import arrow.effects.extensions.io.monad.monad
 import arrow.effects.fix
-import arrow.extension
 import arrow.higherkind
 import arrow.typeclasses.Applicative
 import arrow.typeclasses.Functor
 import arrow.typeclasses.Monad
 import arrow.typeclasses.Show
-import kotlin.random.Random
 
 @higherkind
 class Gen<A>(val unGen: (Tuple2<Long, Int>) -> A) : GenOf<A> {
@@ -74,9 +72,10 @@ class Gen<A>(val unGen: (Tuple2<Long, Int>) -> A) : GenOf<A> {
     }.fix()
 
     companion object {
-        // fun functor(): Functor<ForGen> = object: GenFunctor {}
-        // fun applicative(): Applicative<ForGen> = object: GenApplicative {}
-        // fun functor(): Monad<ForGen> = object: GenMonad {}
+
+        fun functor(): Functor<ForGen> = object: GenFunctor {}
+        fun applicative(): Applicative<ForGen> = object: GenApplicative {}
+        fun monad(): Monad<ForGen> = object: GenMonad {}
 
 
         fun <A> sized(f: (Int) -> Gen<A>): Gen<A> =
@@ -173,13 +172,13 @@ class Gen<A>(val unGen: (Tuple2<Long, Int>) -> A) : GenOf<A> {
             }.fix()
         }
 }
-/*
-@extension
+
+// @extension
 interface GenFunctor : Functor<ForGen> {
     override fun <A, B> Kind<ForGen, A>.map(f: (A) -> B): Kind<ForGen, B> = fix().genMap(f)
 }
 
-@extension
+// @extension
 interface GenApplicative : Applicative<ForGen> {
     override fun <A, B> Kind<ForGen, A>.ap(ff: Kind<ForGen, (A) -> B>): Kind<ForGen, B> =
         Gen { ff.fix().unGen(it)(fix().unGen(it)) }
@@ -188,13 +187,13 @@ interface GenApplicative : Applicative<ForGen> {
         Gen { a }
 }
 
-@extension
+// @extension
 interface GenMonad : Monad<ForGen> {
     override fun <A, B> Kind<ForGen, A>.flatMap(f: (A) -> Kind<ForGen, B>): Kind<ForGen, B> =
         Gen { (r, n) ->
             f(
                 fix().unGen(r toT n)
-            ).fix().unGen(Random(r).nextLong() toT n)
+            ).fix().unGen(kotlin.random.Random(r).nextLong() toT n)
         }
 
     override fun <A> just(a: A): Kind<ForGen, A> =
@@ -208,4 +207,4 @@ interface GenMonad : Monad<ForGen> {
                 it
             })
         }
-}*/
+}

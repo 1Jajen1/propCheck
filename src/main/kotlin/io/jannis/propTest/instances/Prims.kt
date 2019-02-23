@@ -2,7 +2,9 @@ package io.jannis.propTest.instances
 
 import arrow.core.toT
 import arrow.data.ListK
+import arrow.data.k
 import io.jannis.propTest.*
+import io.jannis.propTest.instances.listk.arbitrary.arbitrary
 
 interface IntArbitrary : Arbitrary<Int> {
     override fun arbitrary(): Gen<Int> = arbitrarySizedInt()

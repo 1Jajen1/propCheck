@@ -6,6 +6,7 @@ import arrow.data.Ior
 import arrow.data.leftIor
 import arrow.data.rightIor
 import arrow.extension
+import io.jannis.propTest.fix
 
 @extension
 interface IorArbitrary<L, R> : Arbitrary<Ior<L, R>> {
