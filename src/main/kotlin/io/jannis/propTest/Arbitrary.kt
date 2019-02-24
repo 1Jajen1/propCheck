@@ -79,10 +79,8 @@ fun <A> shrinkList(f: (A) -> Sequence<A>): (List<A>) -> Sequence<List<A>> = { li
 
     fun shrinkOne(l: List<A>): Sequence<List<A>> = when (l.size) {
         0 -> emptySequence()
-        else -> sequenceOf(
-            // figure out a way to make this lazy and thus infinite
-            f(l[0]).take(20).toList() + l.drop(1)
-        ) + shrinkOne(l.drop(1))
+        else -> f(l[0]).map { listOf(it) + l.drop(1) } +
+                shrinkOne(l.drop(1)).map { listOf(l[0]) + it }
     }
 
     if (list.isEmpty()) emptySequence()
