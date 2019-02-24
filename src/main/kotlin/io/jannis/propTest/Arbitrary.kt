@@ -1,9 +1,9 @@
 package io.jannis.propTest
 
-import io.jannis.propTest.instances.arbitrary
 import arrow.core.Tuple2
 import arrow.core.toT
 import arrow.typeclasses.Order
+import io.jannis.propTest.instances.arbitrary
 
 interface Arbitrary<A> {
     fun arbitrary(): Gen<A>
@@ -12,6 +12,7 @@ interface Arbitrary<A> {
 
 fun arbitrarySizedInt(): Gen<Int> =
     Gen.sized { Gen.choose(-it toT it, Int.random()) }
+
 fun arbitrarySizedLong(): Gen<Long> = Gen.sized {
     Gen.choose(
         -it.toLong() toT it.toLong(),
@@ -21,6 +22,7 @@ fun arbitrarySizedLong(): Gen<Long> = Gen.sized {
 
 fun arbitrarySizedPositiveInt(): Gen<Int> =
     Gen.sized { Gen.choose(0 toT it, Int.random()) }
+
 fun arbitrarySizedPositiveLong(): Gen<Long> = Gen.sized {
     Gen.choose(
         0L toT it.toLong(),
@@ -89,28 +91,31 @@ fun <A> shrinkList(f: (A) -> Sequence<A>): (List<A>) -> Sequence<List<A>> = { li
 
 fun shrinkInt(fail: Int): Sequence<Int> = (
         (if (fail < 0 && -fail > fail) sequenceOf(-fail) else emptySequence()) +
-                (sequenceOf(0) + iterate({ it / 2 }, fail).drop(1)).takeWhile {
-                    when ((it >= 0) toT (fail >= 0)) {
-                        Tuple2(true, true) -> it < fail
-                        Tuple2(true, false) -> it > fail
-                        Tuple2(false, true) -> (it + fail) < 0
-                        Tuple2(false, false) -> (it + fail) > 0
-                        else -> throw IllegalStateException("The impossible happened")
+                (sequenceOf(0) + iterate({ it / 2 }, fail).drop(1)
+                    .map { fail - it }.takeWhile {
+                        when ((it >= 0) toT (fail >= 0)) {
+                            Tuple2(true, true) -> it < fail
+                            Tuple2(false, false) -> it > fail
+                            Tuple2(true, false) -> (it + fail) < 0
+                            Tuple2(false, true) -> (it + fail) > 0
+                            else -> throw IllegalStateException("The impossible happened")
+                        }
                     }
-                }
+                        )
         )
 
 fun shrinkLong(fail: Long): Sequence<Long> = (
         (if (fail < 0 && -fail > fail) sequenceOf(-fail) else emptySequence()) +
-                (sequenceOf(0L) + iterate({ it / 2 }, fail).drop(1)).takeWhile {
+                (sequenceOf(0L) + iterate({ it / 2 }, fail).drop(1).map { fail - it }.takeWhile {
                     when ((it >= 0) toT (fail >= 0)) {
                         Tuple2(true, true) -> it < fail
-                        Tuple2(true, false) -> it > fail
-                        Tuple2(false, true) -> (it + fail) < 0
-                        Tuple2(false, false) -> (it + fail) > 0
+                        Tuple2(false, false) -> it > fail
+                        Tuple2(true, false) -> (it + fail) < 0
+                        Tuple2(false, true) -> (it + fail) > 0
                         else -> throw IllegalStateException("The impossible happened")
                     }
                 }
+                        )
         )
 
 fun shrinkFloat(fail: Float): Sequence<Float> = (
