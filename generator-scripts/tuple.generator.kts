@@ -16,7 +16,6 @@ val fileContent = StringBuilder()
 
 val imports = "import io.jannis.propTest.*\n" +
         "import arrow.core.*\n" +
-        "import io.jannis.propTest.gen.monad.monad\n" +
         (2..maxTuple).map { "import io.jannis.propTest.instances.tuple${it}.arbitrary.arbitrary" }.joinToString("\n") +
         "\nimport arrow.extension"
 
@@ -68,7 +67,7 @@ for (i in 2..maxTuple) {
     fileContent.append("\n")
     fileContent.append("}").append("\n\n")
 
-    fileContent.append("inline fun <${letters.joinToString { "reified " + it.toUpperCase() }}, F1> fromTup(").append("\n")
+    fileContent.append("inline fun <${letters.joinToString { "reified " + it.toUpperCase() + ": Any" }}, F1> fromTup(").append("\n")
     fileContent.append("    noinline g: (F1) -> Tuple${i}${diamond1},").append("\n")
     fileContent.append("    noinline f: (Tuple${i}${diamond1}) -> F1,").append("\n")
     fileContent.append("    arb: Arbitrary<Tuple${i}${diamond1}> = Tuple${i}.arbitrary(defArbitrary()")

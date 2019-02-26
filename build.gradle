@@ -14,6 +14,7 @@ repositories {
 
 def arrow_version = "0.9.0-SNAPSHOT"
 dependencies {
+    compile "org.jetbrains.kotlin:kotlin-reflect"
     compile "org.jetbrains.kotlin:kotlin-stdlib-jdk8"
     compile "io.kotlintest:kotlintest-runner-junit5:3.2.1"
 

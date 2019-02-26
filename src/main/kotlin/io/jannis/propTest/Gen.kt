@@ -6,6 +6,7 @@ import arrow.data.Nel
 import arrow.data.extensions.list.traverse.sequence
 import arrow.data.extensions.list.traverse.traverse
 import arrow.data.fix
+import arrow.data.k
 import arrow.effects.IO
 import arrow.effects.extensions.io.applicative.applicative
 import arrow.effects.extensions.io.monad.monad
@@ -15,6 +16,7 @@ import arrow.typeclasses.Applicative
 import arrow.typeclasses.Functor
 import arrow.typeclasses.Monad
 import arrow.typeclasses.Show
+import io.jannis.propTest.instances.arbitrary
 
 @higherkind
 class Gen<A>(val unGen: (Tuple2<Long, Int>) -> A) : GenOf<A> {
@@ -97,7 +99,7 @@ class Gen<A>(val unGen: (Tuple2<Long, Int>) -> A) : GenOf<A> {
         fun <A> frequency(vararg gens: Tuple2<Int, Gen<A>>): Gen<A> = if (gens.size < 0)
             throw IllegalArgumentException("frequency cannot work with 0 generators")
         else Gen.monad().fx {
-            val sum = gens.map { it.a }.sum()
+            val sum = gens.map { it.a }.sum() + 1 // + 1 for inclusive range
             val c = choose(0 toT sum, Int.random()).bind()
 
             fun pick(n: Int, l: List<Tuple2<Int, Gen<A>>>): Gen<A> {
@@ -117,6 +119,11 @@ class Gen<A>(val unGen: (Tuple2<Long, Int>) -> A) : GenOf<A> {
 
         fun <A> sublistOf(list: List<A>): Gen<List<A>> = Gen.monad().fx {
             list.filter { chooseAny(Boolean.random()).bind() }
+        }.fix()
+
+        fun <A> shuffle(list: List<A>): Gen<List<A>> = Gen.monad().fx {
+            val l = arbitraryBoundedInt().vectorOf(list.size).bind()
+            list.zip(l).sortedBy { it.second }.map { it.first }
         }.fix()
     }
 
@@ -181,7 +188,7 @@ interface GenFunctor : Functor<ForGen> {
 // @extension
 interface GenApplicative : Applicative<ForGen> {
     override fun <A, B> Kind<ForGen, A>.ap(ff: Kind<ForGen, (A) -> B>): Kind<ForGen, B> =
-        Gen { ff.fix().unGen(it)(fix().unGen(it)) }
+        Gen.monad().run { ff.flatMap { f -> map(f) } }
 
     override fun <A> just(a: A): Kind<ForGen, A> =
         Gen { a }

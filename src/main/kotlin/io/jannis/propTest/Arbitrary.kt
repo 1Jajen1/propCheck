@@ -154,4 +154,4 @@ fun <A> orderedList(arbA: Arbitrary<A>, ordA: Order<A>): Gen<List<A>> =
             .map { it.sortedWith(Comparator { a, b -> ordA.run { a.compare(b) } }) }
     }.fix()
 
-internal fun <T : Any> iterate(f: (T) -> T, start: T) = generateSequence(start) { f(it) }
+fun <T : Any> iterate(f: (T) -> T, start: T) = generateSequence(start) { f(it) }

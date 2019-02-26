@@ -4,6 +4,7 @@ import io.jannis.propTest.instances.arbitrary
 import arrow.typeclasses.Show
 import io.kotlintest.properties.generateInfiniteSequence
 import io.kotlintest.properties.shrinking.Shrinker
+import kotlin.reflect.KClass
 
 // unsafe helpers for those who are not using arrow
 fun <A> Gen<A>.sample(): List<A> = sample().unsafeRunSync()
@@ -20,7 +21,7 @@ fun <A> Gen<A>.classify(n: Int, f: (A) -> Boolean, text: String): Unit =
 fun <A> Gen<A>.tabulate(n: Int, text: String, f: (A) -> String): Unit =
     tabulate(n, text, f).unsafeRunSync()
 
-inline fun <reified A> defArbitrary(): Arbitrary<A> = when (A::class::qualifiedName.get()) {
+fun <A: Any> lookupArby(klass: KClass<A>): Arbitrary<A> = when (klass::qualifiedName.get()) {
     "kotlin.Int", "java.lang.Integer" -> Int.arbitrary()
     "kotlin.Long", "java.lang.Long" -> Long.arbitrary()
     "kotlin.String", "java.lang.String" -> String.arbitrary()
@@ -28,8 +29,10 @@ inline fun <reified A> defArbitrary(): Arbitrary<A> = when (A::class::qualifiedN
     "kotlin.Float", "java.lang.Float" -> Float.arbitrary()
     "kotlin.Double", "java.lang.Double" -> Double.arbitrary()
     "kotlin.Boolean", "java.lang.Boolean" -> Boolean.arbitrary()
-    else -> throw IllegalStateException("Could not find default arbitrary for ${A::class::qualifiedName.get()}")
+    else -> throw IllegalStateException("Could not find default arbitrary for ${klass::qualifiedName.get()}")
 } as Arbitrary<A>
+
+inline fun <reified A: Any> defArbitrary(): Arbitrary<A> = lookupArby(A::class)
 
 fun <A> Arbitrary<A>.toKotlinTestGen(): io.kotlintest.properties.Gen<A> = object : io.kotlintest.properties.Gen<A> {
     override fun constants(): Iterable<A> = emptyList()
