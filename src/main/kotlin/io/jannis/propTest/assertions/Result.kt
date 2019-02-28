@@ -4,12 +4,8 @@ import arrow.core.*
 import arrow.core.extensions.monoid
 import arrow.core.extensions.semigroup
 import arrow.data.MapK
-import arrow.data.extensions.list.foldable.fold
 import arrow.data.extensions.list.foldable.sequence_
-import arrow.data.extensions.list.foldable.traverse_
-import arrow.data.extensions.list.traverse.sequence
 import arrow.data.extensions.list.traverse.traverse
-import arrow.data.extensions.listk.monoid.monoid
 import arrow.data.extensions.mapk.foldable.combineAll
 import arrow.data.extensions.mapk.semigroup.plus
 import arrow.data.extensions.mapk.semigroup.semigroup
@@ -19,7 +15,6 @@ import arrow.effects.ForIO
 import arrow.effects.IO
 import arrow.effects.Ref
 import arrow.effects.extensions.io.applicative.applicative
-import arrow.effects.extensions.io.monad.flatMap
 import arrow.effects.extensions.io.monad.followedBy
 import arrow.effects.extensions.io.monad.monad
 import arrow.effects.extensions.io.monadDefer.monadDefer
@@ -28,7 +23,6 @@ import arrow.extension
 import io.jannis.propTest.Gen
 import io.jannis.propTest.assertions.testresult.testable.testable
 import io.jannis.propTest.fix
-import io.jannis.propTest.matchers.old.toPercentage
 import kotlin.random.Random
 
 sealed class Result {
@@ -606,3 +600,6 @@ fun showTable(k: Int, tableName: Option<String>, table: Map<String, Int>): List<
         listOf(tableName.fold({ "" }, { "$it (${"%.d".format(k)} in total)" })) +
                 table.entries.sortedBy { it.key }.reversed().sortedBy { it.value }
                     .reversed().map { it.value.toPercentage(k) + "% ${it.key}" }
+
+fun Int.toPercentage(max: Int): String =
+    "%.2f".format(100 * (this.toDouble() / max.toDouble()))
