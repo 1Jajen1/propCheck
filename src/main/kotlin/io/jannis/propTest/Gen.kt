@@ -79,7 +79,6 @@ class Gen<A>(val unGen: (Tuple2<Long, Int>) -> A) : GenOf<A> {
         fun applicative(): Applicative<ForGen> = object: GenApplicative {}
         fun monad(): Monad<ForGen> = object: GenMonad {}
 
-
         fun <A> sized(f: (Int) -> Gen<A>): Gen<A> =
             Gen { (r, n) -> f(n).unGen(r toT n) }
         fun getSize(): Gen<Int> = Gen { (_, n) -> n }
@@ -134,22 +133,6 @@ class Gen<A>(val unGen: (Tuple2<Long, Int>) -> A) : GenOf<A> {
     fun sample(): IO<List<A>> = (1..20 step 2)
         .map { resize(it) }.map { it.generate() }.sequence(IO.applicative())
         .fix().map { it.fix() }
-
-    fun label(n: Int = 100, f: (A) -> String): IO<Unit> = (1..n).map { generate() }
-        .sequence(IO.applicative()).fix().map { l ->
-            l.fix().fold(mutableMapOf<A, Int>()) { map, v ->
-                map.compute(v) { _, v -> (v ?: 0) + 1 }
-                map
-            }
-        }.flatMap {
-            it.entries.toList().sortedBy { (_, v) -> v }.map { (k, v) -> k toT v }
-                .traverse(IO.applicative()) {
-                    IO { println("${"%.2f".format(100 * (it.b.toDouble() / n.toDouble()))}% ${f(it.a)}") }
-                }.fix().flatMap { IO.unit }
-        }
-
-    fun collect(n: Int = 100, showA: Show<A> = Show.fromToString()): IO<Unit> =
-        label(n) { showA.run { it.show() } }
 
     fun classify(n: Int = 100, text: String, f: (A) -> Boolean): IO<Unit> = (1..n).map { generate() }
         .sequence(IO.applicative()).fix().flatMap {

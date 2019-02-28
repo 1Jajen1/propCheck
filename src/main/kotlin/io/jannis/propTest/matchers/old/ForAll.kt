@@ -1,4 +1,4 @@
-package io.jannis.propTest.matchers
+package io.jannis.propTest.matchers.old
 
 import arrow.core.toT
 import arrow.syntax.collections.firstOption
@@ -12,16 +12,22 @@ inline fun <reified A : Any> forAll(
     config: Config = Config(),
     showA: Show<A> = Show.any(),
     eqA: Eq<A> = Eq.any(),
-    noinline discardF: PropTest<A> = { false },
     noinline f: PropTest<A>
 ): Unit = iterate({ res ->
     when (res) {
-        is Result.Success -> _runTest(arbA, config, showA, eqA, runSafe(discardF), runSafe(f)).unsafeRunSync().combine(res)
+        is Result.Success -> res.combine(
+            _runTest(
+                arbA,
+                config,
+                showA,
+                eqA,
+                f.toProperty()
+            ).unsafeRunSync())
         is Result.Failure -> res
     }
 }, Result.Success(0, 0) as Result).take(config.maxSuccess + 1).let {
     it.firstOption { it is Result.Failure }.fold({ it.last() }, { it })
-}.let { printResult(config, it) }.unsafeRunSync()
+}.let { printResultAndThrowIfNeeded(config, it) }.unsafeRunSync()
 
 sealed class BinaryTree<A> {
     data class Leaf<A>(val v: A) : BinaryTree<A>()
@@ -45,9 +51,18 @@ sealed class BinaryTree<A> {
             }
 
             override fun shrink(fail: BinaryTree<A>): Sequence<BinaryTree<A>> = when (fail) {
-                is Leaf -> arbA.shrink(fail.v).map { Leaf(it) }
+                is Leaf -> arbA.shrink(fail.v).map {
+                    Leaf(
+                        it
+                    )
+                }
                 is Branch -> (shrink(fail.left) toT shrink(fail.right)).let {
-                    it.a + it.b + it.a.map { Branch(it, fail.right) } + it.b.map { Branch(fail.left, it) }
+                    it.a + it.b + it.a.map {
+                        Branch(
+                            it,
+                            fail.right
+                        )
+                    } + it.b.map { Branch(fail.left, it) }
                 }
             }
         }
@@ -55,17 +70,22 @@ sealed class BinaryTree<A> {
 }
 
 object B : Arbitrary<BinaryTree<Int>> {
-    override fun arbitrary(): Gen<BinaryTree<Int>> = BinaryTree.arbitrary(Int.arbitrary()).arbitrary()
-        .resize(30)
+    override fun arbitrary(): Gen<BinaryTree<Int>> = BinaryTree.arbitrary(
+        Int.arbitrary()
+    ).arbitrary()
+        .resize(2)
 
-    override fun shrink(fail: BinaryTree<Int>): Sequence<BinaryTree<Int>> = BinaryTree.arbitrary(Int.arbitrary())
+    override fun shrink(fail: BinaryTree<Int>): Sequence<BinaryTree<Int>> = BinaryTree.arbitrary(
+        Int.arbitrary()
+    )
         .shrink(fail)
 }
 
 fun main() {
-    forAll(B, Config(maxShrinks = 1000), discardF = {
-        it is BinaryTree.Leaf
-    }) {
+    forAll(
+        B,
+        Config(maxShrinks = 1000)
+    ) {
         (it is BinaryTree.Branch && it.left is BinaryTree.Branch &&
                 it.left.left is BinaryTree.Leaf && it.left.left.v > 0).not()
     }

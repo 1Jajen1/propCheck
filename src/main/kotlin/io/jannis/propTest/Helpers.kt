@@ -9,12 +9,6 @@ import kotlin.reflect.KClass
 // unsafe helpers for those who are not using arrow
 fun <A> Gen<A>.sample(): List<A> = sample().unsafeRunSync()
 
-fun <A> Gen<A>.label(n: Int, f: (A) -> String): Unit =
-    label(n, f).unsafeRunSync()
-
-fun <A> Gen<A>.collect(n: Int, showA: Show<A> = Show.fromToString()): Unit =
-    collect(n, showA).unsafeRunSync()
-
 fun <A> Gen<A>.classify(n: Int, f: (A) -> Boolean, text: String): Unit =
     classify(n, text, f).unsafeRunSync()
 
