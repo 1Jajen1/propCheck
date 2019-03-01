@@ -6,7 +6,7 @@ import arrow.typeclasses.Monad
 import io.jannis.propTest.Gen
 import io.jannis.propTest.fix
 
-fun <F, A> Kind<F, Gen<A>>.promote(M: Monad<F>): Gen<Kind<F, A>> = Gen.monad().fx {
+fun <F, A> Kind<F, Gen<A>>.promote(M: Monad<F>): Gen<Kind<F, A>> = Gen.monad().binding {
     val eval = delay<A>().bind()
     M.lift(eval).invoke(this@promote)
 }.fix()

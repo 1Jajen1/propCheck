@@ -34,7 +34,7 @@ fun arbitraryBoundedInt(): Gen<Int> = Gen.chooseAny(Int.random())
 fun arbitraryBoundedLong(): Gen<Long> = Gen.chooseAny(Long.random())
 
 fun arbitrarySizedFloat(): Gen<Float> = Gen.sized { n ->
-    Gen.monad().fx {
+    Gen.monad().binding {
         val b = Gen.choose(1L toT 999999999L, Long.random()).bind()
         val a = Gen.choose((-n) * b toT n * b, Long.random()).bind()
         a.toFloat() / b.toFloat()
@@ -42,7 +42,7 @@ fun arbitrarySizedFloat(): Gen<Float> = Gen.sized { n ->
 }
 
 fun arbitrarySizedDouble(): Gen<Double> = Gen.sized { n ->
-    Gen.monad().fx {
+    Gen.monad().binding {
         val b = Gen.choose(1L toT 999999999L, Long.random()).bind()
         val a = Gen.choose((-n) * b toT n * b, Long.random()).bind()
         a.toDouble() / b.toDouble()

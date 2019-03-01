@@ -130,7 +130,7 @@ fun protectResult(io: IO<TestResult>): IO<TestResult> = io.handleError {
 
 fun protectResults(rose: Rose<TestResult>): Rose<TestResult> = onRose(rose) { x, rs ->
     Rose.IORose(
-        IO.monad().fx {
+        IO.monad().binding {
             val y = protectResult(IO.just(x)).bind()
             Rose.MkRose(y, rs.map(::protectResults))
         }.fix()
@@ -212,30 +212,26 @@ fun liftBoolean(bool: Boolean): TestResult = if (bool) succeeded() else failed(
     reason = "Falsifiable"
 )
 
-fun <A> mapResult(testableA: Testable<A>, f: (TestResult) -> TestResult): (A) -> Property =
-    mapRoseResult(testableA) { protectResults(it.map(f)) }
+fun <A> Testable<A>.mapResult(f: (TestResult) -> TestResult): (A) -> Property =
+    mapRoseResult { protectResults(it.map(f)) }
 
-fun <A> mapTotalResult(testableA: Testable<A>, f: (TestResult) -> TestResult): (A) -> Property =
-    mapRoseResult(testableA) { it.map(f) }
+fun <A> Testable<A>.mapTotalResult(f: (TestResult) -> TestResult): (A) -> Property =
+    mapRoseResult { it.map(f) }
 
-fun <A> mapRoseResult(testableA: Testable<A>, f: (Rose<TestResult>) -> Rose<TestResult>): (A) -> Property =
-    mapProp(testableA) { Prop(f(it.unProp)) }
+fun <A> Testable<A>.mapRoseResult(f: (Rose<TestResult>) -> Rose<TestResult>): (A) -> Property =
+    mapProp { Prop(f(it.unProp)) }
 
-fun <A> mapProp(testableA: Testable<A>, f: (Prop) -> Prop): (A) -> Property = { a ->
-    testableA.run {
-        Property(a.property().unProperty.map(f))
-    }
+fun <A> Testable<A>.mapProp(f: (Prop) -> Prop): (A) -> Property = { a ->
+    Property(a.property().unProperty.map(f))
 }
 
-fun <A> mapSize(testableA: Testable<A>, f: (Int) -> Int): (A) -> Property = { a ->
-    testableA.run {
-        Property(a.property().unProperty.scale(f))
-    }
+fun <A> Testable<A>.mapSize(f: (Int) -> Int): (A) -> Property = { a ->
+    Property(a.property().unProperty.scale(f))
 }
 
-fun <A, B> shrinking(testableA: Testable<A>, shrink: (B) -> Sequence<B>, arg: B, pf: (B) -> A): Property {
+fun <A, B> Testable<A>.shrinking(shrink: (B) -> Sequence<B>, arg: B, pf: (B) -> A): Property {
     fun props(b: B, alreadyTested: Set<B>): Rose<Gen<Prop>> = Rose.MkRose(
-        testableA.run { pf(b).property().unProperty },
+        pf(b).property().unProperty,
         shrink(b).filter { alreadyTested.contains(it).not() }.let {
             it.mapIndexed { i, v -> props(v, setOf(b) + it.take(i).toSet() + alreadyTested) }
         }
@@ -243,13 +239,13 @@ fun <A, B> shrinking(testableA: Testable<A>, shrink: (B) -> Sequence<B>, arg: B,
     return Property(props(arg, setOf(arg)).promote(Rose.monad()).map { Prop(joinRose(it.fix().map { it.unProp })) })
 }
 
-fun <A> noShrinking(testableA: Testable<A>): (A) -> Property =
-    mapRoseResult(testableA) {
+fun <A> Testable<A>.noShrinking(): (A) -> Property =
+    mapRoseResult {
         onRose(it) { res, _ -> Rose.MkRose(res, emptySequence()) }
     }
 
-fun <A> counterexample(testableA: Testable<A>, s: String): (A) -> Property =
-    mapTotalResult(Property.testable()) { res ->
+fun <A> Testable<A>.counterexample(s: String): (A) -> Property =
+    Property.testable().mapTotalResult { res ->
         TestResult(
             testCase = listOf(s) + res.testCase,
             ok = res.ok,
@@ -265,14 +261,14 @@ fun <A> counterexample(testableA: Testable<A>, s: String): (A) -> Property =
             tables = res.tables,
             callbacks = res.callbacks
         )
-    }.compose(callback(testableA, Callback.PostFinalFailure(CallbackKind.Counterexample) { st, res ->
+    }.compose(callback(Callback.PostFinalFailure(CallbackKind.Counterexample) { st, res ->
         st.output.update {
             it + s + "\n"
         }.fix()
     }))
 
-fun <A> expectFailure(testableA: Testable<A>): (A) -> Property =
-    mapTotalResult(testableA) { res ->
+fun <A> Testable<A>.expectFailure(): (A) -> Property =
+    mapTotalResult { res ->
         TestResult(
             ok = res.ok,
             reason = res.reason,
@@ -290,8 +286,8 @@ fun <A> expectFailure(testableA: Testable<A>): (A) -> Property =
         )
     }
 
-fun <A> once(testableA: Testable<A>): (A) -> Property =
-    mapTotalResult(testableA) { res ->
+fun <A> Testable<A>.once(): (A) -> Property =
+    mapTotalResult { res ->
         TestResult(
             ok = res.ok,
             reason = res.reason,
@@ -309,8 +305,8 @@ fun <A> once(testableA: Testable<A>): (A) -> Property =
         )
     }
 
-fun <A> again(testableA: Testable<A>): (A) -> Property =
-    mapTotalResult(testableA) { res ->
+fun <A> Testable<A>.again(): (A) -> Property =
+    mapTotalResult { res ->
         TestResult(
             ok = res.ok,
             reason = res.reason,
@@ -328,8 +324,8 @@ fun <A> again(testableA: Testable<A>): (A) -> Property =
         )
     }
 
-fun <A> withMaxSuccess(testableA: Testable<A>, maxSuccess: Int): (A) -> Property =
-    mapTotalResult(testableA) { res ->
+fun <A> Testable<A>.withMaxSuccess(maxSuccess: Int): (A) -> Property =
+    mapTotalResult { res ->
         TestResult(
             ok = res.ok,
             reason = res.reason,
@@ -347,8 +343,8 @@ fun <A> withMaxSuccess(testableA: Testable<A>, maxSuccess: Int): (A) -> Property
         )
     }
 
-fun <A> checkCoverage(testableA: Testable<A>, confidence: Confidence = Confidence()): (A) -> Property =
-    mapTotalResult(testableA) { res ->
+fun <A> Testable<A>.checkCoverage(confidence: Confidence = Confidence()): (A) -> Property =
+    mapTotalResult { res ->
         TestResult(
             ok = res.ok,
             reason = res.reason,
@@ -366,8 +362,8 @@ fun <A> checkCoverage(testableA: Testable<A>, confidence: Confidence = Confidenc
         )
     }
 
-fun <A> label(testableA: Testable<A>, label: String): (A) -> Property =
-    mapTotalResult(testableA) { res ->
+fun <A> Testable<A>.label(label: String): (A) -> Property =
+    mapTotalResult { res ->
         TestResult(
             ok = res.ok,
             reason = res.reason,
@@ -385,12 +381,12 @@ fun <A> label(testableA: Testable<A>, label: String): (A) -> Property =
         )
     }
 
-fun <A, B> collect(testableA: Testable<A>, showB: Show<B>, b: B): (A) -> Property =
-    label(testableA, showB.run { b.show() })
+fun <A, B> Testable<A>.collect(showB: Show<B>, b: B): (A) -> Property =
+    label(showB.run { b.show() })
 
-fun <A> classify(testableA: Testable<A>, bool: Boolean, label: String): (A) -> Property =
-    if (!bool) { a: A -> testableA.run { a.property() } }
-    else mapTotalResult(testableA) { res ->
+fun <A> Testable<A>.classify(bool: Boolean, label: String): (A) -> Property =
+    if (!bool) { a: A -> a.property() }
+    else mapTotalResult { res ->
         TestResult(
             ok = res.ok,
             reason = res.reason,
@@ -408,8 +404,8 @@ fun <A> classify(testableA: Testable<A>, bool: Boolean, label: String): (A) -> P
         )
     }
 
-fun <A> cover(testableA: Testable<A>, p: Double, bool: Boolean, label: String): (A) -> Property =
-    mapTotalResult(Property.testable()) { res ->
+fun <A> Testable<A>.cover(p: Double, bool: Boolean, label: String): (A) -> Property =
+    Property.testable().mapTotalResult { res ->
         TestResult(
             ok = res.ok,
             reason = res.reason,
@@ -419,16 +415,16 @@ fun <A> cover(testableA: Testable<A>, p: Double, bool: Boolean, label: String): 
             abort = res.abort,
             optionCheckCoverage = res.optionCheckCoverage,
             labels = res.labels,
-            classes = listOf(label) + res.classes,
+            classes = res.classes,
             expected = res.expected,
             testCase = res.testCase,
             tables = res.tables,
             callbacks = res.callbacks
         )
-    }.compose(classify(testableA, bool, label))
+    }.compose(classify(bool, label))
 
-fun <A> tabulate(testableA: Testable<A>, key: String, values: List<String>): (A) -> Property =
-    mapTotalResult(testableA) { res ->
+fun <A> Testable<A>.tabulate(key: String, values: List<String>): (A) -> Property =
+    mapTotalResult { res ->
         TestResult(
             ok = res.ok,
             reason = res.reason,
@@ -446,8 +442,8 @@ fun <A> tabulate(testableA: Testable<A>, key: String, values: List<String>): (A)
         )
     }
 
-fun <A> coverTable(testableA: Testable<A>, key: String, values: List<Tuple2<String, Double>>): (A) -> Property =
-    mapTotalResult(testableA) { res ->
+fun <A> Testable<A>.coverTable(key: String, values: List<Tuple2<String, Double>>): (A) -> Property =
+    mapTotalResult { res ->
         TestResult(
             ok = res.ok,
             reason = res.reason,
@@ -465,8 +461,8 @@ fun <A> coverTable(testableA: Testable<A>, key: String, values: List<Tuple2<Stri
         )
     }
 
-fun <A> callback(testableA: Testable<A>, cb: Callback): (A) -> Property =
-    mapTotalResult(testableA) { res ->
+fun <A> Testable<A>.callback(cb: Callback): (A) -> Property =
+    mapTotalResult { res ->
         TestResult(
             callbacks = res.callbacks + listOf(cb),
             ok = res.ok,
@@ -484,22 +480,22 @@ fun <A> callback(testableA: Testable<A>, cb: Callback): (A) -> Property =
         )
     }
 
-fun <A> whenFail(testableA: Testable<A>, f: () -> Unit): (A) -> Property =
-    whenFailIO(testableA, IO { f() })
+fun <A> Testable<A>.whenFail(f: () -> Unit): (A) -> Property =
+    whenFailIO(IO { f() })
 
-fun <A> whenFailIO(testableA: Testable<A>, f: IO<Unit>): (A) -> Property =
-    callback(testableA, Callback.PostFinalFailure(CallbackKind.NoCounterexample) { _, _ -> f })
+fun <A> Testable<A>.whenFailIO(f: IO<Unit>): (A) -> Property =
+    callback(Callback.PostFinalFailure(CallbackKind.NoCounterexample) { _, _ -> f })
 
-fun <A> whenFailEvery(testableA: Testable<A>, f: () -> Unit): (A) -> Property =
-    whenFailEveryIO(testableA, IO { f() })
+fun <A> Testable<A>.whenFailEvery(f: () -> Unit): (A) -> Property =
+    whenFailEveryIO(IO { f() })
 
-fun <A> whenFailEveryIO(testableA: Testable<A>, f: IO<Unit>): (A) -> Property =
-    callback(testableA, Callback.PostTest(CallbackKind.NoCounterexample) { _, res ->
+fun <A> Testable<A>.whenFailEveryIO(f: IO<Unit>): (A) -> Property =
+    callback(Callback.PostTest(CallbackKind.NoCounterexample) { _, res ->
         if (res.ok == false.some()) f
         else IO.unit
     })
 
-fun <A> verbose(testableA: Testable<A>): (A) -> Property {
+fun <A> Testable<A>.verbose(): (A) -> Property {
     fun status(res: TestResult): String = when (res.ok) {
         true.some() -> "Passed"
         false.some() -> "Failed"
@@ -508,7 +504,7 @@ fun <A> verbose(testableA: Testable<A>): (A) -> Property {
     }
 
     fun newCb(cbs: List<Callback>): Callback = Callback.PostTest(CallbackKind.Counterexample) { st, res ->
-        IO.monad().fx {
+        IO.monad().binding {
             st.output.update {
                 it + status(res) + ":" + "\n"
             }.bind()
@@ -521,7 +517,7 @@ fun <A> verbose(testableA: Testable<A>): (A) -> Property {
             }.bind()
         }.fix()
     }
-    return mapResult(testableA) { res ->
+    return mapResult { res ->
         TestResult(
             callbacks = listOf(newCb(res.callbacks)) + res.callbacks,
             ok = res.ok,
@@ -540,10 +536,10 @@ fun <A> verbose(testableA: Testable<A>): (A) -> Property {
     }
 }
 
-fun <A> verboseShrinking(testableA: Testable<A>): (A) -> Property {
+fun <A> Testable<A>.verboseShrinking(): (A) -> Property {
     fun newCb(cbs: List<Callback>): Callback = Callback.PostTest(CallbackKind.Counterexample) { st, res ->
         if (res.ok == false.some())
-            IO.monad().fx {
+            IO.monad().binding {
                 st.output.update {
                     it + "Failed:" + "\n"
                 }.bind()
@@ -557,7 +553,7 @@ fun <A> verboseShrinking(testableA: Testable<A>): (A) -> Property {
             }.fix()
         else IO.unit
     }
-    return mapResult(testableA) { res ->
+    return mapResult { res ->
         TestResult(
             callbacks = listOf(newCb(res.callbacks)) + res.callbacks,
             ok = res.ok,
@@ -577,45 +573,42 @@ fun <A> verboseShrinking(testableA: Testable<A>): (A) -> Property {
 }
 
 // ==>
-fun <A> assert(testableA: Testable<A>, bool: Boolean): (A) -> Property =
-    if (bool) { a: A -> testableA.run { a.property() } }
+fun <A> Testable<A>.assert(bool: Boolean): (A) -> Property =
+    if (bool) { a: A -> a.property() }
     else { a: A -> TestResult.testable().run { rejected().property() } }
 
 // --------
-fun <A, B> forAll(testableA: Testable<A>, showB: Show<B>, genB: Gen<B>): ((B) -> A) -> Property =
-    forAllShrink(testableA, showB, genB) { emptySequence() }
+fun <A, B> Testable<A>.forAll(showB: Show<B>, genB: Gen<B>): ((B) -> A) -> Property =
+    forAllShrink(showB, genB) { emptySequence() }
 
-fun <A, B> forAllBlind(testableA: Testable<A>, genB: Gen<B>): ((B) -> A) -> Property =
-    forAllShrinkBlind(testableA, genB) { emptySequence() }
+fun <A, B> Testable<A>.forAllBlind(genB: Gen<B>): ((B) -> A) -> Property =
+    forAllShrinkBlind(genB) { emptySequence() }
 
-fun <A, B> forAllShrink(
-    testableA: Testable<A>,
+fun <A, B> Testable<A>.forAllShrink(
     showB: Show<B>,
     genB: Gen<B>,
     shrinkerB: (B) -> Sequence<B>
 ): ((B) -> A) -> Property =
-    forAllShrinkShow(testableA, genB, shrinkerB, { showB.run { it.show() } })
+    forAllShrinkShow(genB, shrinkerB, { showB.run { it.show() } })
 
-fun <A, B> forAllShrinkShow(
-    testableA: Testable<A>,
+fun <A, B> Testable<A>.forAllShrinkShow(
     genB: Gen<B>,
     shrinkerB: (B) -> Sequence<B>,
     showerB: (B) -> String
 ): ((B) -> A) -> Property = { pf ->
-    forAllShrinkBlind(Property.testable(), genB, shrinkerB).invoke { x ->
-        counterexample(testableA, showerB(x)).invoke(pf(x))
+    Property.testable().forAllShrinkBlind(genB, shrinkerB).invoke { x ->
+        counterexample(showerB(x)).invoke(pf(x))
     }
 }
 
-fun <A, B> forAllShrinkBlind(
-    testableA: Testable<A>,
+fun <A, B> Testable<A>.forAllShrinkBlind(
     genB: Gen<B>,
     shrinkerB: (B) -> Sequence<B>
 ): ((B) -> A) -> Property = { pf ->
-    again(Property.testable()).invoke(
+    Property.testable().again().invoke(
         Property(
-            Gen.monad().fx {
-                shrinking(testableA, shrinkerB, genB.bind(), pf).unProperty.bind()
+            Gen.monad().binding {
+                shrinking(shrinkerB, genB.bind(), pf).unProperty.bind()
             }.fix()
         )
     )

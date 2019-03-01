@@ -50,7 +50,7 @@ for (i in 2..maxTuple) {
         fileContent.append("    fun A${l.toUpperCase()}(): Arbitrary<${l.toUpperCase()}>").append("\n")
     }
 
-    fileContent.append("    override fun arbitrary(): Gen<Tuple${i}${diamond1}> = Gen.monad().fx {").append("\n")
+    fileContent.append("    override fun arbitrary(): Gen<Tuple${i}${diamond1}> = Gen.monad().binding {").append("\n")
     fileContent.append("        Tuple${i}(AA().arbitrary().bind()")
     letters.drop(1).forEach { l ->
         fileContent.append(", A${l.toUpperCase()}().arbitrary().bind()")

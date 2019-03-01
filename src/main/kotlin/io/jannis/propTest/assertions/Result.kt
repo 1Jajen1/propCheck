@@ -133,8 +133,8 @@ interface TestResultTestable : Testable<TestResult> {
 interface GenTestable<A> : Testable<Gen<A>> {
     fun TA(): Testable<A>
     override fun Gen<A>.property(): Property = Property(
-        Gen.monad().fx {
-            again(TA()).invoke(this@property.bind()).unProperty.bind()
+        Gen.monad().binding {
+            TA().again().invoke(this@property.bind()).unProperty.bind()
         }.fix()
     )
 }
@@ -142,7 +142,7 @@ interface GenTestable<A> : Testable<Gen<A>> {
 @extension
 interface PropertyTestable : Testable<Property> {
     override fun Property.property(): Property = Property(
-        Gen.monad().fx {
+        Gen.monad().binding {
             this@property.unProperty.bind()
         }.fix()
     )
@@ -152,7 +152,7 @@ interface PropertyTestable : Testable<Property> {
 fun propCheck(
     args: Args = Args(),
     f: () -> Property
-): IO<Result> = IO.monad().fx {
+): IO<Result> = IO.monad().binding {
     val randSeed = args.replay.fold({
         IO { Random.nextLong() }
     }, { IO.just(it.a) }).bind()
@@ -215,13 +215,13 @@ fun runTest(
     prop: Property
 ): IO<Result> =
     if (state.numSuccessTests >= state.maxSuccess && state.coverageConfidence.isEmpty())
-        doneTesting(state, prop)
+        doneTesting(state)
     else if (state.numDiscardedTests >= state.maxDiscardRatio * Math.max(state.numSuccessTests, state.maxSuccess))
-        giveUpTesting(state, prop)
+        giveUpTesting(state)
     else
         runATest(state, prop)
 
-fun doneTesting(state: State, prop: Property): IO<Result> = IO.monad().fx {
+fun doneTesting(state: State): IO<Result> = IO.monad().binding {
     if (state.expected) {
         state.output.update {
             it + "+++ OK, passed ${showTestCount(state)}"
@@ -259,7 +259,7 @@ fun doneTesting(state: State, prop: Property): IO<Result> = IO.monad().fx {
     }
 }.fix()
 
-fun giveUpTesting(state: State, prop: Property): IO<Result> = IO.monad().fx {
+fun giveUpTesting(state: State): IO<Result> = IO.monad().binding {
     state.output.updateAndGet {
         it + "*** Gave up! Passed only ${showTestCount(state)}"
     }.bind()
@@ -278,7 +278,7 @@ fun giveUpTesting(state: State, prop: Property): IO<Result> = IO.monad().fx {
     )
 }.fix()
 
-fun runATest(state: State, prop: Property): IO<Result> = IO.monad().fx {
+fun runATest(state: State, prop: Property): IO<Result> = IO.monad().binding {
     // TODO look into actual splittable random gens...
     val (rand1, rand2) = Random(state.randomSeed).let { it.nextLong() toT it.nextLong() }
 
@@ -316,8 +316,8 @@ fun runATest(state: State, prop: Property): IO<Result> = IO.monad().fx {
         output = state.output
     )
 
-    fun cont(nState: State, br: (State, Property) -> IO<Result>): IO<Result> = if (res.abort)
-        br(nState, prop)
+    fun cont(nState: State, br: (State) -> IO<Result>): IO<Result> = if (res.abort)
+        br(nState)
     else
         runTest(nState, prop)
 
@@ -348,7 +348,7 @@ fun runATest(state: State, prop: Property): IO<Result> = IO.monad().fx {
             )
         }
         false.some() -> {
-            IO.monad().fx {
+            IO.monad().binding {
                 val (numShrinks, totFailed, lastFailed, nRes) = foundFailure(newState, res, ts).bind()
                 val output = newState.output.get().bind()
                 if (nRes.expected.not())
@@ -444,7 +444,7 @@ fun localMin(state: State, res: TestResult, ts: Sequence<Rose<TestResult>>): Fai
 internal fun _localMin(state: State, res: TestResult, ts: Sequence<Rose<TestResult>>): FailureResult =
     when (ts.isEmpty()) {
         true -> localMinFound(state, res)
-        else -> IO.monad().fx {
+        else -> IO.monad().binding {
             val (nRes0, nTs) = when (val it = protectRose(reduceRose(ts.first())).bind()) {
                 is Rose.IORose -> throw IllegalStateException("Should never happen")
                 is Rose.MkRose -> it.res toT it.shrunk
@@ -503,7 +503,7 @@ internal fun _localMin(state: State, res: TestResult, ts: Sequence<Rose<TestResu
         }.fix()
     }
 
-fun localMinFound(state: State, res: TestResult): FailureResult = IO.monad().fx {
+fun localMinFound(state: State, res: TestResult): FailureResult = IO.monad().binding {
     failureReason(state, res).reversed().map { s ->
         state.output.update {
             "$it$s\n"
@@ -587,7 +587,7 @@ fun labelsAndTables(state: State): Tuple2<List<String>, List<String>> {
 
     val labels = ((if (state.classes.isEmpty()) emptyList() else listOf(state.classes)) + numberedLabels.values).map {
         showTable(state.numSuccessTests, none(), it)
-    }.filter { it.isNotEmpty() }.map { it.joinToString("") }
+    }.filter { it.isNotEmpty() }.map { it.joinToString(" ") }
 
     val tables = state.tables.toList().map {
         showTable(it.second.combineAll(Int.monoid()), it.first.some(), it.second)
