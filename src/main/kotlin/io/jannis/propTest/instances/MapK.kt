@@ -8,8 +8,8 @@ import arrow.core.toT
 import arrow.data.MapK
 import arrow.data.mapOf
 import arrow.extension
+import io.jannis.propTest.instances.tuple2.arbitrary.arbitrary
 
-/*
 @extension
 interface MapKArbitrary<K, V> : Arbitrary<MapK<K, V>> {
     fun AK(): Arbitrary<K>
@@ -21,4 +21,4 @@ interface MapKArbitrary<K, V> : Arbitrary<MapK<K, V>> {
     override fun shrink(fail: MapK<K, V>): Sequence<MapK<K, V>> = shrinkList<Tuple2<K, V>> {
         Tuple2.arbitrary(AK(), AV()).shrink(it)
     }.invoke(fail.toList().map { (a, b) -> a toT b }).map { mapOf(*it.toTypedArray()) }
-}*/
+}

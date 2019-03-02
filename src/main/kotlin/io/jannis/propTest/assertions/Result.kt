@@ -25,6 +25,7 @@ import io.jannis.propTest.Gen
 import io.jannis.propTest.assertions.property.testable.testable
 import io.jannis.propTest.assertions.testresult.testable.testable
 import io.jannis.propTest.fix
+import io.jannis.propTest.gen.monad.monad
 import org.apache.commons.math3.special.Erf
 import kotlin.random.Random
 

@@ -6,19 +6,27 @@ import arrow.data.Nel
 import arrow.data.extensions.list.traverse.sequence
 import arrow.data.extensions.list.traverse.traverse
 import arrow.data.fix
-import arrow.data.k
 import arrow.effects.IO
 import arrow.effects.extensions.io.applicative.applicative
 import arrow.effects.extensions.io.monad.monad
 import arrow.effects.fix
-import arrow.higherkind
+import arrow.extension
 import arrow.typeclasses.Applicative
 import arrow.typeclasses.Functor
 import arrow.typeclasses.Monad
-import arrow.typeclasses.Show
-import io.jannis.propTest.instances.arbitrary
+import io.jannis.propTest.gen.monad.monad
 
-@higherkind
+// @higherkind boilerplate
+class ForGen private constructor() {
+    companion object
+}
+typealias GenOf<A> = arrow.Kind<ForGen , A>
+typealias GenKindedJ<A> = io.kindedj.Hk<ForGen , A>
+
+@Suppress("UNCHECKED_CAST", "NOTHING_TO_INLINE")
+inline fun <A> GenOf<A>.fix(): Gen<A> =
+    this as Gen<A>
+
 class Gen<A>(val unGen: (Tuple2<Long, Int>) -> A) : GenOf<A> {
 
     fun <B> map(f: (A) -> B): Gen<B> = genMap(f)
@@ -74,11 +82,6 @@ class Gen<A>(val unGen: (Tuple2<Long, Int>) -> A) : GenOf<A> {
     }.fix()
 
     companion object {
-
-        fun functor(): Functor<ForGen> = object: GenFunctor {}
-        fun applicative(): Applicative<ForGen> = object: GenApplicative {}
-        fun monad(): Monad<ForGen> = object: GenMonad {}
-
         fun <A> sized(f: (Int) -> Gen<A>): Gen<A> =
             Gen { (r, n) -> f(n).unGen(r toT n) }
         fun getSize(): Gen<Int> = Gen { (_, n) -> n }
@@ -163,12 +166,12 @@ class Gen<A>(val unGen: (Tuple2<Long, Int>) -> A) : GenOf<A> {
         }
 }
 
-// @extension
+@extension
 interface GenFunctor : Functor<ForGen> {
     override fun <A, B> Kind<ForGen, A>.map(f: (A) -> B): Kind<ForGen, B> = fix().genMap(f)
 }
 
-// @extension
+@extension
 interface GenApplicative : Applicative<ForGen> {
     override fun <A, B> Kind<ForGen, A>.ap(ff: Kind<ForGen, (A) -> B>): Kind<ForGen, B> =
         Gen.monad().run { ff.flatMap { f -> map(f) } }
@@ -177,7 +180,7 @@ interface GenApplicative : Applicative<ForGen> {
         Gen { a }
 }
 
-// @extension
+@extension
 interface GenMonad : Monad<ForGen> {
     override fun <A, B> Kind<ForGen, A>.flatMap(f: (A) -> Kind<ForGen, B>): Kind<ForGen, B> =
         Gen { (r, n) ->

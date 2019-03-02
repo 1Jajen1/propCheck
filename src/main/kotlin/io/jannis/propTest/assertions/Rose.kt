@@ -18,6 +18,7 @@ import io.jannis.propTest.assertions.property.testable.testable
 import io.jannis.propTest.assertions.rose.monad.monad
 import io.jannis.propTest.assertions.testresult.testable.testable
 import io.jannis.propTest.fix
+import io.jannis.propTest.gen.monad.monad
 
 sealed class Callback {
     class PostTest(val kind: CallbackKind, val fn: (State, TestResult) -> IO<Unit>) : Callback()

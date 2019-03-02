@@ -27,6 +27,7 @@ import io.jannis.propTest.instances.tuple19.arbitrary.arbitrary
 import io.jannis.propTest.instances.tuple20.arbitrary.arbitrary
 import io.jannis.propTest.instances.tuple21.arbitrary.arbitrary
 import arrow.extension
+import io.jannis.propTest.gen.monad.monad
 
 @extension
 interface Tuple2Arbitrary<A, B> : Arbitrary<Tuple2<A, B>> {
