@@ -8,7 +8,7 @@ val notice = """/*
 
 val package_ = "io.jannis.propTest.instances"
 
-val maxTuple = 21
+val maxTuple = 22
 
 val availableLetters = ('a'..'z').toList().map { it.toString() }
 

@@ -3,6 +3,7 @@ package io.jannis.propTest
 import arrow.core.toT
 import arrow.test.laws.MonadLaws
 import arrow.typeclasses.Eq
+import io.jannis.propTest.gen.monad.monad
 import io.kotlintest.TestCaseConfig
 import io.kotlintest.TestType
 import io.kotlintest.specs.AbstractStringSpec

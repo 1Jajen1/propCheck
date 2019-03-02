@@ -3,6 +3,8 @@ package io.jannis.propTest
 import arrow.core.Tuple2
 import arrow.core.toT
 import arrow.typeclasses.Order
+import io.jannis.propTest.gen.functor.functor
+import io.jannis.propTest.gen.monad.monad
 import io.jannis.propTest.instances.arbitrary
 
 interface Arbitrary<A> {

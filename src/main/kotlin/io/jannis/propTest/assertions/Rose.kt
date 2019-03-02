@@ -13,10 +13,12 @@ import arrow.typeclasses.Applicative
 import arrow.typeclasses.Functor
 import arrow.typeclasses.Monad
 import arrow.typeclasses.Show
+import io.jannis.propTest.Arbitrary
 import io.jannis.propTest.Gen
 import io.jannis.propTest.assertions.property.testable.testable
 import io.jannis.propTest.assertions.rose.monad.monad
 import io.jannis.propTest.assertions.testresult.testable.testable
+import io.jannis.propTest.defArbitrary
 import io.jannis.propTest.fix
 import io.jannis.propTest.gen.monad.monad
 
@@ -382,7 +384,7 @@ fun <A> Testable<A>.label(label: String): (A) -> Property =
         )
     }
 
-fun <A, B> Testable<A>.collect(showB: Show<B>, b: B): (A) -> Property =
+fun <A, B> Testable<A>.collect(b: B, showB: Show<B> = Show.any()): (A) -> Property =
     label(showB.run { b.show() })
 
 fun <A> Testable<A>.classify(bool: Boolean, label: String): (A) -> Property =
@@ -581,15 +583,15 @@ fun <A> Testable<A>.assert(bool: Boolean): (A) -> Property =
     else { a: A -> TestResult.testable().run { rejected().property() } }
 
 // --------
-fun <A, B> Testable<A>.forAll(showB: Show<B>, genB: Gen<B>): ((B) -> A) -> Property =
-    forAllShrink(showB, genB) { emptySequence() }
+fun <A, B> Testable<A>.forAll(genB: Gen<B>, showB: Show<B> = Show.any()): ((B) -> A) -> Property =
+    forAllShrink(genB, showB) { emptySequence() }
 
 fun <A, B> Testable<A>.forAllBlind(genB: Gen<B>): ((B) -> A) -> Property =
     forAllShrinkBlind(genB) { emptySequence() }
 
 fun <A, B> Testable<A>.forAllShrink(
-    showB: Show<B>,
     genB: Gen<B>,
+    showB: Show<B> = Show.any(),
     shrinkerB: (B) -> Sequence<B>
 ): ((B) -> A) -> Property =
     forAllShrinkShow(genB, shrinkerB, { showB.run { it.show() } })
@@ -614,5 +616,31 @@ fun <A, B> Testable<A>.forAllShrinkBlind(
                 shrinking(shrinkerB, genB.bind(), pf).unProperty.bind()
             }.fix()
         )
+    )
+}
+
+inline fun <A, reified B: Any>Testable<A>.forAll(arbB: Arbitrary<B> = defArbitrary(), showB: Show<B> = Show.any()): ((B) -> A) -> Property =
+    forAll(arbB.arbitrary(), showB)
+
+inline fun <A, reified B: Any>Testable<A>.forAllBlind(arbB: Arbitrary<B> = defArbitrary()): ((B) -> A) -> Property =
+    forAllBlind(arbB.arbitrary())
+
+inline fun <A, reified B: Any>Testable<A>.forAllShrink(arbB: Arbitrary<B> = defArbitrary(), showB: Show<B> = Show.any()): ((B) -> A) -> Property =
+        forAllShrink(arbB.arbitrary(), showB) { arbB.shrink(it) }
+
+inline fun <A, reified B: Any>Testable<A>.forAllShrinkBlind(arbB: Arbitrary<B> = defArbitrary()): ((B) -> A) -> Property =
+    forAllShrinkBlind(arbB.arbitrary()) { arbB.shrink(it) }
+
+fun <A> Testable<A>.ioProperty(): (IO<A>) -> Property = { io: IO<A> ->
+    Property.testable().idempotentIOProperty().invoke(
+        io.map { noShrinking().invoke(it) }
+    )
+}
+
+fun <A> Testable<A>.idempotentIOProperty(): (IO<A>) -> Property = { ioA: IO<A> ->
+    Property(
+        ioA.map {
+            it.property().unProperty
+        }.promote(IO.monad()).map { Prop(ioRose(it.fix().map { it.unProp })) }
     )
 }

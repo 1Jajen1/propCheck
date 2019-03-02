@@ -2,7 +2,6 @@ package io.jannis.propTest.assertions
 
 import arrow.core.*
 import arrow.core.extensions.monoid
-import arrow.core.extensions.option.semigroup.plus
 import arrow.core.extensions.semigroup
 import arrow.data.MapK
 import arrow.data.extensions.list.foldable.sequence_
@@ -21,6 +20,8 @@ import arrow.effects.extensions.io.monad.monad
 import arrow.effects.extensions.io.monadDefer.monadDefer
 import arrow.effects.fix
 import arrow.extension
+import arrow.typeclasses.Show
+import io.jannis.propTest.Arbitrary
 import io.jannis.propTest.Gen
 import io.jannis.propTest.assertions.property.testable.testable
 import io.jannis.propTest.assertions.testresult.testable.testable
@@ -152,15 +153,45 @@ interface PropertyTestable : Testable<Property> {
     )
 }
 
+@extension
+interface Function1Testable<I, O> : Testable<Function1<I, O>> {
+    fun SA(): Show<I>
+    fun AA(): Arbitrary<I>
+    fun TO(): Testable<O>
+    override fun Function1<I, O>.property(): Property =
+            TO().forAllShrink(AA().arbitrary(), SA(), { AA().shrink(it) }).invoke(this.f)
+}
+
 // combinators
-fun propCheck(
+fun propCheckIO(
     args: Args = Args(),
     f: () -> Property
 ): IO<Result> = IO.monad().binding {
     withState(args) {
         runTest(it, f())
-    }.bind().bind()
+    }.bind().bind().also {
+        println(
+            when (it) {
+                is Result.Success -> it.output
+                is Result.Failure -> it.output
+                is Result.NoExpectedFailure -> it.output
+                is Result.GivenUp -> it.output
+            }
+        )
+    }
 }.fix()
+
+fun propCheckIOWithError(
+    args: Args = Args(),
+    f: () -> Property
+): IO<Unit> = propCheckIO(args, f).flatMap {
+    when (it) {
+        is Result.Success -> IO.unit
+        is Result.GivenUp -> IO.raiseError(Throwable("TODO"))
+        is Result.NoExpectedFailure -> IO.raiseError(Throwable("TODO"))
+        is Result.Failure -> IO.raiseError(Throwable("TODO"))
+    }
+}
 
 fun <A> withState(args: Args, f: (State) -> A): IO<A> = IO.monad().binding {
     val randSeed = args.replay.fold({
@@ -320,7 +351,7 @@ fun runATest(state: State, prop: Property): IO<Result> = IO.monad().binding {
         expected = res.expected,
         labels = mapOf(*res.labels.map { it to 1 }.toTypedArray()).k().plus(Int.semigroup(), state.labels),
         classes = mapOf(*res.classes.map { it to 1 }.toTypedArray()).k().plus(Int.semigroup(), state.classes),
-        requiredCoverage = res.requiredCoverage.foldRight(state.requiredCoverage) { v , acc ->
+        requiredCoverage = res.requiredCoverage.foldRight(state.requiredCoverage) { v, acc ->
             val (key, value, p) = v
             val alreadyThere = acc[key toT value] ?: Double.MIN_VALUE
             (acc + mapOf((key toT value) to Math.max(alreadyThere, p))).k()

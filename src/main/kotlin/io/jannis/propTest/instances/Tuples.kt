@@ -6,6 +6,7 @@ package io.jannis.propTest.instances
 
 import io.jannis.propTest.*
 import arrow.core.*
+import io.jannis.propTest.gen.monad.monad
 import io.jannis.propTest.instances.tuple2.arbitrary.arbitrary
 import io.jannis.propTest.instances.tuple3.arbitrary.arbitrary
 import io.jannis.propTest.instances.tuple4.arbitrary.arbitrary
@@ -26,8 +27,8 @@ import io.jannis.propTest.instances.tuple18.arbitrary.arbitrary
 import io.jannis.propTest.instances.tuple19.arbitrary.arbitrary
 import io.jannis.propTest.instances.tuple20.arbitrary.arbitrary
 import io.jannis.propTest.instances.tuple21.arbitrary.arbitrary
+import io.jannis.propTest.instances.tuple22.arbitrary.arbitrary
 import arrow.extension
-import io.jannis.propTest.gen.monad.monad
 
 @extension
 interface Tuple2Arbitrary<A, B> : Arbitrary<Tuple2<A, B>> {
@@ -996,6 +997,86 @@ inline fun <reified A: Any, reified B: Any, reified C: Any, reified D: Any, reif
     dummy19: Unit = Unit,
     dummy20: Unit = Unit,
     dummy21: Unit = Unit): Arbitrary<F1> = object : Arbitrary<F1> {
+    override fun arbitrary(): Gen<F1> = arb.arbitrary().map(f)
+    override fun shrink(fail: F1): Sequence<F1> = shrinkMap(g, f, arb).invoke(fail)
+}
+
+@extension
+interface Tuple22Arbitrary<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V> : Arbitrary<Tuple22<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V>> {
+    fun AA(): Arbitrary<A>
+    fun AB(): Arbitrary<B>
+    fun AC(): Arbitrary<C>
+    fun AD(): Arbitrary<D>
+    fun AE(): Arbitrary<E>
+    fun AF(): Arbitrary<F>
+    fun AG(): Arbitrary<G>
+    fun AH(): Arbitrary<H>
+    fun AI(): Arbitrary<I>
+    fun AJ(): Arbitrary<J>
+    fun AK(): Arbitrary<K>
+    fun AL(): Arbitrary<L>
+    fun AM(): Arbitrary<M>
+    fun AN(): Arbitrary<N>
+    fun AO(): Arbitrary<O>
+    fun AP(): Arbitrary<P>
+    fun AQ(): Arbitrary<Q>
+    fun AR(): Arbitrary<R>
+    fun AS(): Arbitrary<S>
+    fun AT(): Arbitrary<T>
+    fun AU(): Arbitrary<U>
+    fun AV(): Arbitrary<V>
+    override fun arbitrary(): Gen<Tuple22<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V>> = Gen.monad().binding {
+        Tuple22(AA().arbitrary().bind(), AB().arbitrary().bind(), AC().arbitrary().bind(), AD().arbitrary().bind(), AE().arbitrary().bind(), AF().arbitrary().bind(), AG().arbitrary().bind(), AH().arbitrary().bind(), AI().arbitrary().bind(), AJ().arbitrary().bind(), AK().arbitrary().bind(), AL().arbitrary().bind(), AM().arbitrary().bind(), AN().arbitrary().bind(), AO().arbitrary().bind(), AP().arbitrary().bind(), AQ().arbitrary().bind(), AR().arbitrary().bind(), AS().arbitrary().bind(), AT().arbitrary().bind(), AU().arbitrary().bind(), AV().arbitrary().bind())
+    }.fix()
+    override fun shrink(fail: Tuple22<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V>): Sequence<Tuple22<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V>> =
+        AA().shrink(fail.a).map { Tuple22(it, fail.b, fail.c, fail.d, fail.e, fail.f, fail.g, fail.h, fail.i, fail.j, fail.k, fail.l, fail.m, fail.n, fail.o, fail.p, fail.q, fail.r, fail.s, fail.t, fail.u, fail.v) } +
+            AB().shrink(fail.b).map { Tuple22(fail.a, it, fail.c, fail.d, fail.e, fail.f, fail.g, fail.h, fail.i, fail.j, fail.k, fail.l, fail.m, fail.n, fail.o, fail.p, fail.q, fail.r, fail.s, fail.t, fail.u, fail.v) } +
+            AC().shrink(fail.c).map { Tuple22(fail.a, fail.b, it, fail.d, fail.e, fail.f, fail.g, fail.h, fail.i, fail.j, fail.k, fail.l, fail.m, fail.n, fail.o, fail.p, fail.q, fail.r, fail.s, fail.t, fail.u, fail.v) } +
+            AD().shrink(fail.d).map { Tuple22(fail.a, fail.b, fail.c, it, fail.e, fail.f, fail.g, fail.h, fail.i, fail.j, fail.k, fail.l, fail.m, fail.n, fail.o, fail.p, fail.q, fail.r, fail.s, fail.t, fail.u, fail.v) } +
+            AE().shrink(fail.e).map { Tuple22(fail.a, fail.b, fail.c, fail.d, it, fail.f, fail.g, fail.h, fail.i, fail.j, fail.k, fail.l, fail.m, fail.n, fail.o, fail.p, fail.q, fail.r, fail.s, fail.t, fail.u, fail.v) } +
+            AF().shrink(fail.f).map { Tuple22(fail.a, fail.b, fail.c, fail.d, fail.e, it, fail.g, fail.h, fail.i, fail.j, fail.k, fail.l, fail.m, fail.n, fail.o, fail.p, fail.q, fail.r, fail.s, fail.t, fail.u, fail.v) } +
+            AG().shrink(fail.g).map { Tuple22(fail.a, fail.b, fail.c, fail.d, fail.e, fail.f, it, fail.h, fail.i, fail.j, fail.k, fail.l, fail.m, fail.n, fail.o, fail.p, fail.q, fail.r, fail.s, fail.t, fail.u, fail.v) } +
+            AH().shrink(fail.h).map { Tuple22(fail.a, fail.b, fail.c, fail.d, fail.e, fail.f, fail.g, it, fail.i, fail.j, fail.k, fail.l, fail.m, fail.n, fail.o, fail.p, fail.q, fail.r, fail.s, fail.t, fail.u, fail.v) } +
+            AI().shrink(fail.i).map { Tuple22(fail.a, fail.b, fail.c, fail.d, fail.e, fail.f, fail.g, fail.h, it, fail.j, fail.k, fail.l, fail.m, fail.n, fail.o, fail.p, fail.q, fail.r, fail.s, fail.t, fail.u, fail.v) } +
+            AJ().shrink(fail.j).map { Tuple22(fail.a, fail.b, fail.c, fail.d, fail.e, fail.f, fail.g, fail.h, fail.i, it, fail.k, fail.l, fail.m, fail.n, fail.o, fail.p, fail.q, fail.r, fail.s, fail.t, fail.u, fail.v) } +
+            AK().shrink(fail.k).map { Tuple22(fail.a, fail.b, fail.c, fail.d, fail.e, fail.f, fail.g, fail.h, fail.i, fail.j, it, fail.l, fail.m, fail.n, fail.o, fail.p, fail.q, fail.r, fail.s, fail.t, fail.u, fail.v) } +
+            AL().shrink(fail.l).map { Tuple22(fail.a, fail.b, fail.c, fail.d, fail.e, fail.f, fail.g, fail.h, fail.i, fail.j, fail.k, it, fail.m, fail.n, fail.o, fail.p, fail.q, fail.r, fail.s, fail.t, fail.u, fail.v) } +
+            AM().shrink(fail.m).map { Tuple22(fail.a, fail.b, fail.c, fail.d, fail.e, fail.f, fail.g, fail.h, fail.i, fail.j, fail.k, fail.l, it, fail.n, fail.o, fail.p, fail.q, fail.r, fail.s, fail.t, fail.u, fail.v) } +
+            AN().shrink(fail.n).map { Tuple22(fail.a, fail.b, fail.c, fail.d, fail.e, fail.f, fail.g, fail.h, fail.i, fail.j, fail.k, fail.l, fail.m, it, fail.o, fail.p, fail.q, fail.r, fail.s, fail.t, fail.u, fail.v) } +
+            AO().shrink(fail.o).map { Tuple22(fail.a, fail.b, fail.c, fail.d, fail.e, fail.f, fail.g, fail.h, fail.i, fail.j, fail.k, fail.l, fail.m, fail.n, it, fail.p, fail.q, fail.r, fail.s, fail.t, fail.u, fail.v) } +
+            AP().shrink(fail.p).map { Tuple22(fail.a, fail.b, fail.c, fail.d, fail.e, fail.f, fail.g, fail.h, fail.i, fail.j, fail.k, fail.l, fail.m, fail.n, fail.o, it, fail.q, fail.r, fail.s, fail.t, fail.u, fail.v) } +
+            AQ().shrink(fail.q).map { Tuple22(fail.a, fail.b, fail.c, fail.d, fail.e, fail.f, fail.g, fail.h, fail.i, fail.j, fail.k, fail.l, fail.m, fail.n, fail.o, fail.p, it, fail.r, fail.s, fail.t, fail.u, fail.v) } +
+            AR().shrink(fail.r).map { Tuple22(fail.a, fail.b, fail.c, fail.d, fail.e, fail.f, fail.g, fail.h, fail.i, fail.j, fail.k, fail.l, fail.m, fail.n, fail.o, fail.p, fail.q, it, fail.s, fail.t, fail.u, fail.v) } +
+            AS().shrink(fail.s).map { Tuple22(fail.a, fail.b, fail.c, fail.d, fail.e, fail.f, fail.g, fail.h, fail.i, fail.j, fail.k, fail.l, fail.m, fail.n, fail.o, fail.p, fail.q, fail.r, it, fail.t, fail.u, fail.v) } +
+            AT().shrink(fail.t).map { Tuple22(fail.a, fail.b, fail.c, fail.d, fail.e, fail.f, fail.g, fail.h, fail.i, fail.j, fail.k, fail.l, fail.m, fail.n, fail.o, fail.p, fail.q, fail.r, fail.s, it, fail.u, fail.v) } +
+            AU().shrink(fail.u).map { Tuple22(fail.a, fail.b, fail.c, fail.d, fail.e, fail.f, fail.g, fail.h, fail.i, fail.j, fail.k, fail.l, fail.m, fail.n, fail.o, fail.p, fail.q, fail.r, fail.s, fail.t, it, fail.v) } +
+            AV().shrink(fail.v).map { Tuple22(fail.a, fail.b, fail.c, fail.d, fail.e, fail.f, fail.g, fail.h, fail.i, fail.j, fail.k, fail.l, fail.m, fail.n, fail.o, fail.p, fail.q, fail.r, fail.s, fail.t, fail.u, it) }
+}
+
+inline fun <reified A: Any, reified B: Any, reified C: Any, reified D: Any, reified E: Any, reified F: Any, reified G: Any, reified H: Any, reified I: Any, reified J: Any, reified K: Any, reified L: Any, reified M: Any, reified N: Any, reified O: Any, reified P: Any, reified Q: Any, reified R: Any, reified S: Any, reified T: Any, reified U: Any, reified V: Any, F1> fromTup(
+    noinline g: (F1) -> Tuple22<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V>,
+    noinline f: (Tuple22<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V>) -> F1,
+    arb: Arbitrary<Tuple22<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V>> = Tuple22.arbitrary(defArbitrary(), defArbitrary(), defArbitrary(), defArbitrary(), defArbitrary(), defArbitrary(), defArbitrary(), defArbitrary(), defArbitrary(), defArbitrary(), defArbitrary(), defArbitrary(), defArbitrary(), defArbitrary(), defArbitrary(), defArbitrary(), defArbitrary(), defArbitrary(), defArbitrary(), defArbitrary(), defArbitrary(), defArbitrary()),
+    dummy3: Unit = Unit,
+    dummy4: Unit = Unit,
+    dummy5: Unit = Unit,
+    dummy6: Unit = Unit,
+    dummy7: Unit = Unit,
+    dummy8: Unit = Unit,
+    dummy9: Unit = Unit,
+    dummy10: Unit = Unit,
+    dummy11: Unit = Unit,
+    dummy12: Unit = Unit,
+    dummy13: Unit = Unit,
+    dummy14: Unit = Unit,
+    dummy15: Unit = Unit,
+    dummy16: Unit = Unit,
+    dummy17: Unit = Unit,
+    dummy18: Unit = Unit,
+    dummy19: Unit = Unit,
+    dummy20: Unit = Unit,
+    dummy21: Unit = Unit,
+    dummy22: Unit = Unit): Arbitrary<F1> = object : Arbitrary<F1> {
     override fun arbitrary(): Gen<F1> = arb.arbitrary().map(f)
     override fun shrink(fail: F1): Sequence<F1> = shrinkMap(g, f, arb).invoke(fail)
 }
