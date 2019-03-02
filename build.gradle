@@ -18,6 +18,8 @@ dependencies {
     compile "org.jetbrains.kotlin:kotlin-stdlib-jdk8"
     compile "io.kotlintest:kotlintest-runner-junit5:3.2.1"
 
+    compile "org.apache.commons:commons-math3:3.6.1"
+
     kapt    "io.arrow-kt:arrow-annotations-processor:$arrow_version"
     compile "io.arrow-kt:arrow-annotations:$arrow_version"
     compile "io.arrow-kt:arrow-core-data:$arrow_version"

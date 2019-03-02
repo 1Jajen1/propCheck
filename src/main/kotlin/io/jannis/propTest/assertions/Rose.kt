@@ -461,6 +461,8 @@ fun <A> Testable<A>.coverTable(key: String, values: List<Tuple2<String, Double>>
         )
     }
 
+
+
 fun <A> Testable<A>.callback(cb: Callback): (A) -> Property =
     mapTotalResult { res ->
         TestResult(

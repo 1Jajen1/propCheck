@@ -2,6 +2,7 @@ package io.jannis.propTest.assertions
 
 import arrow.core.*
 import arrow.core.extensions.monoid
+import arrow.core.extensions.option.semigroup.plus
 import arrow.core.extensions.semigroup
 import arrow.data.MapK
 import arrow.data.extensions.list.foldable.sequence_
@@ -21,8 +22,10 @@ import arrow.effects.extensions.io.monadDefer.monadDefer
 import arrow.effects.fix
 import arrow.extension
 import io.jannis.propTest.Gen
+import io.jannis.propTest.assertions.property.testable.testable
 import io.jannis.propTest.assertions.testresult.testable.testable
 import io.jannis.propTest.fix
+import org.apache.commons.math3.special.Erf
 import kotlin.random.Random
 
 sealed class Result {
@@ -101,7 +104,7 @@ data class State(
 )
 
 data class Confidence(
-    val certainty: Double = Math.pow(10.0, 9.0),
+    val certainty: Long = Math.pow(10.0, 9.0).toLong(),
     val tolerance: Double = 0.9
 )
 
@@ -153,6 +156,12 @@ fun propCheck(
     args: Args = Args(),
     f: () -> Property
 ): IO<Result> = IO.monad().binding {
+    withState(args) {
+        runTest(it, f())
+    }.bind().bind()
+}.fix()
+
+fun <A> withState(args: Args, f: (State) -> A): IO<A> = IO.monad().binding {
     val randSeed = args.replay.fold({
         IO { Random.nextLong() }
     }, { IO.just(it.a) }).bind()
@@ -207,7 +216,8 @@ fun propCheck(
         requiredCoverage = emptyMap<Tuple2<Option<String>, String>, Double>().k(),
         output = Ref.of("", IO.monadDefer()).bind()
     )
-    runTest(state, f()).bind()
+
+    f(state)
 }.fix()
 
 fun runTest(
@@ -282,9 +292,17 @@ fun runATest(state: State, prop: Property): IO<Result> = IO.monad().binding {
     // TODO look into actual splittable random gens...
     val (rand1, rand2) = Random(state.randomSeed).let { it.nextLong() toT it.nextLong() }
 
+    val f_or_cov: Property = state.coverageConfidence.map { conf ->
+        if (
+            (1 + state.numSuccessTests).rem(100) == 0 &&
+            ((1 + state.numSuccessTests) / 100).rem(2) == 0
+        ) addCoverageCheck(conf, state, prop)
+        else prop
+    }.fold({ prop }, ::identity)
+
     val size = state.computeSize(state.numSuccessTests)(state.numRecentlyDiscardedTests)
 
-    val (res0, ts) = when (val it = protectRose(reduceRose(prop.unProperty.unGen(rand1 toT size).unProp)).bind()) {
+    val (res0, ts) = when (val it = protectRose(reduceRose(f_or_cov.unProperty.unGen(rand1 toT size).unProp)).bind()) {
         is Rose.IORose -> throw IllegalStateException("Should not happend")
         is Rose.MkRose -> it.res toT it.shrunk
     }
@@ -292,7 +310,7 @@ fun runATest(state: State, prop: Property): IO<Result> = IO.monad().binding {
     val res = callbackPostTest(state, res0).bind()
 
     val newState = State(
-        coverageConfidence = state.coverageConfidence, // TODO
+        coverageConfidence = res.optionCheckCoverage.or(state.coverageConfidence),
         maxSuccess = res.optionNumOfTests.getOrElse { state.maxSuccess },
         tables = res.tables.foldRight(state.tables) { (k, l), acc ->
             acc.k()
@@ -301,7 +319,11 @@ fun runATest(state: State, prop: Property): IO<Result> = IO.monad().binding {
         expected = res.expected,
         labels = mapOf(*res.labels.map { it to 1 }.toTypedArray()).k().plus(Int.semigroup(), state.labels),
         classes = mapOf(*res.classes.map { it to 1 }.toTypedArray()).k().plus(Int.semigroup(), state.classes),
-        requiredCoverage = state.requiredCoverage, // TODO
+        requiredCoverage = res.requiredCoverage.foldRight(state.requiredCoverage) { v , acc ->
+            val (key, value, p) = v
+            val alreadyThere = acc[key toT value] ?: Double.MIN_VALUE
+            (acc + mapOf((key toT value) to Math.max(alreadyThere, p))).k()
+        },
         // keep rest
         numTotTryShrinks = state.numTotTryShrinks,
         maxShrinks = state.maxShrinks,
@@ -519,9 +541,9 @@ fun callbackPostTest(state: State, res: TestResult): IO<TestResult> =
     }.fix().followedBy(IO.just(res))
 
 fun callbackPostFinalFailure(state: State, res: TestResult): IO<Unit> =
-        res.callbacks.filter { it is Callback.PostFinalFailure }.traverse(IO.applicative()) {
-            (it as Callback.PostFinalFailure).fn(state, res)
-        }.fix().followedBy(IO.unit)
+    res.callbacks.filter { it is Callback.PostFinalFailure }.traverse(IO.applicative()) {
+        (it as Callback.PostFinalFailure).fn(state, res)
+    }.fix().followedBy(IO.unit)
 
 fun showTestCount(state: State): String =
     state.numSuccessTests.number("test") + (if (state.numDiscardedTests > 0) "; ${state.numDiscardedTests} discarded" else "")
@@ -569,12 +591,12 @@ fun String.oneLine(): String = split("\n").joinToString(" ")
 fun putSuccessStr(state: State): IO<Unit> {
     val res = labelsAndTables(state)
     val (short, long) = when {
-        res.a.size == 1 -> listOf(" ( ${res.a.first().dropWhile { it.isWhitespace() }}).") toT res.b
+        res.a.size == 1 -> listOf(" (${res.a.first().dropWhile { it.isWhitespace() }}).") toT res.b
         res.a.isEmpty() -> listOf(".") toT res.b
         else -> (listOf(":") + res.a) toT res.b
     }
     return state.output.update {
-        it + listOf(short, long).filter { it.isNotEmpty() }.joinToString("") { it.joinToString("\n") } + "\n"
+        it + listOf(short, long).filter { it.isNotEmpty() }.joinToString("\n") { it.joinToString("\n") } + "\n"
     }.fix()
 }
 
@@ -587,19 +609,146 @@ fun labelsAndTables(state: State): Tuple2<List<String>, List<String>> {
 
     val labels = ((if (state.classes.isEmpty()) emptyList() else listOf(state.classes)) + numberedLabels.values).map {
         showTable(state.numSuccessTests, none(), it)
-    }.filter { it.isNotEmpty() }.map { it.joinToString(" ") }
+    }.map { it.filter { it.isNotEmpty() } }.filter { it.isNotEmpty() }.map { it.joinToString(". ") }
 
     val tables = state.tables.toList().map {
         showTable(it.second.combineAll(Int.monoid()), it.first.some(), it.second)
-    }.filter { it.isNotEmpty() }.map { it.joinToString("") }
+    }.filter { it.isNotEmpty() }.map { it.joinToString("\n") }
 
     return labels toT tables
 }
 
 fun showTable(k: Int, tableName: Option<String>, table: Map<String, Int>): List<String> =
-        listOf(tableName.fold({ "" }, { "$it (${"%.d".format(k)} in total)" })) +
-                table.entries.sortedBy { it.key }.reversed().sortedBy { it.value }
-                    .reversed().map { it.value.toPercentage(k) + "% ${it.key}" }
+    listOf(tableName.fold({ "" }, { "$it ($k in total)" })) +
+            table.entries.sortedBy { it.key }.reversed().sortedBy { it.value }
+                .reversed().map { it.value.toPercentage(k) + "% ${it.key}" }
 
 fun Int.toPercentage(max: Int): String =
     "%.2f".format(100 * (this.toDouble() / max.toDouble()))
+
+fun sufficientlyCovered(confidence: Confidence, n: Int, k: Int, p: Double): Boolean =
+    wilsonLow(k, n, 1.toDouble() / confidence.certainty) >= confidence.tolerance * p
+
+fun insufficientlyCovered(err: Option<Long>, n: Int, k: Int, p: Double): Boolean = err.fold({
+    k < p * n
+}, {
+    wilsonHigh(k, n, 1.toDouble() / it) < p
+})
+
+fun wilsonLow(k: Int, n: Int, a: Double): Double = wilson(k, n, invnormcdf(a / 2))
+
+fun wilsonHigh(k: Int, n: Int, a: Double): Double = wilson(k, n, invnormcdf(1 - a / 2))
+
+fun wilson(k: Int, n: Int, z: Double): Double {
+    val p = k / n.toDouble()
+    return (p + z * z / (2 * n) + z * Math.sqrt(p * (1 - p) / n + z * z / (4 * n * n))) / (1 + z * z / n)
+}
+
+// ---------------- The below functions invnormcdf and inorm are copied from data-number-erf
+// I really do not understand them well enough to guarantee their correct behaviour :/
+fun invnormcdf(d: Double): Double = when (d) {
+    0.0 -> Double.NEGATIVE_INFINITY
+    1.0 -> Double.POSITIVE_INFINITY
+    else -> {
+        val x = inorm(d)
+        val e = 0.5 * Erf.erfc(-x / Math.sqrt(2.0)) - d
+        val u = e * Math.sqrt(2 * Math.PI) * Math.exp(x * x / 2)
+        x - u / (1 + x * u / 2)
+    }
+}
+
+// Taken from data-number-erf which in turn took from
+//  http://home.online.no/~pjacklam/notes/invnorm/
+// Accurate to about 1e-9.
+fun inorm(d: Double): Double {
+
+    val dLow = 0.02425
+
+    val a1 = -3.969683028665376e+01
+    val a2 = 2.209460984245205e+02
+    val a3 = -2.759285104469687e+02
+    val a4 = 1.383577518672690e+02
+    val a5 = -3.066479806614716e+01
+    val a6 = 2.506628277459239e+00
+
+    val b1 = -5.447609879822406e+01
+    val b2 = 1.615858368580409e+02
+    val b3 = -1.556989798598866e+02
+    val b4 = 6.680131188771972e+01
+    val b5 = -1.328068155288572e+01
+
+    val c1 = -7.784894002430293e-03
+    val c2 = -3.223964580411365e-01
+    val c3 = -2.400758277161838e+00
+    val c4 = -2.549732539343734e+00
+    val c5 = 4.374664141464968e+00
+    val c6 = 2.938163982698783e+00
+
+    val d1 = 7.784695709041462e-03
+    val d2 = 3.224671290700398e-01
+    val d3 = 2.445134137142996e+00
+    val d4 = 3.754408661907416e+00
+
+    return when {
+        d < 0 -> Double.NaN
+        d == 0.0 -> Double.NEGATIVE_INFINITY
+        d < dLow -> {
+            val q = Math.sqrt(-2 * Math.log(d))
+            (((((c1 * q + c2) * q + c3) * q + c4) * q + c5) * q + c6) /
+                    ((((d1 * q + d2) * q + d3) * q + d4) * q + 1)
+        }
+        d < 1 - dLow -> {
+            val q = d - 0.05
+            val r = q * q
+            (((((a1 * r + a2) * r + a3) * r + a4) * r + a5) * r + a6) * q /
+                    (((((b1 * r + b2) * r + b3) * r + b4) * r + b5) * r + 1)
+        }
+        d <= 1 -> 0 - inorm(1 - d)
+        else -> Double.NaN
+    }
+}
+
+fun addCoverageCheck(confidence: Confidence, state: State, prop: Property): Property =
+    allCoverage(state).let { allCov ->
+        when {
+            allCov.map { (_, _, tot, n, p) ->
+                sufficientlyCovered(
+                    confidence,
+                    tot, n, p
+                )
+            }.fold(true) { acc, v -> acc && v } -> Property.testable().once().invoke(prop)
+            allCov.map { (_, _, tot, n, p) ->
+                insufficientlyCovered(
+                    confidence.certainty.some(),
+                    tot, n, p
+                )
+            }.fold(false) { acc, v -> acc || v } -> {
+                val (labels, tables) = labelsAndTables(state)
+                listOf(labels, tables).filter { it.isNotEmpty() }.map { it.joinToString("") }
+                    .foldRight(TestResult.testable().run { failed("Insufficient coverage").property() }) { v, acc ->
+                        Property.testable().counterexample(v).invoke(acc)
+                    }
+            }
+            else -> prop
+        }
+    }
+
+fun allCoverage(state: State): List<Tuple5<Option<String>, String, Int, Int, Double>> =
+    state.requiredCoverage.entries.map { (k, p) ->
+        val (key, value) = k
+
+        val combinedCounts: MapK<Option<String>, MapK<String, Int>> = (state.tables.mapKeys { it.key.some() } +
+                mapOf(None to state.classes)).k()
+
+        val n = combinedCounts[key]?.let { it[value] } ?: 0
+
+        val totals = state.tables.map { it.values.sum() }
+
+        val tot = key.fold({
+            state.numSuccessTests
+        }, {
+            totals[it] ?: 0
+        })
+
+        Tuple5(key, value, tot, n, p)
+    }

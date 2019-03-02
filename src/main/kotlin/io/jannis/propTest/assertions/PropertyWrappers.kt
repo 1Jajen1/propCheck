@@ -19,7 +19,7 @@ fun expectFailureP(): (Property) -> Property = Property.testable().expectFailure
 fun onceP(): (Property) -> Property = Property.testable().once()
 fun againP(): (Property) -> Property = Property.testable().again()
 fun withMaxSuccessP(maxSuccess: Int): (Property) -> Property = Property.testable().withMaxSuccess(maxSuccess)
-fun checkCoverageP(c: Confidence): (Property) -> Property = Property.testable().checkCoverage(c)
+fun checkCoverageP(c: Confidence = Confidence()): (Property) -> Property = Property.testable().checkCoverage(c)
 fun labelP(label: String): (Property) -> Property = Property.testable().label(label)
 fun <B>collectP(showB: Show<B>, b: B): (Property) -> Property = Property.testable().collect(showB, b)
 fun classifyP(bool: Boolean, label: String): (Property) -> Property = Property.testable().classify(bool, label)

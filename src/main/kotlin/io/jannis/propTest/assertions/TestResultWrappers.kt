@@ -19,7 +19,7 @@ fun expectFailureT(): (TestResult) -> Property = TestResult.testable().expectFai
 fun onceT(): (TestResult) -> Property = TestResult.testable().once()
 fun againT(): (TestResult) -> Property = TestResult.testable().again()
 fun withMaxSuccessT(maxSuccess: Int): (TestResult) -> Property = TestResult.testable().withMaxSuccess(maxSuccess)
-fun checkCoverageT(c: Confidence): (TestResult) -> Property = TestResult.testable().checkCoverage(c)
+fun checkCoverageT(c: Confidence = Confidence()): (TestResult) -> Property = TestResult.testable().checkCoverage(c)
 fun labelT(label: String): (TestResult) -> Property = TestResult.testable().label(label)
 fun <B>collectT(showB: Show<B>, b: B): (TestResult) -> Property = TestResult.testable().collect(showB, b)
 fun classifyT(bool: Boolean, label: String): (TestResult) -> Property = TestResult.testable().classify(bool, label)
