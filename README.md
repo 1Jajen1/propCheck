@@ -1,6 +1,7 @@
 # propCheck - Property based testing in kotlin
 
-> A small library built upon kotlintest that aims to adopt haskell Quickcheck's functionality
+> A small library built upon kotlintest that aims to adopt haskell [Quickcheck's](https://github.com/nick8325/quickcheck) functionality.
+It started out as a straight port of quickcheck and was adapted slightly to work better with kotlin
 
 ## Usage
 
@@ -16,7 +17,7 @@ propCheck {
 +++ OK, passed 100 tests.
 ```
 
-In this example propCheck ran 100 tests with random Pairs of integers and checks if addition over integers is commutative.
+In this example propCheck ran 100 tests with random pairs of integers and checks if addition over integers is commutative.
 
 `propCheck` can also take an argument of type `Args` to change the way tests are run:
 ```kotlin
@@ -29,7 +30,7 @@ propCheck(Args(maxSuccess = 300)) {
 +++ OK, passed 300 tests.
 ```
 
-A full overview of what can be customised can be seen [here](https://github.com/1Jajen1/propCheck/blob/master/README.md#Args)
+A full overview of what can be customised can be seen [here](https://github.com/1Jajen1/propCheck/blob/master/README.md#args)
 
 ## Shrinking
 
@@ -60,7 +61,7 @@ fun shrink(fail: A): Sequence<A> = emptySequence()
 ```
 Since shrink has a default implementation (no shrinking) the main focus for generating custom data is on `.arbitrary()`.
 
-Following are some examples for simple generators for a user data class (each taking advantage of some features to reduce boilerplate):
+In the following examplee we wirite a simple generator for a user data class:
 ```kotlin
 data class User(val name: String, val age: Int, val friends: List<String>)
 
@@ -112,8 +113,13 @@ Our shrinking worked and we are left with a minimal example.
 
 Now there are several ways of simplifying all of this:
 * use `fromTup` which given a function from and to a TupleN returns an Arbitrary instance with shrinking
-* use `arrow-generic` to auto generate from and to tuple functions
-* use `defArbitrary` which can for most `A`'s infer a Arbitrary instance. A full list can be seen [here](https://github.com/1Jajen1/propCheck/blob/master/README.md#ArbitraryInstances).
+* use [arrow-generic](https://arrow-kt.io/docs/generic/product/) to auto generate from and to tuple functions
+* use `defArbitrary` which can for most `A`'s infer a Arbitrary instance. A full list can be seen [here](https://github.com/1Jajen1/propCheck/blob/master/README.md#types-with-default-implementations).
+
+This is as concise as it can get: (Given functions for to and from tup are defined or generated with arrow)
+```kotlin
+val userArbitrary: Arbitrary<User> = fromTup(::toTuple, ::fromTuple)
+```
 
 ### The `Gen<A>` datatype
 
@@ -145,11 +151,11 @@ fun binaryTreeGen(): Gen<BinaryTree> = Gen.sized { size ->
 }
 ```
 This example generates binary-trees based with a maximum depth based on the size parameter.
-> This is using the amazing fp library `arrow` for `binding`. This is not necessary, it will ease creation of nested `Gen`s and lots of other more complex generators.
+> This is using the amazing fp library [arrow](https://arrow-kt.io/) for `binding`. This is not necessary, it will ease creation of nested `Gen`s and lots of other more complex generators.
 
 ## Running these tests with a test runner
 
-propCheck is by itself stand-alone and does not provide test-runner capabilites like kotlintest. It however can and should be used together with a test-runner. By default `propCheck` will throw exceptions on failure and thus will cause the test case it is being run in to fail.
+propCheck is by itself stand-alone and does not provide test-runner capabilites like kotlintest. It however can and should be used together with a test-runner. By default `propCheck` will throw exceptions on failure and thus will cause the test case it is being run in to fail. (That can be diasbled by using methods like `propCheckWithResult` instead)
 
 The following example runs a test in a kotlintest test:
 ```kotlin
@@ -164,6 +170,26 @@ class TestSpec : StringSpec({
     "other tests" { ... }
 })
 ```
+
+## Use of arrow with propCheck
+
+First of all: If you are using [arrow-kt](https://arrow-kt.io/) everything is good. There are plenty of instances already defined for arrows data-types.
+
+If not then don't worry. The entire api is can be used without even touching upon arrows datatypes and there are overloads specifically to avoid those types.
+> Except Option but I don't think that will be a problem
+
+## Kotlintest generators vs propCheck
+Kotlintest already includes some means of property based testing. However their data-types and reflection-lookups are severly limited. The reason I ported quickcheck over is because it is built upon lawful instances for its datatypes and features a much richer set of methods. This makes testing with propCheck much easier and much more powerful.
+
+> There is however a helper method to convert a `Arbitrary<A>` to a kotlintest `Gen<A>`. That approach is somewhat limit tho. So don't expect them to be equal.
+
+## Feedback
+`propCheck` is still in its early days so if you notice bugs or think something can be improved please create issues or shoot me a pull request. All feedback is highly appreciated.
+
+### Credits
+At this point I'd like to thank the `arrow-kt` creators and maintainers as this library would not have been possible without them. The same goes for [quickcheck](https://github.com/nick8325/quickcheck) which `propCheck` is based on.
+
+---
 
 ## Api overview
 
