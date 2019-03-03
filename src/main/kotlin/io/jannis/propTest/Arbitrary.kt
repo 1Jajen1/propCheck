@@ -7,11 +7,24 @@ import io.jannis.propTest.gen.functor.functor
 import io.jannis.propTest.gen.monad.monad
 import io.jannis.propTest.instances.arbitrary
 
+/**
+ * Arbitrary interface
+ * Minimal complete definition is just arbitrary() for which there are plenty of combinators to implement
+ */
 interface Arbitrary<A> {
+    /**
+     * Create a generator capable of producing A's
+     */
     fun arbitrary(): Gen<A>
+
+    /**
+     * shrink an A to a Sequence of A's
+     */
     fun shrink(fail: A): Sequence<A> = emptySequence()
 }
 
+// ----------------------- Helpers for numbers
+// ---------- Number generators respecting the size parameter
 fun arbitrarySizedInt(): Gen<Int> =
     Gen.sized { Gen.choose(-it toT it, Int.random()) }
 
@@ -31,10 +44,6 @@ fun arbitrarySizedPositiveLong(): Gen<Long> = Gen.sized {
         Long.random()
     )
 }
-
-fun arbitraryBoundedInt(): Gen<Int> = Gen.chooseAny(Int.random())
-fun arbitraryBoundedLong(): Gen<Long> = Gen.chooseAny(Long.random())
-fun arbitraryBoundedByte(): Gen<Byte> = Gen.chooseAny(Byte.random())
 
 fun arbitrarySizedFloat(): Gen<Float> = Gen.sized { n ->
     Gen.monad().binding {
@@ -59,6 +68,12 @@ fun arbitrarySizedByte(): Gen<Byte> = Gen.sized { n ->
     )
 }
 
+// ------------- Number generators ignoring the size parameter, will go for entire range of type
+fun arbitraryBoundedInt(): Gen<Int> = Gen.chooseAny(Int.random())
+fun arbitraryBoundedLong(): Gen<Long> = Gen.chooseAny(Long.random())
+fun arbitraryBoundedByte(): Gen<Byte> = Gen.chooseAny(Byte.random())
+
+// ----------- String and char generators
 fun arbitraryASCIIChar(): Gen<Char> =
     Gen.choose(32.toChar() toT 127.toChar(), Char.random())
 
@@ -68,13 +83,19 @@ fun arbitraryUnicodeString(): Gen<String> = arbitraryUnicodeChar().listOf().map 
 
 fun arbitraryASCIIString(): Gen<String> = arbitraryASCIIChar().listOf().map { it.joinToString("") }
 
-// shrinkers
+// ---------------------------------- helpers to create shrink functions
 fun <A> shrinkNothing(): () -> List<A> = { emptyList() }
 
+/**
+ * implement a shrink function by mapping back and forth between a type that already has a shrink function defined
+ */
 fun <A, B> shrinkMap(f: (A) -> B, g: (B) -> A, arbA: Arbitrary<B>): (A) -> Sequence<A> = { fail ->
     arbA.shrink(f(fail)).map(g)
 }
 
+/**
+ * shrink a list (by shrinking recursively, shrinking its content and shrinking the list size itself)
+ */
 fun <A> shrinkList(f: (A) -> Sequence<A>): (List<A>) -> Sequence<List<A>> = { list ->
     fun <F> removes(k: Int, n: Int, l: List<F>): Sequence<List<F>> =
         if (k > n) emptySequence()
@@ -97,6 +118,7 @@ fun <A> shrinkList(f: (A) -> Sequence<A>): (List<A>) -> Sequence<List<A>> = { li
     else shrinkListIt(list) + shrinkOne(list)
 }
 
+// ---------------------------- Number shrinkers
 fun shrinkByte(fail: Byte): Sequence<Byte> = (
         (if (fail < 0 && -fail > fail) sequenceOf(-fail) else emptySequence()) +
                 (sequenceOf(0) + iterate({ it / 2 }, fail.toInt()).drop(1)
@@ -172,6 +194,7 @@ fun shrinkDouble(fail: Double): Sequence<Double> = (
                 )
         )
 
+// ---------------------------------- helpers to create Generators from arbitrary instances
 fun <A> vector(n: Int, arbA: Arbitrary<A>): Gen<List<A>> = arbA.arbitrary().vectorOf(n)
 fun <A> orderedList(arbA: Arbitrary<A>, ordA: Order<A>): Gen<List<A>> =
     Gen.functor().run {

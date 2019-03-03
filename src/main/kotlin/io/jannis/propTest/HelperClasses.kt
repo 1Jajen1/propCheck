@@ -28,6 +28,11 @@ typealias BlindKindedJ<A> = io.kindedj.Hk<ForBlind , A>
 @Suppress("UNCHECKED_CAST", "NOTHING_TO_INLINE")
 inline fun <A> BlindOf<A>.fix(): Blind<A> =
     this as Blind<A>
+
+/**
+ * A's but without showing its value
+ * Useful to reduce clutter
+ */
 data class Blind<A>(val a: A): BlindOf<A> {
     override fun toString(): String = Blind.show<A>().run { show() }
     companion object
@@ -77,6 +82,11 @@ typealias FixedKindedJ<A> = io.kindedj.Hk<ForFixed, A>
 @Suppress("UNCHECKED_CAST", "NOTHING_TO_INLINE")
 inline fun <A> FixedOf<A>.fix(): Fixed<A> =
     this as Fixed<A>
+
+/**
+ * A's but without shrinking
+ * Useful to prevent shrinking without introducing a new arbitrary instance
+ */
 data class Fixed<A>(val a: A): FixedOf<A> {
     companion object
 }
@@ -125,6 +135,10 @@ typealias OrderedListKindedJ<A> = io.kindedj.Hk<ForOrderedList, A>
 @Suppress("UNCHECKED_CAST", "NOTHING_TO_INLINE")
 inline fun <A> OrderedListOf<A>.fix(): OrderedList<A> =
     this as OrderedList<A>
+
+/**
+ * Generates only sorted lists of A's
+ */
 data class OrderedList<A>(val l: List<A>): OrderedListOf<A> {
     companion object
 }
@@ -170,6 +184,11 @@ typealias SmartKindedJ<A> = io.kindedj.Hk<ForSmart, A>
 @Suppress("UNCHECKED_CAST", "NOTHING_TO_INLINE")
 inline fun <A> SmartOf<A>.fix(): Smart<A> =
     this as Smart<A>
+
+/**
+ * A's but with a different approach to shrinking
+ * Shuffles the order a bit
+ */
 data class Smart<A>(val i: Int, val a: A): SmartOf<A> {
     companion object
 }
@@ -214,6 +233,10 @@ typealias Shrink2KindedJ<A> = io.kindedj.Hk<ForShrink2, A>
 @Suppress("UNCHECKED_CAST", "NOTHING_TO_INLINE")
 inline fun <A> Shrink2Of<A>.fix(): Shrink2<A> =
     this as Shrink2<A>
+
+/**
+ * A's but performs two shrinking steps at once
+ */
 data class Shrink2<A>(val a: A): Shrink2Of<A> {
     companion object
 }
@@ -267,6 +290,10 @@ typealias ShrinkingPartialOf<S> = arrow.Kind<ForShrinking, S>
 @Suppress("UNCHECKED_CAST", "NOTHING_TO_INLINE")
 inline fun <S, A> ShrinkingOf<S, A>.fix(): Shrinking<S, A> =
     this as Shrinking<S, A>
+
+/**
+ * A's but shrinking now carries a state
+ */
 data class Shrinking<S, A>(val s: S, val a: A): ShrinkingOf<S, A> {
     companion object
 }

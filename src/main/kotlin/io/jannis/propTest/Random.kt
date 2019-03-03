@@ -3,6 +3,9 @@ package io.jannis.propTest
 import arrow.core.Tuple2
 import arrow.core.toT
 
+/**
+ * Random typeclass similar to haskell and instances for primitive types
+ */
 interface Random<A> {
     fun randomR(range: Tuple2<A, A>, seed: Long): Tuple2<A, Long>
     fun random(seed: Long): Tuple2<A, Long>

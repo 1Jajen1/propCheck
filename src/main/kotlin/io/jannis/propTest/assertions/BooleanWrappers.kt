@@ -8,7 +8,10 @@ import io.jannis.propTest.Gen
 import io.jannis.propTest.defArbitrary
 import io.jannis.propTest.defShow
 
-// bool wrappers for easier use
+/**
+ * Boolean wrappers for all combinators
+ * Avoid the boilerplate of Boolean.testable().func
+ */
 fun mapResult(f: (TestResult) -> TestResult): (Boolean) -> Property = Boolean.testable().mapResult(f)
 fun mapTotalResult(f: (TestResult) -> TestResult): (Boolean) -> Property = Boolean.testable().mapTotalResult(f)
 fun mapRoseResult(f: (Rose<TestResult>) -> Rose<TestResult>): (Boolean) -> Property = Boolean.testable().mapRoseResult(f)

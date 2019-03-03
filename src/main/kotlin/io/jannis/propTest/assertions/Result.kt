@@ -30,62 +30,84 @@ import io.jannis.propTest.gen.monad.monad
 import org.apache.commons.math3.special.Erf
 import kotlin.random.Random
 
+/**
+ * Datatype which describes the result of a test
+ */
 sealed class Result {
+    /**
+     * The test was successfull
+     */
     data class Success(
-        val labels: MapK<String, Int>,
-        val classes: MapK<String, Int>,
-        val tables: MapK<String, MapK<String, Int>>,
-        val numTests: Int,
-        val numDiscardedTests: Int,
-        val output: String
+        val labels: MapK<String, Int>, // Test case labels
+        val classes: MapK<String, Int>, // Test case classes
+        val tables: MapK<String, MapK<String, Int>>, // Test case tables
+        val numTests: Int, // Number of successful tests
+        val numDiscardedTests: Int, // Number of discarded tests
+        val output: String // The entire string output gathered during the test
     ) : Result()
 
+    /**
+     * The test failed for and a failure was not expected
+     * Will also trigger on coverage failures
+     */
     data class Failure(
-        val usedSeed: Long,
-        val usedSize: Int,
-        val numTests: Int,
-        val numDiscardedTests: Int,
-        val numShrinks: Int,
-        val numShrinkTries: Int,
-        val numShrinkFinal: Int,
-        val output: String,
-        val reason: String,
-        val exception: Option<Throwable>,
-        val failingTestCase: List<String>,
-        val failingLabels: List<String>,
-        val failingClasses: List<String>
+        val usedSeed: Long, // random seed used
+        val usedSize: Int, // size parameter used
+        val numTests: Int, // Number of successful tests
+        val numDiscardedTests: Int, // Number of discarded tests
+        val numShrinks: Int, // Number of successful shrinks
+        val numShrinkTries: Int, // Number of failed shrinks
+        val numShrinkFinal: Int, // Number of failed shrinks after the last successful one
+        val output: String, // Output gathered
+        val reason: String, // Reason the test failed
+        val exception: Option<Throwable>, // Exception that the test threw
+        val failingTestCase: List<String>, // failing test case
+        val failingLabels: List<String>, // failing test cases labels
+        val failingClasses: List<String> // failing test cases classes
     ) : Result()
 
+    /**
+     * A test succeeded but was expected to fail
+     */
     data class NoExpectedFailure(
-        val labels: MapK<String, Int>,
-        val classes: MapK<String, Int>,
-        val tables: MapK<String, MapK<String, Int>>,
-        val numTests: Int,
-        val numDiscardedTests: Int,
-        val output: String
+        val labels: MapK<String, Int>, // Test case labels
+        val classes: MapK<String, Int>, // Test case classes
+        val tables: MapK<String, MapK<String, Int>>, // Test case tables
+        val numTests: Int, // Number of successful tests
+        val numDiscardedTests: Int, // Number of discarded tests
+        val output: String // output gathered
     ) : Result()
 
+    /**
+     * A test discared more data than discardRatio permitted
+     */
     data class GivenUp(
-        val numTests: Int,
-        val numDiscardedTests: Int,
-        val output: String,
-        val classes: MapK<String, Int>,
-        val labels: MapK<String, Int>,
-        val tables: MapK<String, MapK<String, Int>>
+        val numTests: Int, // Number of successful tests
+        val numDiscardedTests: Int, // Number of discarded tests
+        val output: String, // output gathered
+        val classes: MapK<String, Int>, // Test case classes
+        val labels: MapK<String, Int>, // Test case labels
+        val tables: MapK<String, MapK<String, Int>> // Test case tables
     ) : Result()
 }
 
+/**
+ * Arguments passed to the top-level function propCheck
+ */
 data class Args(
-    val replay: Option<Tuple2<Long, Int>> = none(),
-    val maxSuccess: Int = 100,
-    val maxDiscardRatio: Int = 10,
-    val maxSize: Int = 100,
-    val verbose: Boolean = true,
-    val maxShrinks: Int = Int.MAX_VALUE
+    val replay: Option<Tuple2<Long, Int>> = none(), // optional seed and size to replay a test
+    val maxSuccess: Int = 100, // Maximum number of attempts (may be ignored when checkCoverage is used)
+    val maxDiscardRatio: Int = 10, // Maximum ratio at which tests may be discarded
+    val maxSize: Int = 100, // Maximum size parameter passed to generators
+    val verbose: Boolean = true, // verbose output
+    val maxShrinks: Int = Int.MAX_VALUE // maximum number of shrink attempts performed. 0 for no shrinking
 )
 
+/**
+ * Internal state used while running a test
+ */
 data class State(
-    val output: Ref<ForIO, String>,
+    val output: Ref<ForIO, String>, // mutable ref for writing output
     val maxSuccess: Int,
     val coverageConfidence: Option<Confidence>,
     val maxDiscardRatio: Int,
@@ -105,6 +127,9 @@ data class State(
     val requiredCoverage: MapK<Tuple2<Option<String>, String>, Double>
 )
 
+/**
+ * Confidence used with checkCoverage to determine wether or not a test is sufficiently covered
+ */
 data class Confidence(
     val certainty: Long = Math.pow(10.0, 9.0).toLong(),
     val tolerance: Double = 0.9
@@ -116,6 +141,10 @@ inline class Property(val unProperty: Gen<Prop>) {
 
 inline class Prop(val unProp: Rose<TestResult>)
 
+/**
+ * Base interface for testable data
+ * Implemented by Boolean, TestResult, Property, Gen and Function1
+ */
 interface Testable<A> {
     fun A.property(): Property
 }
@@ -162,7 +191,9 @@ interface Function1Testable<I, O> : Testable<Function1<I, O>> {
             TO().forAllShrink(AA().arbitrary(), SA(), { AA().shrink(it) }).invoke(this.f)
 }
 
-// combinators
+/**
+ * run property test on a given property and print the output
+ */
 fun propCheckIO(
     args: Args = Args(),
     f: () -> Property
@@ -181,6 +212,9 @@ fun propCheckIO(
     }
 }.fix()
 
+/**
+ * same as propCheckIO but throws an AssertionError at the end (useful for actually running inside test runners)
+ */
 fun propCheckIOWithError(
     args: Args = Args(),
     f: () -> Property
@@ -193,6 +227,9 @@ fun propCheckIOWithError(
     }
 }
 
+/**
+ * Run a test with a state derived from the args
+ */
 fun <A> withState(args: Args, f: (State) -> A): IO<A> = IO.monad().binding {
     val randSeed = args.replay.fold({
         IO { Random.nextLong() }
@@ -200,6 +237,9 @@ fun <A> withState(args: Args, f: (State) -> A): IO<A> = IO.monad().binding {
 
     fun roundTo(n: Int, m: Int): Int = (n / m) * m
 
+    /**
+     * Special size function to later calculate different input sizes for the generator
+     */
     val computeSizeA: (Int) -> (Int) -> Int = { n ->
         { d ->
             if (
@@ -252,6 +292,10 @@ fun <A> withState(args: Args, f: (State) -> A): IO<A> = IO.monad().binding {
     f(state)
 }.fix()
 
+/**
+ * Run a test case with a given state and property
+ * Checks if we are done, should give up or continue testing
+ */
 fun runTest(
     state: State,
     prop: Property
@@ -263,6 +307,9 @@ fun runTest(
     else
         runATest(state, prop)
 
+/**
+ * Done testing, construct result and add some output
+ */
 fun doneTesting(state: State): IO<Result> = IO.monad().binding {
     if (state.expected) {
         state.output.update {
@@ -301,6 +348,9 @@ fun doneTesting(state: State): IO<Result> = IO.monad().binding {
     }
 }.fix()
 
+/**
+ * Give up testing because of a high discard ratio. Add some output and construct result
+ */
 fun giveUpTesting(state: State): IO<Result> = IO.monad().binding {
     state.output.updateAndGet {
         it + "*** Gave up! Passed only ${showTestCount(state)}"
@@ -320,10 +370,18 @@ fun giveUpTesting(state: State): IO<Result> = IO.monad().binding {
     )
 }.fix()
 
+/**
+ * Execute a test
+ */
 fun runATest(state: State, prop: Property): IO<Result> = IO.monad().binding {
-    // TODO look into actual splittable random gens...
+    /**
+     * Poor mans split (Dunno if this is fine, it will be replayable so maybe)
+     */
     val (rand1, rand2) = Random(state.randomSeed).let { it.nextLong() toT it.nextLong() }
 
+    /**
+     * add a coverage check if needed
+     */
     val f_or_cov: Property = state.coverageConfidence.map { conf ->
         if (
             (1 + state.numSuccessTests).rem(100) == 0 &&
@@ -334,6 +392,9 @@ fun runATest(state: State, prop: Property): IO<Result> = IO.monad().binding {
 
     val size = state.computeSize(state.numSuccessTests)(state.numRecentlyDiscardedTests)
 
+    /**
+     * run a test and unfold the rose structure
+     */
     val (res0, ts) = when (val it = protectRose(reduceRose(f_or_cov.unProperty.unGen(rand1 toT size).unProp)).bind()) {
         is Rose.IORose -> throw IllegalStateException("Should not happend")
         is Rose.MkRose -> it.res toT it.shrunk
@@ -341,6 +402,9 @@ fun runATest(state: State, prop: Property): IO<Result> = IO.monad().binding {
 
     val res = callbackPostTest(state, res0).bind()
 
+    /**
+     * compute a new state by adding the current result
+     */
     val newState = State(
         coverageConfidence = res.optionCheckCoverage.or(state.coverageConfidence),
         maxSuccess = res.optionNumOfTests.getOrElse { state.maxSuccess },
@@ -463,6 +527,9 @@ fun runATest(state: State, prop: Property): IO<Result> = IO.monad().binding {
 
 typealias FailureResult = IO<Tuple4<Int, Int, Int, TestResult>>
 
+/**
+ * handle a failure, will try to shrink failure case
+ */
 fun foundFailure(state: State, res: TestResult, ts: Sequence<Rose<TestResult>>): FailureResult =
     localMin(
         State(
@@ -489,12 +556,18 @@ fun foundFailure(state: State, res: TestResult, ts: Sequence<Rose<TestResult>>):
         res, ts
     )
 
+/**
+ * shrink failure down or stop at some min value
+ */
 fun localMin(state: State, res: TestResult, ts: Sequence<Rose<TestResult>>): FailureResult =
     if (state.numSuccessShrinks + state.numTotTryShrinks >= state.maxShrinks)
         localMinFound(state, res)
     else
         _localMin(state, res, ts)
 
+/**
+ * test a single shrunk value and if recurse with localMin
+ */
 internal fun _localMin(state: State, res: TestResult, ts: Sequence<Rose<TestResult>>): FailureResult =
     when (ts.isEmpty()) {
         true -> localMinFound(state, res)
@@ -557,6 +630,9 @@ internal fun _localMin(state: State, res: TestResult, ts: Sequence<Rose<TestResu
         }.fix()
     }
 
+/**
+ * Done shrinking, append output. Back to runATest to finish up
+ */
 fun localMinFound(state: State, res: TestResult): FailureResult = IO.monad().binding {
     failureReason(state, res).reversed().map { s ->
         state.output.update {
@@ -567,16 +643,23 @@ fun localMinFound(state: State, res: TestResult): FailureResult = IO.monad().bin
     Tuple4(state.numSuccessShrinks, state.numTotTryShrinks - state.numTryShrinks, state.numTryShrinks, res)
 }.fix()
 
+/**
+ * call all post test callbacks
+ */
 fun callbackPostTest(state: State, res: TestResult): IO<TestResult> =
     res.callbacks.filter { it is Callback.PostTest }.traverse(IO.applicative()) {
         (it as Callback.PostTest).fn(state, res)
     }.fix().followedBy(IO.just(res))
 
+/**
+ * call all post final failure callbacks
+ */
 fun callbackPostFinalFailure(state: State, res: TestResult): IO<Unit> =
     res.callbacks.filter { it is Callback.PostFinalFailure }.traverse(IO.applicative()) {
         (it as Callback.PostFinalFailure).fn(state, res)
     }.fix().followedBy(IO.unit)
 
+// ----------------- Text utility functions for showing results
 fun showTestCount(state: State): String =
     state.numSuccessTests.number("test") + (if (state.numDiscardedTests > 0) "; ${state.numDiscardedTests} discarded" else "")
 
@@ -658,6 +741,7 @@ fun showTable(k: Int, tableName: Option<String>, table: Map<String, Int>): List<
 fun Int.toPercentage(max: Int): String =
     "%.2f".format(100 * (this.toDouble() / max.toDouble()))
 
+// ------------------------- Coverage check functions
 fun sufficientlyCovered(confidence: Confidence, n: Int, k: Int, p: Double): Boolean =
     wilsonLow(k, n, 1.toDouble() / confidence.certainty) >= confidence.tolerance * p
 

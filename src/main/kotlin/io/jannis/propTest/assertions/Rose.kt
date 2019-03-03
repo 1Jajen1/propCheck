@@ -19,6 +19,9 @@ import io.jannis.propTest.assertions.rose.monad.monad
 import io.jannis.propTest.assertions.testresult.testable.testable
 import io.jannis.propTest.gen.monad.monad
 
+/**
+ * Callbacks. Can perform io based on state and results
+ */
 sealed class Callback {
     class PostTest(val kind: CallbackKind, val fn: (State, TestResult) -> IO<Unit>) : Callback()
     class PostFinalFailure(val kind: CallbackKind, val fn: (State, TestResult) -> IO<Unit>) : Callback()
@@ -29,12 +32,15 @@ sealed class CallbackKind {
     object NoCounterexample : CallbackKind()
 }
 
+/**
+ * A single tests result
+ */
 data class TestResult(
-    val ok: Option<Boolean>,
-    val expected: Boolean,
-    val reason: String,
-    val exception: Option<Throwable>,
-    val abort: Boolean,
+    val ok: Option<Boolean>, // Some(true) => success, Some(false) => failure and None => discarded
+    val expected: Boolean, // expected outcome
+    val reason: String, // failure reason
+    val exception: Option<Throwable>, // thrown exception
+    val abort: Boolean, // if true aborts testing hereafter
     val optionNumOfTests: Option<Int>,
     val optionCheckCoverage: Option<Confidence>,
     val labels: List<String>,
@@ -58,7 +64,10 @@ typealias RoseKindedJ<A> = io.kindedj.Hk<ForRose, A>
 inline fun <A> RoseOf<A>.fix(): Rose<A> =
     this as Rose<A>
 
-
+/**
+ * Recursive data structure.
+ * At every level keeps both the current tested value and (lazily) the shrunk values
+ */
 sealed class Rose<A> : RoseOf<A> {
     class MkRose<A>(val res: A, val shrunk: Sequence<Rose<A>>) : Rose<A>()
     class IORose<A>(val ioRose: IO<Rose<A>>) : Rose<A>()
@@ -103,10 +112,16 @@ interface RoseMonad : Monad<ForRose> {
     }
 }
 
+/**
+ * wrap an IO with results safely
+ */
 fun ioRose(rose: IO<Rose<TestResult>>): Rose<TestResult> = Rose.IORose(
     protectRose(rose)
 )
 
+/**
+ * catch exceptions in io code and fail the test if necessary
+ */
 fun protectRose(rose: IO<Rose<TestResult>>): IO<Rose<TestResult>> = rose.handleError {
     Rose.just(
         failed(
@@ -116,11 +131,17 @@ fun protectRose(rose: IO<Rose<TestResult>>): IO<Rose<TestResult>> = rose.handleE
     )
 }
 
+/**
+ * apply a function on a roses content
+ */
 fun <A> onRose(rose: Rose<A>, f: (A, Sequence<Rose<A>>) -> Rose<A>): Rose<A> = when (rose) {
     is Rose.MkRose -> f(rose.res, rose.shrunk)
     is Rose.IORose -> Rose.IORose(rose.ioRose.map { onRose(it, f) })
 }
 
+/**
+ * catch exceptions in io code and fail if necessary
+ */
 fun protectResult(io: IO<TestResult>): IO<TestResult> = io.handleError {
     failed(
         reason = "Exception",
@@ -128,6 +149,9 @@ fun protectResult(io: IO<TestResult>): IO<TestResult> = io.handleError {
     )
 }
 
+/**
+ * wrap internal roses with ioRose and install error handlers
+ */
 fun protectResults(rose: Rose<TestResult>): Rose<TestResult> = onRose(rose) { x, rs ->
     Rose.IORose(
         IO.monad().binding {
@@ -137,11 +161,17 @@ fun protectResults(rose: Rose<TestResult>): Rose<TestResult> = onRose(rose) { x,
     )
 }
 
+/**
+ * "Execute" a rose by reducing it as far as possible
+ */
 fun reduceRose(rose: Rose<TestResult>): IO<Rose<TestResult>> = when (rose) {
     is Rose.IORose -> rose.ioRose.flatMap(::reduceRose)
     is Rose.MkRose -> IO.just(rose)
 }
 
+/**
+ * join two roses
+ */
 fun <A> joinRose(rose: Rose<Rose<A>>): Rose<A> = when (rose) {
     is Rose.IORose -> Rose.IORose(rose.ioRose.map(::joinRose))
     is Rose.MkRose -> when (rose.res) {
@@ -207,28 +237,45 @@ fun rejected(): TestResult = TestResult(
     callbacks = emptyList()
 )
 
-
 fun liftBoolean(bool: Boolean): TestResult = if (bool) succeeded() else failed(
     reason = "Falsifiable"
 )
 
+/**
+ * Map over the test result of a property and protect the results with error handlers
+ */
 fun <A> Testable<A>.mapResult(f: (TestResult) -> TestResult): (A) -> Property =
     mapRoseResult { protectResults(it.map(f)) }
 
+/**
+ * Map over the test result of a property. f must be total
+ */
 fun <A> Testable<A>.mapTotalResult(f: (TestResult) -> TestResult): (A) -> Property =
     mapRoseResult { it.map(f) }
 
+/**
+ * Map over a rose containing the TestResult, f must be total
+ */
 fun <A> Testable<A>.mapRoseResult(f: (Rose<TestResult>) -> Rose<TestResult>): (A) -> Property =
     mapProp { Prop(f(it.unProp)) }
 
+/**
+ * map over a Prop (wrapper around rose). f must be total
+ */
 fun <A> Testable<A>.mapProp(f: (Prop) -> Prop): (A) -> Property = { a ->
     Property(a.property().unProperty.map(f))
 }
 
+/**
+ * Map over the size of a generator used with the property. Calling Gen.scale(f)
+ */
 fun <A> Testable<A>.mapSize(f: (Int) -> Int): (A) -> Property = { a ->
     Property(a.property().unProperty.scale(f))
 }
 
+/**
+ * enable shrinking in a property
+ */
 fun <A, B> Testable<A>.shrinking(shrink: (B) -> Sequence<B>, arg: B, pf: (B) -> A): Property {
     fun props(b: B, alreadyTested: Set<B>): Rose<Gen<Prop>> = Rose.MkRose(
         pf(b).property().unProperty,
@@ -239,11 +286,17 @@ fun <A, B> Testable<A>.shrinking(shrink: (B) -> Sequence<B>, arg: B, pf: (B) -> 
     return Property(props(arg, setOf(arg)).promote(Rose.monad()).map { Prop(joinRose(it.fix().map { it.unProp })) })
 }
 
+/**
+ * disable shrinking in a property by just supplying empty sequences
+ */
 fun <A> Testable<A>.noShrinking(): (A) -> Property =
     mapRoseResult {
         onRose(it) { res, _ -> Rose.MkRose(res, emptySequence()) }
     }
 
+/**
+ * print out a counterexample on failure
+ */
 fun <A> Testable<A>.counterexample(s: String): (A) -> Property =
     Property.testable().mapTotalResult { res ->
         TestResult(
@@ -261,12 +314,15 @@ fun <A> Testable<A>.counterexample(s: String): (A) -> Property =
             tables = res.tables,
             callbacks = res.callbacks
         )
-    }.compose(callback(Callback.PostFinalFailure(CallbackKind.Counterexample) { st, res ->
+    }.compose(callback(Callback.PostFinalFailure(CallbackKind.Counterexample) { st, _ ->
         st.output.update {
             it + s + "\n"
         }.fix()
     }))
 
+/**
+ * expect the property to fail
+ */
 fun <A> Testable<A>.expectFailure(): (A) -> Property =
     mapTotalResult { res ->
         TestResult(
@@ -286,6 +342,9 @@ fun <A> Testable<A>.expectFailure(): (A) -> Property =
         )
     }
 
+/**
+ * Abort after one execution
+ */
 fun <A> Testable<A>.once(): (A) -> Property =
     mapTotalResult { res ->
         TestResult(
@@ -305,6 +364,9 @@ fun <A> Testable<A>.once(): (A) -> Property =
         )
     }
 
+/**
+ * Continue to execute test if needed
+ */
 fun <A> Testable<A>.again(): (A) -> Property =
     mapTotalResult { res ->
         TestResult(
@@ -324,6 +386,9 @@ fun <A> Testable<A>.again(): (A) -> Property =
         )
     }
 
+/**
+ * Change the maximum tested amount
+ */
 fun <A> Testable<A>.withMaxSuccess(maxSuccess: Int): (A) -> Property =
     mapTotalResult { res ->
         TestResult(
@@ -343,6 +408,10 @@ fun <A> Testable<A>.withMaxSuccess(maxSuccess: Int): (A) -> Property =
         )
     }
 
+/**
+ * enable coverage checks
+ * Without tests will not fail (only print warnings) when coverage is not satisfied. Using this will make tests fail
+ */
 fun <A> Testable<A>.checkCoverage(confidence: Confidence = Confidence()): (A) -> Property =
     mapTotalResult { res ->
         TestResult(
@@ -362,6 +431,9 @@ fun <A> Testable<A>.checkCoverage(confidence: Confidence = Confidence()): (A) ->
         )
     }
 
+/**
+ * Append a label to a test case
+ */
 fun <A> Testable<A>.label(label: String): (A) -> Property =
     mapTotalResult { res ->
         TestResult(
@@ -381,9 +453,15 @@ fun <A> Testable<A>.label(label: String): (A) -> Property =
         )
     }
 
+/**
+ * implicitly label all cases
+ */
 fun <A, B> Testable<A>.collect(b: B, showB: Show<B> = Show.any()): (A) -> Property =
     label(showB.run { b.show() })
 
+/**
+ * classify tests based on some boolean value
+ */
 fun <A> Testable<A>.classify(bool: Boolean, label: String): (A) -> Property =
     if (!bool) { a: A -> a.property() }
     else mapTotalResult { res ->
@@ -404,6 +482,9 @@ fun <A> Testable<A>.classify(bool: Boolean, label: String): (A) -> Property =
         )
     }
 
+/**
+ * add required coverage based on a boolean prop for a specific label
+ */
 fun <A> Testable<A>.cover(p: Double, bool: Boolean, label: String): (A) -> Property =
     Property.testable().mapTotalResult { res ->
         TestResult(
@@ -423,6 +504,9 @@ fun <A> Testable<A>.cover(p: Double, bool: Boolean, label: String): (A) -> Prope
         )
     }.compose(classify(bool, label))
 
+/**
+ * tabulate data
+ */
 fun <A> Testable<A>.tabulate(key: String, values: List<String>): (A) -> Property =
     mapTotalResult { res ->
         TestResult(
@@ -442,6 +526,9 @@ fun <A> Testable<A>.tabulate(key: String, values: List<String>): (A) -> Property
         )
     }
 
+/**
+ * add required coverage based on tables
+ */
 fun <A> Testable<A>.coverTable(key: String, values: List<Tuple2<String, Double>>): (A) -> Property =
     mapTotalResult { res ->
         TestResult(
@@ -461,8 +548,9 @@ fun <A> Testable<A>.coverTable(key: String, values: List<Tuple2<String, Double>>
         )
     }
 
-
-
+/**
+ * append a callback to the property
+ */
 fun <A> Testable<A>.callback(cb: Callback): (A) -> Property =
     mapTotalResult { res ->
         TestResult(
@@ -482,21 +570,36 @@ fun <A> Testable<A>.callback(cb: Callback): (A) -> Property =
         )
     }
 
+/**
+ * execute some code when a test fails
+ */
 fun <A> Testable<A>.whenFail(f: () -> Unit): (A) -> Property =
     whenFailIO(IO { f() })
 
+/**
+ * execute some io code when a test fails
+ */
 fun <A> Testable<A>.whenFailIO(f: IO<Unit>): (A) -> Property =
     callback(Callback.PostFinalFailure(CallbackKind.NoCounterexample) { _, _ -> f })
 
+/**
+ * execute some code on every failure (not just the last one)
+ */
 fun <A> Testable<A>.whenFailEvery(f: () -> Unit): (A) -> Property =
     whenFailEveryIO(IO { f() })
 
+/**
+ * execute some io code on every failure (not just the last one)
+ */
 fun <A> Testable<A>.whenFailEveryIO(f: IO<Unit>): (A) -> Property =
     callback(Callback.PostTest(CallbackKind.NoCounterexample) { _, res ->
         if (res.ok == false.some()) f
         else IO.unit
     })
 
+/**
+ * append a lot more output
+ */
 fun <A> Testable<A>.verbose(): (A) -> Property {
     fun status(res: TestResult): String = when (res.ok) {
         true.some() -> "Passed"
@@ -538,6 +641,9 @@ fun <A> Testable<A>.verbose(): (A) -> Property {
     }
 }
 
+/**
+ * append shrinking output as well
+ */
 fun <A> Testable<A>.verboseShrinking(): (A) -> Property {
     fun newCb(cbs: List<Callback>): Callback = Callback.PostTest(CallbackKind.Counterexample) { st, res ->
         if (res.ok == false.some())
@@ -574,18 +680,28 @@ fun <A> Testable<A>.verboseShrinking(): (A) -> Property {
     }
 }
 
-// ==>
+/**
+ * discared data based on boolean
+ */
 fun <A> Testable<A>.assert(bool: Boolean): (A) -> Property =
     if (bool) { a: A -> a.property() }
     else { a: A -> TestResult.testable().run { rejected().property() } }
 
-// --------
+/**
+ * run a test with a given generator and without shrinking
+ */
 fun <A, B> Testable<A>.forAll(genB: Gen<B>, showB: Show<B> = Show.any()): ((B) -> A) -> Property =
     forAllShrink(genB, showB) { emptySequence() }
 
+/**
+ * run a test without printing a counterexample on failure
+ */
 fun <A, B> Testable<A>.forAllBlind(genB: Gen<B>): ((B) -> A) -> Property =
     forAllShrinkBlind(genB) { emptySequence() }
 
+/**
+ * run a test with shrinking
+ */
 fun <A, B> Testable<A>.forAllShrink(
     genB: Gen<B>,
     showB: Show<B> = Show.any(),
@@ -593,6 +709,9 @@ fun <A, B> Testable<A>.forAllShrink(
 ): ((B) -> A) -> Property =
     forAllShrinkShow(genB, shrinkerB, { showB.run { it.show() } })
 
+/**
+ * run a test with shrinking and a specific show function
+ */
 fun <A, B> Testable<A>.forAllShrinkShow(
     genB: Gen<B>,
     shrinkerB: (B) -> Sequence<B>,
@@ -603,6 +722,9 @@ fun <A, B> Testable<A>.forAllShrinkShow(
     }
 }
 
+/**
+ * run a test with shrinking but without showing a counterexample
+ */
 fun <A, B> Testable<A>.forAllShrinkBlind(
     genB: Gen<B>,
     shrinkerB: (B) -> Sequence<B>
@@ -616,24 +738,42 @@ fun <A, B> Testable<A>.forAllShrinkBlind(
     )
 }
 
+/**
+ * Helper that looks up instances based on generics
+ */
 inline fun <A, reified B: Any>Testable<A>.forAll(arbB: Arbitrary<B> = defArbitrary(), showB: Show<B> = defShow()): ((B) -> A) -> Property =
     forAll(arbB.arbitrary(), showB)
 
+/**
+ * Helper that looks up instances based on generics
+ */
 inline fun <A, reified B: Any>Testable<A>.forAllBlind(arbB: Arbitrary<B> = defArbitrary()): ((B) -> A) -> Property =
     forAllBlind(arbB.arbitrary())
 
+/**
+ * Helper that looks up instances based on generics
+ */
 inline fun <A, reified B: Any>Testable<A>.forAllShrink(arbB: Arbitrary<B> = defArbitrary(), showB: Show<B> = defShow()): ((B) -> A) -> Property =
         forAllShrink(arbB.arbitrary(), showB) { arbB.shrink(it) }
 
+/**
+ * Helper that looks up instances based on generics
+ */
 inline fun <A, reified B: Any>Testable<A>.forAllShrinkBlind(arbB: Arbitrary<B> = defArbitrary()): ((B) -> A) -> Property =
     forAllShrinkBlind(arbB.arbitrary()) { arbB.shrink(it) }
 
+/**
+ * test an io property (does not shrink)
+ */
 fun <A> Testable<A>.ioProperty(): (IO<A>) -> Property = { io: IO<A> ->
     Property.testable().idempotentIOProperty().invoke(
         io.map { noShrinking().invoke(it) }
     )
 }
 
+/**
+ * test an io property with shrinking
+ */
 fun <A> Testable<A>.idempotentIOProperty(): (IO<A>) -> Property = { ioA: IO<A> ->
     Property(
         ioA.map {

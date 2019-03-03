@@ -65,6 +65,11 @@ import java.lang.reflect.ParameterizedType
 import java.lang.reflect.Type
 import java.lang.reflect.WildcardType
 
+/**
+ * This file is super ugly codewise, it does however work and can recursively lookup instances even with generics
+ * This makes having to define (at least the standart ones) arbitrary instances unnecessary
+ */
+
 // ------------------ Show
 
 fun <A : Any> lookupShow(qualifiedName: String): Show<A> = when (qualifiedName) {
