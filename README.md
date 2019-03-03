@@ -150,8 +150,8 @@ fun binaryTreeGen(): Gen<BinaryTree> = Gen.sized { size ->
     )
 }
 ```
-This example generates binary-trees based with a maximum depth based on the size parameter.
-> This is using the amazing fp library [arrow](https://arrow-kt.io/) for `binding`. This is not necessary, it will ease creation of nested `Gen`s and lots of other more complex generators.
+This example generates binary-trees based with a maximum depth based on the size parameter. Using `Gen.frequency` the chance of getting a `Branch` instead of a `Leaf` is adjusted.
+> This is using the amazing fp library [arrow](https://arrow-kt.io/) for `binding`. This is not necessary, it will however ease creation of nested `Gen`s and lots of other more complex generators.
 
 ## Running these tests with a test runner
 
@@ -175,19 +175,19 @@ class TestSpec : StringSpec({
 
 First of all: If you are using [arrow-kt](https://arrow-kt.io/) everything is good. There are plenty of instances already defined for arrows data-types.
 
-If not then don't worry. The entire api is can be used without even touching upon arrows datatypes and there are overloads specifically to avoid those types.
-> Except Option but I don't think that will be a problem
+If not then don't worry. The entire api can be used without ever touching upon arrows datatypes and there are overloads specifically to avoid those cases if they do come up.
+> That is excluding Option but I don't think that will be a problem
 
 ## Kotlintest generators vs propCheck
 Kotlintest already includes some means of property based testing. However their data-types and reflection-lookups are severly limited. The reason I ported quickcheck over is because it is built upon lawful instances for its datatypes and features a much richer set of methods. This makes testing with propCheck much easier and much more powerful.
 
-> There is however a helper method to convert a `Arbitrary<A>` to a kotlintest `Gen<A>`. That approach is somewhat limit tho. So don't expect them to be equal.
+> There is however a helper method to convert a `Arbitrary<A>` to a kotlintest `Gen<A>`. That approach is somewhat limited though. So don't expect them to be equal.
 
 ## Feedback
 `propCheck` is still in its early days so if you notice bugs or think something can be improved please create issues or shoot me a pull request. All feedback is highly appreciated.
 
-### Credits
-At this point I'd like to thank the `arrow-kt` creators and maintainers as this library would not have been possible without them. The same goes for [quickcheck](https://github.com/nick8325/quickcheck) which `propCheck` is based on.
+## Credits
+At this point I'd like to thank the [arrow-kt](https://arrow-kt.io/) creators and maintainers as this library would not have been possible without them. The same goes for [quickcheck](https://github.com/nick8325/quickcheck) which `propCheck` is based on.
 
 ---
 
@@ -305,7 +305,7 @@ Variant of `whenFailEvery` that takes an `IO<Unit>` instead of a function.
 
 #### callback
 
-Attach a callback to a test case. More info on callbacks [here]()
+Attach a callback to a test case.
 
 #### label
 
@@ -337,12 +337,12 @@ Attach a label to a test case if it holds a condition
 propCheck {
     forAll { i: Int ->
         classify(
-            i == 0,
-            "zero",
+            i == 0, // condition
+            "zero", // label
             classify(
-                i != 0,
-                "non zero",
-                i + i == 2 * i
+                i != 0, // condition
+                "non zero", // label
+                i + i == 2 * i // test
             )
         )
     }
@@ -381,15 +381,14 @@ propCheck {
     forAll { i: Int ->
         tabulate(
             "Data",
-            listOf("Some label", i.toString()),
+            listOf(i.toString()),
             i + i == 2 * i
         )
     }
 }
 // prints something like this =>
 +++ OK, passed 100 tests.
-Data (200 in total)
-50,00% Some label
+Data (100 in total)
 3,00% -2
 2,00% 2
 2,00% 9
@@ -572,7 +571,7 @@ This is a list of types that have predefined instances for `Arbitrary` and thus 
 * `Array<T>` -> `arrayArb()` // Cannot be infered by `defArbitrary` atm
 
 #### Collections
-The `K` variants are `arrow` wrappers. They are isomorphic to their non-k variants and can be used as such. That is every `ListK` is a `List`
+The `K` variants are `arrow` wrappers. They are isomorphic to their non-k variants and can be used as such. That is to say: Every `ListK` is a `List`
 * `List<A>` -> `ListK.arbitrary()`
 * `Set<A>` -> `SetK.arbitrary()`
 * `Map<A>` -> `MapK.arbitrary()`
