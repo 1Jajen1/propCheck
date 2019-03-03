@@ -426,7 +426,7 @@ fun runATest(state: State, prop: Property): IO<Result> = IO.monad().binding {
             cont(
                 State.numSuccessTests.modify(
                     State.numRecentlyDiscardedTests.set(
-                        State.randomSeed.set(state, rand2),
+                        State.randomSeed.set(newState, rand2),
                         0
                     )
                 ) { it + 1 },
@@ -468,7 +468,7 @@ fun runATest(state: State, prop: Property): IO<Result> = IO.monad().binding {
             cont(
                 State.numDiscardedTests.modify(
                     State.numRecentlyDiscardedTests.modify(
-                        State.randomSeed.set(state, rand2)
+                        State.randomSeed.set(newState, rand2)
                     ) { it + 1 }
                 ) { it + 1 }, ::giveUpTesting
             )

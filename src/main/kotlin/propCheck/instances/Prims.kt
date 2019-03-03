@@ -169,7 +169,7 @@ val byteArrayArb = object : Arbitrary<ByteArray> {
     }, ListK.arbitrary(Byte.arbitrary())).invoke(fail)
 }
 
-val booleanArrrayArb = object : Arbitrary<BooleanArray> {
+val booleanArrayArb = object : Arbitrary<BooleanArray> {
     val booleanArb = Boolean.arbitrary()
     override fun arbitrary(): Gen<BooleanArray> = Gen.sized {
         Gen.monad().binding {

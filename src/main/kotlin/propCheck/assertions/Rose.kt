@@ -356,8 +356,8 @@ inline fun <reified A> withMaxSuccess(maxSuccess: Int, a: A): Property =
  * Without tests will not fail (only print warnings) when coverage is not satisfied. Using this will make tests fail
  */
 inline fun <reified A> checkCoverage(
-    confidence: Confidence = Confidence(),
-    a: A
+    a: A,
+    confidence: Confidence = Confidence()
 ): Property =
     mapTotalResult({ res ->
         TestResult.optionCheckCoverage.set(res, confidence)
@@ -481,7 +481,7 @@ internal fun status(res: TestResult): String = when (res.ok) {
 internal fun newCb(cbs: List<Callback>): Callback = Callback.PostTest(CallbackKind.Counterexample) { st, res ->
     IO.monad().binding {
         st.output.update {
-            it + status(res) + ":" + "\n"
+            it + status(res) + ": " + res.testCase.joinToString() + "\n"
         }.bind()
         cbs.filter { it is Callback.PostFinalFailure && it.kind == CallbackKind.Counterexample }
             .traverse(IO.applicative()) {
@@ -506,7 +506,7 @@ internal fun newCb2(cbs: List<Callback>): Callback = Callback.PostTest(CallbackK
     if (res.ok == false.some())
         IO.monad().binding {
             st.output.update {
-                it + "Failed:" + "\n"
+                it + "Failed: " + res.testCase.joinToString() + "\n"
             }.bind()
             cbs.filter { it is Callback.PostFinalFailure && it.kind == CallbackKind.Counterexample }
                 .traverse(IO.applicative()) {

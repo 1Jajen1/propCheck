@@ -236,7 +236,7 @@ fun <A : Any> lookupArby(qualifiedName: String): Arbitrary<A> = when (qualifiedN
     FloatArray::class.qualifiedName, FloatArray::class.java.name -> floatArrayArb
     DoubleArray::class.qualifiedName, DoubleArray::class.java.name -> doubleArrayArb
     ByteArray::class.qualifiedName, ByteArray::class.java.name -> byteArrayArb
-    BooleanArray::class.qualifiedName, BooleanArray::class.java.name -> booleanArrrayArb
+    BooleanArray::class.qualifiedName, BooleanArray::class.java.name -> booleanArrayArb
     ASCIIString::class.qualifiedName, ASCIIString::class.java.name -> ASCIIString.arbitrary()
     UnicodeString::class.qualifiedName, UnicodeString::class.java.name -> UnicodeString.arbitrary()
     else -> throw IllegalStateException("Could not find default arbitrary for $qualifiedName")
