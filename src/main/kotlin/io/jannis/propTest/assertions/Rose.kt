@@ -13,13 +13,10 @@ import arrow.typeclasses.Applicative
 import arrow.typeclasses.Functor
 import arrow.typeclasses.Monad
 import arrow.typeclasses.Show
-import io.jannis.propTest.Arbitrary
-import io.jannis.propTest.Gen
+import io.jannis.propTest.*
 import io.jannis.propTest.assertions.property.testable.testable
 import io.jannis.propTest.assertions.rose.monad.monad
 import io.jannis.propTest.assertions.testresult.testable.testable
-import io.jannis.propTest.defArbitrary
-import io.jannis.propTest.fix
 import io.jannis.propTest.gen.monad.monad
 
 sealed class Callback {
@@ -619,13 +616,13 @@ fun <A, B> Testable<A>.forAllShrinkBlind(
     )
 }
 
-inline fun <A, reified B: Any>Testable<A>.forAll(arbB: Arbitrary<B> = defArbitrary(), showB: Show<B> = Show.any()): ((B) -> A) -> Property =
+inline fun <A, reified B: Any>Testable<A>.forAll(arbB: Arbitrary<B> = defArbitrary(), showB: Show<B> = defShow()): ((B) -> A) -> Property =
     forAll(arbB.arbitrary(), showB)
 
 inline fun <A, reified B: Any>Testable<A>.forAllBlind(arbB: Arbitrary<B> = defArbitrary()): ((B) -> A) -> Property =
     forAllBlind(arbB.arbitrary())
 
-inline fun <A, reified B: Any>Testable<A>.forAllShrink(arbB: Arbitrary<B> = defArbitrary(), showB: Show<B> = Show.any()): ((B) -> A) -> Property =
+inline fun <A, reified B: Any>Testable<A>.forAllShrink(arbB: Arbitrary<B> = defArbitrary(), showB: Show<B> = defShow()): ((B) -> A) -> Property =
         forAllShrink(arbB.arbitrary(), showB) { arbB.shrink(it) }
 
 inline fun <A, reified B: Any>Testable<A>.forAllShrinkBlind(arbB: Arbitrary<B> = defArbitrary()): ((B) -> A) -> Property =

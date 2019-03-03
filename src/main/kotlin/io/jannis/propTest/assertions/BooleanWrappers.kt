@@ -6,6 +6,7 @@ import arrow.typeclasses.Show
 import io.jannis.propTest.Arbitrary
 import io.jannis.propTest.Gen
 import io.jannis.propTest.defArbitrary
+import io.jannis.propTest.defShow
 
 // bool wrappers for easier use
 fun mapResult(f: (TestResult) -> TestResult): (Boolean) -> Property = Boolean.testable().mapResult(f)
@@ -42,7 +43,7 @@ fun <B> forAllShrinkShow(genB: Gen<B>, shrinkerB: (B) -> Sequence<B>, showerB: (
 fun <B> forAllShrinkBlind(genB: Gen<B>, shrinkerB: (B) -> Sequence<B>): ((B) -> Boolean) -> Property = Boolean.testable().forAllShrinkBlind(genB, shrinkerB)
 fun ioProperty(): (IO<Boolean>) -> Property = Boolean.testable().ioProperty()
 fun idempotentIOProperty(): (IO<Boolean>) -> Property = Boolean.testable().idempotentIOProperty()
-inline fun <reified B: Any> forAll(arbB: Arbitrary<B> = defArbitrary(), showB: Show<B> = Show.any()): ((B) -> Boolean) -> Property = Boolean.testable().forAll(arbB, showB)
-inline fun <reified B: Any> forAllShrink(arbB: Arbitrary<B> = defArbitrary(), showB: Show<B> = Show.any()): ((B) -> Boolean) -> Property = Boolean.testable().forAllShrink(arbB, showB)
+inline fun <reified B: Any> forAll(arbB: Arbitrary<B> = defArbitrary(), showB: Show<B> = defShow()): ((B) -> Boolean) -> Property = Boolean.testable().forAll(arbB, showB)
+inline fun <reified B: Any> forAllShrink(arbB: Arbitrary<B> = defArbitrary(), showB: Show<B> = defShow()): ((B) -> Boolean) -> Property = Boolean.testable().forAllShrink(arbB, showB)
 inline fun <reified B: Any> forAllBlind(arbB: Arbitrary<B> = defArbitrary()): ((B) -> Boolean) -> Property = Boolean.testable().forAllBlind(arbB)
 inline fun <reified B: Any> forAllShrinkBlind(arbB: Arbitrary<B> = defArbitrary()): ((B) -> Boolean) -> Property = Boolean.testable().forAllShrinkBlind(arbB)

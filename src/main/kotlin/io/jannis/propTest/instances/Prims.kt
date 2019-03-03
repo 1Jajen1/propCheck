@@ -4,6 +4,7 @@ import arrow.core.toT
 import arrow.data.ListK
 import arrow.data.k
 import io.jannis.propTest.*
+import io.jannis.propTest.gen.monad.monad
 import io.jannis.propTest.instances.listk.arbitrary.arbitrary
 
 interface IntArbitrary : Arbitrary<Int> {
@@ -45,6 +46,13 @@ interface BooleanArbitrary : Arbitrary<Boolean> {
 fun Boolean.Companion.arbitrary(): Arbitrary<Boolean> = object :
     BooleanArbitrary {}
 
+interface ByteArbitrary : Arbitrary<Byte> {
+    override fun arbitrary(): Gen<Byte> = arbitrarySizedByte()
+    override fun shrink(fail: Byte): Sequence<Byte> = shrinkByte(fail)
+}
+
+fun Byte.Companion.arbitrary(): Arbitrary<Byte> = object : ByteArbitrary {}
+
 interface CharArbitrary : Arbitrary<Char> {
     override fun arbitrary(): Gen<Char> = Gen.frequency(
         3 toT arbitraryASCIIChar(),
@@ -84,3 +92,99 @@ interface StringArbitrary : Arbitrary<String> {
 
 fun String.Companion.arbitrary(): Arbitrary<String> = object :
     StringArbitrary {}
+
+// ---------- arrays
+val intArrayArb = object : Arbitrary<IntArray> {
+    val intArb = Int.arbitrary()
+    override fun arbitrary(): Gen<IntArray> = Gen.sized {
+        Gen.monad().binding {
+            IntArray(it) { intArb.arbitrary().bind() }
+        }.fix()
+    }
+    override fun shrink(fail: IntArray): Sequence<IntArray> = shrinkMap({
+        it.toList().k()
+    }, { l ->
+        IntArray(l.size) { l[it] }
+    }, ListK.arbitrary(Int.arbitrary())).invoke(fail)
+}
+
+val longArrayArb = object : Arbitrary<LongArray> {
+    val longArb = Long.arbitrary()
+    override fun arbitrary(): Gen<LongArray> = Gen.sized {
+        Gen.monad().binding {
+            LongArray(it) { longArb.arbitrary().bind() }
+        }.fix()
+    }
+    override fun shrink(fail: LongArray): Sequence<LongArray> = shrinkMap({
+        it.toList().k()
+    }, { l ->
+        LongArray(l.size) { l[it] }
+    }, ListK.arbitrary(Long.arbitrary())).invoke(fail)
+}
+
+val floatArrayArb = object : Arbitrary<FloatArray> {
+    val floatArb = Float.arbitrary()
+    override fun arbitrary(): Gen<FloatArray> = Gen.sized {
+        Gen.monad().binding {
+            FloatArray(it) { floatArb.arbitrary().bind() }
+        }.fix()
+    }
+    override fun shrink(fail: FloatArray): Sequence<FloatArray> = shrinkMap({
+        it.toList().k()
+    }, { l ->
+        FloatArray(l.size) { l[it] }
+    }, ListK.arbitrary(Float.arbitrary())).invoke(fail)
+}
+
+val doubleArrayArb = object : Arbitrary<DoubleArray> {
+    val doubleArb = Double.arbitrary()
+    override fun arbitrary(): Gen<DoubleArray> = Gen.sized {
+        Gen.monad().binding {
+            DoubleArray(it) { doubleArb.arbitrary().bind() }
+        }.fix()
+    }
+    override fun shrink(fail: DoubleArray): Sequence<DoubleArray> = shrinkMap({
+        it.toList().k()
+    }, { l ->
+        DoubleArray(l.size) { l[it] }
+    }, ListK.arbitrary(Double.arbitrary())).invoke(fail)
+}
+
+val byteArrayArb = object : Arbitrary<ByteArray> {
+    val byteArb = Byte.arbitrary()
+    override fun arbitrary(): Gen<ByteArray> = Gen.sized {
+        Gen.monad().binding {
+            ByteArray(it) { byteArb.arbitrary().bind() }
+        }.fix()
+    }
+    override fun shrink(fail: ByteArray): Sequence<ByteArray> = shrinkMap({
+        it.toList().k()
+    }, { l ->
+        ByteArray(l.size) { l[it] }
+    }, ListK.arbitrary(Byte.arbitrary())).invoke(fail)
+}
+
+val booleanArrrayArb = object : Arbitrary<BooleanArray> {
+    val booleanArb = Boolean.arbitrary()
+    override fun arbitrary(): Gen<BooleanArray> = Gen.sized {
+        Gen.monad().binding {
+            BooleanArray(it) { booleanArb.arbitrary().bind() }
+        }.fix()
+    }
+    override fun shrink(fail: BooleanArray): Sequence<BooleanArray> = shrinkMap({
+        it.toList().k()
+    }, { l ->
+        BooleanArray(l.size) { l[it] }
+    }, ListK.arbitrary(Boolean.arbitrary())).invoke(fail)
+}
+
+fun <A>arrayArb(aA: Arbitrary<A>): Arbitrary<Array<A>> = object : Arbitrary<Array<A>> {
+    override fun arbitrary(): Gen<Array<A>> = ListK.arbitrary(aA).arbitrary().map { l ->
+        Array<Any?>(l.size) { l[it] } as Array<A>
+    }
+    override fun shrink(fail: Array<A>): Sequence<Array<A>> = shrinkMap({
+        it.toList().k()
+    }, { l ->
+        Array<Any?>(l.size) { l[it] } as Array<A>
+    }, ListK.arbitrary(aA)).invoke(fail)
+}

@@ -34,6 +34,7 @@ fun arbitrarySizedPositiveLong(): Gen<Long> = Gen.sized {
 
 fun arbitraryBoundedInt(): Gen<Int> = Gen.chooseAny(Int.random())
 fun arbitraryBoundedLong(): Gen<Long> = Gen.chooseAny(Long.random())
+fun arbitraryBoundedByte(): Gen<Byte> = Gen.chooseAny(Byte.random())
 
 fun arbitrarySizedFloat(): Gen<Float> = Gen.sized { n ->
     Gen.monad().binding {
@@ -49,6 +50,13 @@ fun arbitrarySizedDouble(): Gen<Double> = Gen.sized { n ->
         val a = Gen.choose((-n) * b toT n * b, Long.random()).bind()
         a.toDouble() / b.toDouble()
     }.fix()
+}
+
+fun arbitrarySizedByte(): Gen<Byte> = Gen.sized { n ->
+    Gen.choose(
+        Math.min(-n, Byte.MIN_VALUE.toInt()).toByte() toT Math.max(n, Byte.MAX_VALUE.toInt()).toByte(),
+        Byte.random()
+    )
 }
 
 fun arbitraryASCIIChar(): Gen<Char> =
@@ -88,6 +96,21 @@ fun <A> shrinkList(f: (A) -> Sequence<A>): (List<A>) -> Sequence<List<A>> = { li
     if (list.isEmpty()) emptySequence()
     else shrinkListIt(list) + shrinkOne(list)
 }
+
+fun shrinkByte(fail: Byte): Sequence<Byte> = (
+        (if (fail < 0 && -fail > fail) sequenceOf(-fail) else emptySequence()) +
+                (sequenceOf(0) + iterate({ it / 2 }, fail.toInt()).drop(1)
+                    .map { fail - it }.takeWhile {
+                        when ((it >= 0) toT (fail >= 0)) {
+                            Tuple2(true, true) -> it < fail
+                            Tuple2(false, false) -> it > fail
+                            Tuple2(true, false) -> (it + fail) < 0
+                            Tuple2(false, true) -> (it + fail) > 0
+                            else -> throw IllegalStateException("The impossible happened")
+                        }
+                    }
+                        )
+        ).map { it.toByte() } // safe because shrinking only makes things smaller and we start with a byte anyway
 
 fun shrinkInt(fail: Int): Sequence<Int> = (
         (if (fail < 0 && -fail > fail) sequenceOf(-fail) else emptySequence()) +

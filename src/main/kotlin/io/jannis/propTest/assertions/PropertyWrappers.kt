@@ -7,6 +7,7 @@ import io.jannis.propTest.Arbitrary
 import io.jannis.propTest.Gen
 import io.jannis.propTest.assertions.property.testable.testable
 import io.jannis.propTest.defArbitrary
+import io.jannis.propTest.defShow
 
 // bool wrappers for easier use
 fun mapResultP(f: (TestResult) -> TestResult): (Property) -> Property = Property.testable().mapResult(f)
@@ -43,7 +44,7 @@ fun <B> forAllShrinkShowP(genB: Gen<B>, shrinkerB: (B) -> Sequence<B>, showerB: 
 fun <B> forAllShrinkBlindP(genB: Gen<B>, shrinkerB: (B) -> Sequence<B>): ((B) -> Property) -> Property = Property.testable().forAllShrinkBlind(genB, shrinkerB)
 fun ioPropertyP(): (IO<Property>) -> Property = Property.testable().ioProperty()
 fun idempotentIOPropertyP(): (IO<Property>) -> Property = Property.testable().idempotentIOProperty()
-inline fun <reified B: Any> forAllP(arbB: Arbitrary<B> = defArbitrary(), showB: Show<B> = Show.any()): ((B) -> Property) -> Property = Property.testable().forAll(arbB, showB)
-inline fun <reified B: Any> forAllShrinkP(arbB: Arbitrary<B> = defArbitrary(), showB: Show<B> = Show.any()): ((B) -> Property) -> Property = Property.testable().forAllShrink(arbB, showB)
+inline fun <reified B: Any> forAllP(arbB: Arbitrary<B> = defArbitrary(), showB: Show<B> = defShow()): ((B) -> Property) -> Property = Property.testable().forAll(arbB, showB)
+inline fun <reified B: Any> forAllShrinkP(arbB: Arbitrary<B> = defArbitrary(), showB: Show<B> = defShow()): ((B) -> Property) -> Property = Property.testable().forAllShrink(arbB, showB)
 inline fun <reified B: Any> forAllBlindP(arbB: Arbitrary<B> = defArbitrary()): ((B) -> Property) -> Property = Property.testable().forAllBlind(arbB)
 inline fun <reified B: Any> forAllShrinkBlindP(arbB: Arbitrary<B> = defArbitrary()): ((B) -> Property) -> Property = Property.testable().forAllShrinkBlind(arbB)
