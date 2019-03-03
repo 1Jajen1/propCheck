@@ -5,12 +5,14 @@ import arrow.core.toT
 import arrow.data.Nel
 import arrow.test.laws.MonadLaws
 import arrow.typeclasses.Eq
-import propCheck.assertions.forAllP
+import propCheck.assertions.Property
+import propCheck.assertions.forAll
 import propCheck.assertions.idempotentIOProperty
 import propCheck.gen.monad.monad
 
 class GenSpec : LawSpec() {
     init {
+        println(Property::class.qualifiedName)
         testLaws(
             MonadLaws.laws(
                 Gen.monad(),
@@ -22,8 +24,8 @@ class GenSpec : LawSpec() {
 
         "Gen.resize should work" {
             propCheck {
-                forAllP<NonNegative<Int>>().invoke { (i) ->
-                    idempotentIOProperty().invoke(
+                forAll { (i): NonNegative<Int> ->
+                    idempotentIOProperty(
                         Gen.getSize().resize(i).generate().map { it == i }
                     )
                 }
@@ -33,9 +35,9 @@ class GenSpec : LawSpec() {
         "Gen.scale should work" {
             // TODO redo when generating functions is done
             propCheck {
-                forAllP<Tuple2<NonNegative<Int>, Positive<Int>>>().invoke { (iP, jP) ->
+                forAll { (iP, jP): Tuple2<NonNegative<Int>, Positive<Int>> ->
                     val (i) = iP; val (j) = jP
-                    idempotentIOProperty().invoke(
+                    idempotentIOProperty(
                         Gen.getSize().scale { it + j }.resize(i).generate().map { it == i + j }
                     )
                 }
@@ -84,8 +86,8 @@ class GenSpec : LawSpec() {
 
         "Gen.listOf should generate lists of size 0 to i" {
             propCheck {
-                forAllP<NonNegative<Int>>().invoke { (i) ->
-                    idempotentIOProperty().invoke(
+                forAll { (i): NonNegative<Int> ->
+                    idempotentIOProperty(
                         arbitrarySizedByte().listOf().resize(i).generate().map { it.size <= i }
                     )
                 }
@@ -94,8 +96,8 @@ class GenSpec : LawSpec() {
 
         "Gen.nelOf should generate Nonemptylists of size 1 to i" {
             propCheck {
-                forAllP<Positive<Int>>().invoke { (i) ->
-                    idempotentIOProperty().invoke(
+                forAll { (i): Positive<Int> ->
+                    idempotentIOProperty(
                         arbitrarySizedByte().nelOf().resize(i).generate().map { it.size <= i }
                     )
                 }
@@ -104,8 +106,8 @@ class GenSpec : LawSpec() {
 
         "Gen.vectorOf should generate lists of size n" {
             propCheck {
-                forAllP<NonNegative<Int>>().invoke { (i) ->
-                    idempotentIOProperty().invoke(
+                forAll { (i): NonNegative<Int> ->
+                    idempotentIOProperty(
                         arbitrarySizedByte().vectorOf(i).generate().map { it.size == i }
                     )
                 }
@@ -114,8 +116,8 @@ class GenSpec : LawSpec() {
 
         "Gen.sized should work" {
             propCheck {
-                forAllP<NonNegative<Int>>().invoke { (i) ->
-                    idempotentIOProperty().invoke(
+                forAll { (i): NonNegative<Int> ->
+                    idempotentIOProperty(
                         Gen.sized { Gen.getSize().resize(it) }.resize(i).generate().map { it == i }
                     )
                 }
@@ -124,8 +126,8 @@ class GenSpec : LawSpec() {
 
         "Gen.getSize should work" {
             propCheck {
-                forAllP<NonNegative<Int>>().invoke { (i) ->
-                    idempotentIOProperty().invoke(
+                forAll { (i): NonNegative<Int> ->
+                    idempotentIOProperty(
                         Gen.getSize().resize(i).generate().map { it == i }
                     )
                 }
@@ -134,10 +136,10 @@ class GenSpec : LawSpec() {
 
         "Gen.choose should work" {
             propCheck {
-                forAllP<Tuple2<Int, Int>>().invoke { (a, b) ->
+                forAll { (a, b): Tuple2<Int, Int> ->
                     val l = Math.min(a, b);
                     val u = Math.max(a, b)
-                    idempotentIOProperty().invoke(
+                    idempotentIOProperty(
                         Gen.choose(l toT u, Int.random()).generate().map { it in l..u }
                     )
                 }
@@ -146,8 +148,8 @@ class GenSpec : LawSpec() {
 
         "Gen.elements should return elemets of a given list" {
             propCheck {
-                forAllP<Nel<Int>>().invoke { l ->
-                    idempotentIOProperty().invoke(
+                forAll { l: Nel<Int> ->
+                    idempotentIOProperty(
                         Gen.elements(*l.all.toTypedArray()).generate().map { l.contains(it) }
                     )
                 }
@@ -156,8 +158,8 @@ class GenSpec : LawSpec() {
 
         "Gen.sublistOf should return only sublists" {
             propCheck {
-                forAllP<List<Int>>().invoke { l ->
-                    idempotentIOProperty().invoke(
+                forAll { l: List<Int> ->
+                    idempotentIOProperty(
                         Gen.sublistOf(l).generate().map { it.map { l.contains(it) }.fold(true) { acc, v -> acc && v } }
                     )
                 }
@@ -166,8 +168,8 @@ class GenSpec : LawSpec() {
 
         "Gen.shuffle should create permutations of a list" {
             propCheck {
-                forAllP<List<Int>>().invoke { l ->
-                    idempotentIOProperty().invoke(
+                forAll { l: List<Int> ->
+                    idempotentIOProperty(
                         Gen.shuffle(l).generate().map { it.containsAll(l) }
                     )
                 }

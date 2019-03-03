@@ -20,11 +20,8 @@ import arrow.effects.extensions.io.monad.monad
 import arrow.effects.extensions.io.monadDefer.monadDefer
 import arrow.effects.fix
 import arrow.extension
-import arrow.typeclasses.Show
 import org.apache.commons.math3.special.Erf
-import propCheck.Arbitrary
 import propCheck.Gen
-import propCheck.assertions.property.testable.testable
 import propCheck.assertions.testresult.testable.testable
 import propCheck.fix
 import propCheck.gen.monad.monad
@@ -135,11 +132,11 @@ data class Confidence(
     val tolerance: Double = 0.9
 )
 
-inline class Property(val unProperty: Gen<Prop>) {
+data class Property(val unProperty: Gen<Prop>) {
     companion object
 }
 
-inline class Prop(val unProp: Rose<TestResult>)
+data class Prop(val unProp: Rose<TestResult>)
 
 /**
  * Base interface for testable data
@@ -164,31 +161,12 @@ interface TestResultTestable : Testable<TestResult> {
 }
 
 @extension
-interface GenTestable<A> : Testable<Gen<A>> {
-    fun TA(): Testable<A>
-    override fun Gen<A>.property(): Property = Property(
-        Gen.monad().binding {
-            TA().again().invoke(this@property.bind()).unProperty.bind()
-        }.fix()
-    )
-}
-
-@extension
 interface PropertyTestable : Testable<Property> {
     override fun Property.property(): Property = Property(
         Gen.monad().binding {
             this@property.unProperty.bind()
         }.fix()
     )
-}
-
-@extension
-interface Function1Testable<I, O> : Testable<Function1<I, O>> {
-    fun SA(): Show<I>
-    fun AA(): Arbitrary<I>
-    fun TO(): Testable<O>
-    override fun Function1<I, O>.property(): Property =
-            TO().forAllShrink(AA().arbitrary(), SA(), { AA().shrink(it) }).invoke(this.f)
 }
 
 /**
@@ -832,7 +810,7 @@ fun addCoverageCheck(confidence: Confidence, state: State, prop: Property): Prop
                     confidence,
                     tot, n, p
                 )
-            }.fold(true) { acc, v -> acc && v } -> Property.testable().once().invoke(prop)
+            }.fold(true) { acc, v -> acc && v } -> once(prop)
             allCov.map { (_, _, tot, n, p) ->
                 insufficientlyCovered(
                     confidence.certainty.some(),
@@ -842,7 +820,7 @@ fun addCoverageCheck(confidence: Confidence, state: State, prop: Property): Prop
                 val (labels, tables) = labelsAndTables(state)
                 listOf(labels, tables).filter { it.isNotEmpty() }.map { it.joinToString("") }
                     .foldRight(TestResult.testable().run { failed("Insufficient coverage").property() }) { v, acc ->
-                        Property.testable().counterexample(v).invoke(acc)
+                        counterexample(v, acc)
                     }
             }
             else -> prop
