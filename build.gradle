@@ -8,6 +8,9 @@ buildscript {
 }
 plugins {
     id 'org.jetbrains.kotlin.jvm' version '1.3.11'
+    id "com.github.johnrengelman.shadow" version "2.0.2"
+    id 'maven-publish'
+    id "com.jfrog.bintray" version "1.8.0"
 }
 
 repositories {
@@ -48,11 +51,27 @@ dependencies {
     testImplementation "io.arrow-kt:arrow-test:$arrow_version" // test helpers
 }
 
+task sourcesJar(type: Jar, dependsOn: classes) {
+    classifier = 'sources'
+    from sourceSets.main.allSource, 'build/generated/source/kapt/main', 'build/generated/source/kaptKotlin/main'
+}
+
+publishing {
+    publications {
+        MyPublication(MavenPublication) {
+            artifact shadowJar
+            groupId 'propCheck'
+            artifactId 'propCheck-kt'
+            version '1.0-SNAPSHOT'
+        }
+    }
+}
+
 bintray {
     publish = true
     user = System.getenv('BINTRAY_USER')
     key = System.getenv('BINTRAY_KEY')
-    configurations = ['archives']
+    publications = ['MyPublication']
     pkg {
         repo = 'propCheck-kt'
         name = 'propCheck-kt'
@@ -74,4 +93,11 @@ compileKotlin {
 }
 compileTestKotlin {
     kotlinOptions.jvmTarget = "1.8"
+}
+
+
+def artifactID = "propCheck-kt"
+shadowJar {
+    baseName = artifactID
+    classifier = null
 }
