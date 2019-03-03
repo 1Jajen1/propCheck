@@ -9,6 +9,7 @@ import arrow.effects.extensions.io.applicativeError.handleError
 import arrow.effects.extensions.io.monad.monad
 import arrow.effects.fix
 import arrow.extension
+import arrow.optics.optics
 import arrow.typeclasses.Applicative
 import arrow.typeclasses.Functor
 import arrow.typeclasses.Monad
@@ -35,6 +36,7 @@ sealed class CallbackKind {
 /**
  * A single tests result
  */
+@optics
 data class TestResult(
     val ok: Option<Boolean>, // Some(true) => success, Some(false) => failure and None => discarded
     val expected: Boolean, // expected outcome
@@ -189,39 +191,7 @@ fun <A> joinRose(rose: Rose<Rose<A>>): Rose<A> = when (rose) {
     }
 }
 
-fun succeeded(): TestResult = TestResult(
-    ok = true.some(),
-    expected = true,
-    reason = "",
-    classes = emptyList(),
-    labels = emptyList(),
-    abort = false,
-    exception = none(),
-    optionCheckCoverage = none(),
-    optionNumOfTests = none(),
-    requiredCoverage = emptyList(),
-    testCase = emptyList(),
-    tables = emptyList(),
-    callbacks = emptyList()
-)
-
-fun failed(reason: String, exception: Option<Throwable> = none()): TestResult = TestResult(
-    ok = false.some(),
-    expected = true,
-    reason = reason,
-    classes = emptyList(),
-    labels = emptyList(),
-    abort = false,
-    exception = exception,
-    optionCheckCoverage = none(),
-    optionNumOfTests = none(),
-    requiredCoverage = emptyList(),
-    testCase = emptyList(),
-    tables = emptyList(),
-    callbacks = emptyList()
-)
-
-fun rejected(): TestResult = TestResult(
+internal fun defaultRes(): TestResult = TestResult(
     ok = none(),
     expected = true,
     reason = "",
@@ -236,6 +206,17 @@ fun rejected(): TestResult = TestResult(
     tables = emptyList(),
     callbacks = emptyList()
 )
+
+fun succeeded(): TestResult = TestResult.ok.set(defaultRes(), true)
+
+fun failed(reason: String, exception: Option<Throwable> = none()): TestResult =
+    TestResult.optionException.set(
+        TestResult.reason.set(
+            TestResult.ok.set(defaultRes(), false), reason
+        ), exception
+    )
+
+fun rejected(): TestResult = TestResult.optionOk.set(defaultRes(), none())
 
 fun liftBoolean(bool: Boolean): TestResult = if (bool) succeeded() else failed(
     reason = "Falsifiable"
@@ -253,30 +234,27 @@ inline fun <reified A> defTestable(): Testable<A> = when (A::class.qualifiedName
  */
 inline fun <reified A> mapResult(
     noinline f: (TestResult) -> TestResult,
-    a: A,
-    testable: Testable<A> = defTestable()
+    a: A
 ): Property =
-    mapRoseResult({ protectResults(it.map(f)) }, a, testable)
+    mapRoseResult({ protectResults(it.map(f)) }, a)
 
 /**
  * Map over the test result of a property. f must be total
  */
 inline fun <reified A> mapTotalResult(
     noinline f: (TestResult) -> TestResult,
-    a: A,
-    testable: Testable<A> = defTestable()
+    a: A
 ): Property =
-    mapRoseResult({ it.map(f) }, a, testable)
+    mapRoseResult({ it.map(f) }, a)
 
 /**
  * Map over a rose containing the TestResult, f must be total
  */
 inline fun <reified A> mapRoseResult(
     noinline f: (Rose<TestResult>) -> Rose<TestResult>,
-    a: A,
-    testable: Testable<A> = defTestable()
+    a: A
 ): Property =
-    mapProp({ Prop(f(it.unProp)) }, a, testable)
+    mapProp({ Prop(f(it.unProp)) }, a)
 
 /**
  * map over a Prop (wrapper around rose). f must be total
@@ -298,17 +276,14 @@ inline fun <reified A, B> shrinking(
     noinline shrink: (B) -> Sequence<B>,
     arg: B,
     noinline pf: (B) -> A
-): Property {
-
-    return Property(
-        props(
-            testable,
-            shrink,
-            pf,
-            arg,
-            setOf(arg)
-        ).promote(Rose.monad()).map { Prop(joinRose(it.fix().map { it.unProp })) })
-}
+): Property = Property(
+    props(
+        testable,
+        shrink,
+        pf,
+        arg,
+        setOf(arg)
+    ).promote(Rose.monad()).map { Prop(joinRose(it.fix().map { it.unProp })) })
 
 @PublishedApi
 internal fun <A, B> props(
@@ -327,7 +302,7 @@ internal fun <A, B> props(
 /**
  * disable shrinking in a property by just supplying empty sequences
  */
-inline fun <reified A> noShrinking(a: A, testable: Testable<A> = defTestable()): Property =
+inline fun <reified A> noShrinking(a: A): Property =
     mapRoseResult({
         onRose(it) { res, _ -> Rose.MkRose(res, emptySequence()) }
     }, a)
@@ -335,23 +310,9 @@ inline fun <reified A> noShrinking(a: A, testable: Testable<A> = defTestable()):
 /**
  * print out a counterexample on failure
  */
-inline fun <reified A> counterexample(s: String, a: A, testable: Testable<A> = defTestable()): Property =
+inline fun <reified A> counterexample(s: String, a: A): Property =
     mapTotalResult({ res ->
-        TestResult(
-            testCase = listOf(s) + res.testCase,
-            ok = res.ok,
-            reason = res.reason,
-            exception = res.exception,
-            requiredCoverage = res.requiredCoverage,
-            optionNumOfTests = res.optionNumOfTests,
-            abort = res.abort,
-            optionCheckCoverage = res.optionCheckCoverage,
-            labels = res.labels,
-            classes = res.classes,
-            expected = res.expected,
-            tables = res.tables,
-            callbacks = res.callbacks
-        )
+        TestResult.testCase.modify(res) { listOf(s) + it }
     }, callback(Callback.PostFinalFailure(CallbackKind.Counterexample) { st, _ ->
         st.output.update {
             it + s + "\n"
@@ -361,89 +322,33 @@ inline fun <reified A> counterexample(s: String, a: A, testable: Testable<A> = d
 /**
  * expect the property to fail
  */
-inline fun <reified A> expectFailure(a: A, testable: Testable<A> = defTestable()): Property =
+inline fun <reified A> expectFailure(a: A): Property =
     mapTotalResult({ res ->
-        TestResult(
-            ok = res.ok,
-            reason = res.reason,
-            exception = res.exception,
-            requiredCoverage = res.requiredCoverage,
-            optionNumOfTests = res.optionNumOfTests,
-            abort = res.abort,
-            optionCheckCoverage = res.optionCheckCoverage,
-            labels = res.labels,
-            classes = res.classes,
-            expected = false,
-            testCase = res.testCase,
-            tables = res.tables,
-            callbacks = res.callbacks
-        )
+        TestResult.expected.set(res, false)
     }, a)
 
 /**
  * Abort after one execution
  */
-inline fun <reified A> once(a: A, testable: Testable<A> = defTestable()): Property =
+inline fun <reified A> once(a: A): Property =
     mapTotalResult({ res ->
-        TestResult(
-            ok = res.ok,
-            reason = res.reason,
-            exception = res.exception,
-            requiredCoverage = res.requiredCoverage,
-            optionNumOfTests = res.optionNumOfTests,
-            abort = true,
-            optionCheckCoverage = res.optionCheckCoverage,
-            labels = res.labels,
-            classes = res.classes,
-            expected = res.expected,
-            testCase = res.testCase,
-            tables = res.tables,
-            callbacks = res.callbacks
-        )
+        TestResult.abort.set(res, true)
     }, a)
 
 /**
  * Continue to execute test if needed
  */
-inline fun <reified A> again(a: A, testable: Testable<A> = defTestable()): Property =
+inline fun <reified A> again(a: A): Property =
     mapTotalResult({ res ->
-        TestResult(
-            ok = res.ok,
-            reason = res.reason,
-            exception = res.exception,
-            requiredCoverage = res.requiredCoverage,
-            optionNumOfTests = res.optionNumOfTests,
-            abort = false,
-            optionCheckCoverage = res.optionCheckCoverage,
-            labels = res.labels,
-            classes = res.classes,
-            expected = res.expected,
-            testCase = res.testCase,
-            tables = res.tables,
-            callbacks = res.callbacks
-        )
+        TestResult.abort.set(res, false)
     }, a)
 
 /**
  * Change the maximum tested amount
  */
-inline fun <reified A> withMaxSuccess(maxSuccess: Int, a: A, testable: Testable<A> = defTestable()): Property =
+inline fun <reified A> withMaxSuccess(maxSuccess: Int, a: A): Property =
     mapTotalResult({ res ->
-        TestResult(
-            ok = res.ok,
-            reason = res.reason,
-            exception = res.exception,
-            requiredCoverage = res.requiredCoverage,
-            optionNumOfTests = maxSuccess.some(),
-            abort = res.abort,
-            optionCheckCoverage = res.optionCheckCoverage,
-            labels = res.labels,
-            classes = res.classes,
-            expected = res.expected,
-            testCase = res.testCase,
-            tables = res.tables,
-            callbacks = res.callbacks
-        )
+        TestResult.optionNumOfTests.set(res, maxSuccess)
     }, a)
 
 /**
@@ -452,47 +357,18 @@ inline fun <reified A> withMaxSuccess(maxSuccess: Int, a: A, testable: Testable<
  */
 inline fun <reified A> checkCoverage(
     confidence: Confidence = Confidence(),
-    a: A,
-    testable: Testable<A> = defTestable()
+    a: A
 ): Property =
     mapTotalResult({ res ->
-        TestResult(
-            ok = res.ok,
-            reason = res.reason,
-            exception = res.exception,
-            requiredCoverage = res.requiredCoverage,
-            optionNumOfTests = res.optionNumOfTests,
-            abort = res.abort,
-            optionCheckCoverage = confidence.some(),
-            labels = res.labels,
-            classes = res.classes,
-            expected = res.expected,
-            testCase = res.testCase,
-            tables = res.tables,
-            callbacks = res.callbacks
-        )
+        TestResult.optionCheckCoverage.set(res, confidence)
     }, a)
 
 /**
  * Append a label to a test case
  */
-inline fun <reified A> label(label: String, a: A, testable: Testable<A> = defTestable()): Property =
+inline fun <reified A> label(label: String, a: A): Property =
     mapTotalResult({ res ->
-        TestResult(
-            ok = res.ok,
-            reason = res.reason,
-            exception = res.exception,
-            requiredCoverage = res.requiredCoverage,
-            optionNumOfTests = res.optionNumOfTests,
-            abort = res.abort,
-            optionCheckCoverage = res.optionCheckCoverage,
-            labels = listOf(label) + res.labels,
-            classes = res.classes,
-            expected = res.expected,
-            testCase = res.testCase,
-            tables = res.tables,
-            callbacks = res.callbacks
-        )
+        TestResult.labels.modify(res) { listOf(label) + it }
     }, a)
 
 /**
@@ -501,7 +377,6 @@ inline fun <reified A> label(label: String, a: A, testable: Testable<A> = defTes
 inline fun <reified A, B> collect(
     b: B,
     a: A,
-    testable: Testable<A> = defTestable(),
     showB: Show<B> = Show.any()
 ): Property =
     label(showB.run { b.show() }, a)
@@ -512,21 +387,7 @@ inline fun <reified A, B> collect(
 inline fun <reified A> classify(bool: Boolean, label: String, a: A, testable: Testable<A> = defTestable()): Property =
     if (!bool) testable.run { a.property() }
     else mapTotalResult({ res ->
-        TestResult(
-            ok = res.ok,
-            reason = res.reason,
-            exception = res.exception,
-            requiredCoverage = res.requiredCoverage,
-            optionNumOfTests = res.optionNumOfTests,
-            abort = res.abort,
-            optionCheckCoverage = res.optionCheckCoverage,
-            labels = res.labels,
-            classes = listOf(label) + res.classes,
-            expected = res.expected,
-            testCase = res.testCase,
-            tables = res.tables,
-            callbacks = res.callbacks
-        )
+        TestResult.classes.modify(res) { listOf(label) + it }
     }, a)
 
 /**
@@ -536,25 +397,10 @@ inline fun <reified A> cover(
     p: Double,
     bool: Boolean,
     label: String,
-    a: A,
-    testable: Testable<A> = defTestable()
+    a: A
 ): Property =
     mapTotalResult({ res ->
-        TestResult(
-            ok = res.ok,
-            reason = res.reason,
-            exception = res.exception,
-            requiredCoverage = listOf(Tuple3(none<String>(), label, p / 100)) + res.requiredCoverage,
-            optionNumOfTests = res.optionNumOfTests,
-            abort = res.abort,
-            optionCheckCoverage = res.optionCheckCoverage,
-            labels = res.labels,
-            classes = res.classes,
-            expected = res.expected,
-            testCase = res.testCase,
-            tables = res.tables,
-            callbacks = res.callbacks
-        )
+        TestResult.requiredCoverage.modify(res) { listOf(Tuple3(none<String>(), label, p / 100)) + it }
     }, classify(bool, label, a))
 
 /**
@@ -563,25 +409,10 @@ inline fun <reified A> cover(
 inline fun <reified A> tabulate(
     key: String,
     values: List<String>,
-    a: A,
-    testable: Testable<A> = defTestable()
+    a: A
 ): Property =
     mapTotalResult({ res ->
-        TestResult(
-            ok = res.ok,
-            reason = res.reason,
-            exception = res.exception,
-            requiredCoverage = res.requiredCoverage,
-            optionNumOfTests = res.optionNumOfTests,
-            abort = res.abort,
-            optionCheckCoverage = res.optionCheckCoverage,
-            labels = res.labels,
-            classes = res.classes,
-            expected = res.expected,
-            testCase = res.testCase,
-            tables = values.map { key toT it } + res.tables,
-            callbacks = res.callbacks
-        )
+        TestResult.tables.modify(res) { values.map { key toT it } + it }
     }, a)
 
 /**
@@ -590,71 +421,42 @@ inline fun <reified A> tabulate(
 inline fun <reified A> coverTable(
     key: String,
     values: List<Tuple2<String, Double>>,
-    a: A,
-    testable: Testable<A> = defTestable()
+    a: A
 ): Property =
     mapTotalResult({ res ->
-        TestResult(
-            ok = res.ok,
-            reason = res.reason,
-            exception = res.exception,
-            requiredCoverage = values.map { Tuple3(key.some(), it.a, it.b / 100) } + res.requiredCoverage,
-            optionNumOfTests = res.optionNumOfTests,
-            abort = res.abort,
-            optionCheckCoverage = res.optionCheckCoverage,
-            labels = res.labels,
-            classes = res.classes,
-            expected = res.expected,
-            testCase = res.testCase,
-            tables = res.tables,
-            callbacks = res.callbacks
-        )
+        TestResult.requiredCoverage.modify(res) { values.map { Tuple3(key.some(), it.a, it.b / 100) } + it }
     }, a)
 
 /**
  * append a callback to the property
  */
-inline fun <reified A> callback(cb: Callback, a: A, testable: Testable<A> = defTestable()): Property =
+inline fun <reified A> callback(cb: Callback, a: A): Property =
     mapTotalResult({ res ->
-        TestResult(
-            callbacks = res.callbacks + listOf(cb),
-            ok = res.ok,
-            reason = res.reason,
-            exception = res.exception,
-            requiredCoverage = res.requiredCoverage,
-            optionNumOfTests = res.optionNumOfTests,
-            abort = res.abort,
-            optionCheckCoverage = res.optionCheckCoverage,
-            labels = res.labels,
-            classes = res.classes,
-            expected = res.expected,
-            testCase = res.testCase,
-            tables = res.tables
-        )
+        TestResult.callbacks.modify(res) { it + listOf(cb) }
     }, a)
 
 /**
  * execute some code when a test fails
  */
-inline fun <reified A> whenFail(testable: Testable<A> = defTestable(), noinline f: () -> Unit, a: A): Property =
+inline fun <reified A> whenFail(noinline f: () -> Unit, a: A): Property =
     whenFailIO(IO { f() }, a)
 
 /**
  * execute some io code when a test fails
  */
-inline fun <reified A> whenFailIO(f: IO<Unit>, a: A, testable: Testable<A> = defTestable()): Property =
+inline fun <reified A> whenFailIO(f: IO<Unit>, a: A): Property =
     callback(Callback.PostFinalFailure(CallbackKind.NoCounterexample) { _, _ -> f }, a)
 
 /**
  * execute some code on every failure (not just the last one)
  */
-inline fun <reified A> whenFailEvery(testable: Testable<A> = defTestable(), noinline f: () -> Unit, a: A): Property =
+inline fun <reified A> whenFailEvery(noinline f: () -> Unit, a: A): Property =
     whenFailEveryIO(IO { f() }, a)
 
 /**
  * execute some io code on every failure (not just the last one)
  */
-inline fun <reified A> whenFailEveryIO(f: IO<Unit>, a: A, testable: Testable<A> = defTestable()): Property =
+inline fun <reified A> whenFailEveryIO(f: IO<Unit>, a: A): Property =
     callback(Callback.PostTest(CallbackKind.NoCounterexample) { _, res ->
         if (res.ok == false.some()) f
         else IO.unit
@@ -663,23 +465,9 @@ inline fun <reified A> whenFailEveryIO(f: IO<Unit>, a: A, testable: Testable<A> 
 /**
  * append a lot more output
  */
-inline fun <reified A> verbose(a: A, testable: Testable<A> = defTestable()): Property =
+inline fun <reified A> verbose(a: A): Property =
     mapResult({ res ->
-        TestResult(
-            callbacks = listOf(newCb(res.callbacks)) + res.callbacks,
-            ok = res.ok,
-            reason = res.reason,
-            exception = res.exception,
-            requiredCoverage = res.requiredCoverage,
-            optionNumOfTests = res.optionNumOfTests,
-            abort = res.abort,
-            optionCheckCoverage = res.optionCheckCoverage,
-            labels = res.labels,
-            classes = res.classes,
-            expected = res.expected,
-            testCase = res.testCase,
-            tables = res.tables
-        )
+        TestResult.callbacks.modify(res) { listOf(newCb(it)) + it }
     }, a)
 
 internal fun status(res: TestResult): String = when (res.ok) {
@@ -708,23 +496,9 @@ internal fun newCb(cbs: List<Callback>): Callback = Callback.PostTest(CallbackKi
 /**
  * append shrinking output as well
  */
-inline fun <reified A> verboseShrinking(a: A, testable: Testable<A> = defTestable()): Property =
+inline fun <reified A> verboseShrinking(a: A): Property =
     mapResult({ res ->
-        TestResult(
-            callbacks = listOf(newCb2(res.callbacks)) + res.callbacks,
-            ok = res.ok,
-            reason = res.reason,
-            exception = res.exception,
-            requiredCoverage = res.requiredCoverage,
-            optionNumOfTests = res.optionNumOfTests,
-            abort = res.abort,
-            optionCheckCoverage = res.optionCheckCoverage,
-            labels = res.labels,
-            classes = res.classes,
-            expected = res.expected,
-            testCase = res.testCase,
-            tables = res.tables
-        )
+        TestResult.callbacks.modify(res) { listOf(newCb2(it)) + it }
     }, a)
 
 @PublishedApi
@@ -863,7 +637,7 @@ inline fun <reified A, reified B : Any> forAllShrinkBlind(
  */
 inline fun <reified A> ioProperty(propIO: IO<A>, testable: Testable<A> = defTestable()): Property =
     idempotentIOProperty(
-        propIO.map { noShrinking(it, testable) }
+        propIO.map { noShrinking(it) }
     )
 
 /**

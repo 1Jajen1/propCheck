@@ -20,6 +20,7 @@ import arrow.effects.extensions.io.monad.monad
 import arrow.effects.extensions.io.monadDefer.monadDefer
 import arrow.effects.fix
 import arrow.extension
+import arrow.optics.optics
 import org.apache.commons.math3.special.Erf
 import propCheck.Gen
 import propCheck.assertions.testresult.testable.testable
@@ -103,6 +104,7 @@ data class Args(
 /**
  * Internal state used while running a test
  */
+@optics
 data class State(
     val output: Ref<ForIO, String>, // mutable ref for writing output
     val maxSuccess: Int,
@@ -122,7 +124,9 @@ data class State(
     val numTotTryShrinks: Int,
     val randomSeed: Long,
     val requiredCoverage: MapK<Tuple2<Option<String>, String>, Double>
-)
+) {
+    companion object
+}
 
 /**
  * Confidence used with checkCoverage to determine wether or not a test is sufficiently covered
@@ -420,27 +424,13 @@ fun runATest(state: State, prop: Property): IO<Result> = IO.monad().binding {
     when (res.ok) {
         true.some() -> {
             cont(
-                State(
-                    numSuccessTests = newState.numSuccessTests + 1,
-                    numRecentlyDiscardedTests = 0,
-                    randomSeed = rand2,
-                    // copy rest
-                    maxDiscardRatio = newState.maxDiscardRatio,
-                    computeSize = newState.computeSize,
-                    numDiscardedTests = newState.numDiscardedTests,
-                    numTryShrinks = newState.numTryShrinks,
-                    numSuccessShrinks = newState.numSuccessShrinks,
-                    maxShrinks = newState.maxShrinks,
-                    numTotTryShrinks = newState.numTotTryShrinks,
-                    requiredCoverage = newState.requiredCoverage,
-                    coverageConfidence = newState.coverageConfidence,
-                    classes = newState.classes,
-                    labels = newState.labels,
-                    expected = newState.expected,
-                    maxSuccess = newState.maxSuccess,
-                    tables = newState.tables,
-                    output = state.output
-                ), ::doneTesting
+                State.numSuccessTests.modify(
+                    State.numRecentlyDiscardedTests.set(
+                        State.randomSeed.set(state, rand2),
+                        0
+                    )
+                ) { it + 1 },
+                ::doneTesting
             )
         }
         false.some() -> {
@@ -476,27 +466,11 @@ fun runATest(state: State, prop: Property): IO<Result> = IO.monad().binding {
         }
         None -> {
             cont(
-                State(
-                    numDiscardedTests = newState.numDiscardedTests + 1,
-                    numRecentlyDiscardedTests = newState.numRecentlyDiscardedTests + 1,
-                    randomSeed = rand2,
-                    // copy rest
-                    maxDiscardRatio = newState.maxDiscardRatio,
-                    computeSize = newState.computeSize,
-                    numTryShrinks = newState.numTryShrinks,
-                    numSuccessShrinks = newState.numSuccessShrinks,
-                    maxShrinks = newState.maxShrinks,
-                    numTotTryShrinks = newState.numTotTryShrinks,
-                    requiredCoverage = newState.requiredCoverage,
-                    coverageConfidence = newState.coverageConfidence,
-                    classes = newState.classes,
-                    labels = newState.labels,
-                    expected = newState.expected,
-                    maxSuccess = newState.maxSuccess,
-                    tables = newState.tables,
-                    numSuccessTests = newState.numSuccessTests,
-                    output = state.output
-                ), ::giveUpTesting
+                State.numDiscardedTests.modify(
+                    State.numRecentlyDiscardedTests.modify(
+                        State.randomSeed.set(state, rand2)
+                    ) { it + 1 }
+                ) { it + 1 }, ::giveUpTesting
             )
         }
         else -> throw IllegalStateException("Not possible")
@@ -510,27 +484,7 @@ typealias FailureResult = IO<Tuple4<Int, Int, Int, TestResult>>
  */
 fun foundFailure(state: State, res: TestResult, ts: Sequence<Rose<TestResult>>): FailureResult =
     localMin(
-        State(
-            numTryShrinks = 0,
-            // copy rest
-            numSuccessTests = state.numSuccessTests,
-            randomSeed = state.randomSeed,
-            numRecentlyDiscardedTests = state.numRecentlyDiscardedTests,
-            numDiscardedTests = state.numDiscardedTests,
-            tables = state.tables,
-            maxSuccess = state.maxSuccess,
-            expected = state.expected,
-            labels = state.labels,
-            classes = state.classes,
-            coverageConfidence = state.coverageConfidence,
-            requiredCoverage = state.requiredCoverage,
-            numTotTryShrinks = state.numTotTryShrinks,
-            maxShrinks = state.maxShrinks,
-            numSuccessShrinks = state.numSuccessShrinks,
-            computeSize = state.computeSize,
-            maxDiscardRatio = state.maxDiscardRatio,
-            output = state.output
-        ),
+        State.numTryShrinks.set(state, 0),
         res, ts
     )
 
@@ -559,51 +513,15 @@ internal fun _localMin(state: State, res: TestResult, ts: Sequence<Rose<TestResu
 
             if (nRes.ok == false.some())
                 localMin(
-                    State(
-                        numSuccessShrinks = state.numSuccessShrinks + 1,
-                        numTryShrinks = 0,
-                        // copy
-                        maxDiscardRatio = state.maxDiscardRatio,
-                        computeSize = state.computeSize,
-                        maxShrinks = state.maxShrinks,
-                        numTotTryShrinks = state.numTotTryShrinks,
-                        requiredCoverage = state.requiredCoverage,
-                        coverageConfidence = state.coverageConfidence,
-                        classes = state.classes,
-                        labels = state.labels,
-                        expected = state.expected,
-                        maxSuccess = state.maxSuccess,
-                        tables = state.tables,
-                        numDiscardedTests = state.numDiscardedTests,
-                        numRecentlyDiscardedTests = state.numRecentlyDiscardedTests,
-                        randomSeed = state.randomSeed,
-                        numSuccessTests = state.numSuccessTests,
-                        output = state.output
+                    State.numTryShrinks.set(
+                        State.numSuccessShrinks.modify(state) { it + 1 }, 0
                     ), nRes, nTs
                 ).bind()
             else
                 localMin(
-                    State(
-                        numTryShrinks = state.numTryShrinks + 1,
-                        numTotTryShrinks = state.numTotTryShrinks + 1,
-                        // copy
-                        maxDiscardRatio = state.maxDiscardRatio,
-                        computeSize = state.computeSize,
-                        maxShrinks = state.maxShrinks,
-                        numSuccessShrinks = state.numSuccessShrinks,
-                        requiredCoverage = state.requiredCoverage,
-                        coverageConfidence = state.coverageConfidence,
-                        classes = state.classes,
-                        labels = state.labels,
-                        expected = state.expected,
-                        maxSuccess = state.maxSuccess,
-                        tables = state.tables,
-                        numDiscardedTests = state.numDiscardedTests,
-                        numRecentlyDiscardedTests = state.numRecentlyDiscardedTests,
-                        randomSeed = state.randomSeed,
-                        numSuccessTests = state.numSuccessTests,
-                        output = state.output
-                    ), res, ts.drop(1)
+                    State.numTryShrinks.modify(
+                        State.numTotTryShrinks.modify(state) { it + 1 }
+                    ) { it + 1 }, res, ts.drop(1)
                 ).bind()
         }.fix()
     }

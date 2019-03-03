@@ -34,6 +34,7 @@ dependencies {
     compile "io.arrow-kt:arrow-effects-io-extensions:$arrow_version" // instances ^^
     compile "io.arrow-kt:arrow-free:$arrow_version" // Free monads mainly for bindingStacksafe
     compile "io.arrow-kt:arrow-free-extensions:$arrow_version" // instances ^^
+    compile "io.arrow-kt:arrow-optics:$arrow_version" // lenses
 
     testImplementation "io.arrow-kt:arrow-test:$arrow_version" // test helpers
 }
