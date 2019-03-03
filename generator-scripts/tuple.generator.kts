@@ -6,7 +6,7 @@ val notice = """/*
 */
 """
 
-val package_ = "io.jannis.propTest.instances"
+val package_ = "propCheck.instances"
 
 val maxTuple = 22
 
@@ -14,10 +14,10 @@ val availableLetters = ('a'..'z').toList().map { it.toString() }
 
 val fileContent = StringBuilder()
 
-val imports = "import io.jannis.propTest.*\n" +
+val imports = "import propCheck.*\n" +
         "import arrow.core.*\n" +
-        "import io.jannis.propTest.gen.monad.monad\n" +
-        (2..maxTuple).map { "import io.jannis.propTest.instances.tuple${it}.arbitrary.arbitrary" }.joinToString("\n") +
+        "import propCheck.gen.monad.monad\n" +
+        (2..maxTuple).map { "import propCheck.instances.tuple${it}.arbitrary.arbitrary" }.joinToString("\n") +
         "\nimport arrow.extension"
 
 fileContent.append(notice)
@@ -90,6 +90,6 @@ for (i in 2..maxTuple) {
     fileContent.append("\n")
 }
 
-val fileLocation = "../src/main/kotlin/io/jannis/propTest/instances/Tuples.kt"
+val fileLocation = "../src/main/kotlin/propCheck/instances/Tuples.kt"
 
 File(fileLocation).writeText(fileContent.toString())
