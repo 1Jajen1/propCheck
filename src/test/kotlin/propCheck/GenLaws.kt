@@ -12,7 +12,6 @@ import propCheck.gen.monad.monad
 
 class GenSpec : LawSpec() {
     init {
-        println(Property::class.qualifiedName)
         testLaws(
             MonadLaws.laws(
                 Gen.monad(),
@@ -35,7 +34,7 @@ class GenSpec : LawSpec() {
         "Gen.scale should work" {
             // TODO redo when generating functions is done
             propCheck {
-                forAll { (iP, jP): Tuple2<NonNegative<Int>, Positive<Int>> ->
+                forAll { (iP, jP): Tuple2<NonNegative<Int>, NonNegative<Int>> ->
                     val (i) = iP; val (j) = jP
                     idempotentIOProperty(
                         Gen.getSize().scale { it + j }.resize(i).generate().map { it == i + j }
