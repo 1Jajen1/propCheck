@@ -325,6 +325,186 @@ interface ShrinkState<S, A> {
     fun shrinkState(a: A, s: S): Sequence<Tuple2<A, S>>
 }
 
+// --------------- Positive numbers > 0
+// @higherkind boilerplate
+class ForPositive private constructor() {
+    companion object
+}
+typealias PositiveOf<A> = arrow.Kind<ForPositive, A>
+@Suppress("UNCHECKED_CAST", "NOTHING_TO_INLINE")
+inline fun <A> PositiveOf<A>.fix(): Positive<A> =
+    this as Positive<A>
+/**
+ * A's but shrinking now carries a state
+ */
+data class Positive<A>(val a: A): PositiveOf<A> {
+    companion object
+}
+
+@extension
+interface PositiveFunctor : Functor<ForPositive> {
+    override fun <A, B> Kind<ForPositive, A>.map(f: (A) -> B): Kind<ForPositive, B> =
+            Positive(f(fix().a))
+}
+
+@extension
+interface PositiveEq<A> : Eq<Positive<A>> {
+    fun EQA(): Eq<A>
+    override fun Positive<A>.eqv(b: Positive<A>): Boolean = EQA().run {
+        a.eqv(b.a)
+    }
+}
+
+@extension
+interface PositiveShow<A> : Show<Positive<A>> {
+    fun SA(): Show<A>
+    override fun Positive<A>.show(): String = SA().run { a.show() }
+}
+
+@extension
+interface PositiveArbitrary<A: Number> : Arbitrary<Positive<A>> {
+    fun AA(): Arbitrary<A>
+    override fun arbitrary(): Gen<Positive<A>> = AA().arbitrary().suchThat { it.toDouble() > 0 }.map { Positive(it) }
+
+    override fun shrink(fail: Positive<A>): Sequence<Positive<A>> = AA().shrink(fail.a).filter { it.toDouble() > 0 }
+        .map { Positive(it) }
+}
+
+// --------------- Non negative numbers >= 0
+// @higherkind boilerplate
+class ForNonNegative private constructor() {
+    companion object
+}
+typealias NonNegativeOf<A> = arrow.Kind<ForNonNegative, A>
+@Suppress("UNCHECKED_CAST", "NOTHING_TO_INLINE")
+inline fun <A> NonNegativeOf<A>.fix(): NonNegative<A> =
+    this as NonNegative<A>
+/**
+ * A's but shrinking now carries a state
+ */
+data class NonNegative<A>(val a: A): NonNegativeOf<A> {
+    companion object
+}
+
+@extension
+interface NonNegativeFunctor : Functor<ForNonNegative> {
+    override fun <A, B> Kind<ForNonNegative, A>.map(f: (A) -> B): Kind<ForNonNegative, B> =
+        NonNegative(f(fix().a))
+}
+
+@extension
+interface NonNegativeEq<A> : Eq<NonNegative<A>> {
+    fun EQA(): Eq<A>
+    override fun NonNegative<A>.eqv(b: NonNegative<A>): Boolean = EQA().run {
+        a.eqv(b.a)
+    }
+}
+
+@extension
+interface NonNegativeShow<A> : Show<NonNegative<A>> {
+    fun SA(): Show<A>
+    override fun NonNegative<A>.show(): String = SA().run { a.show() }
+}
+
+@extension
+interface NonNegativeArbitrary<A: Number> : Arbitrary<NonNegative<A>> {
+    fun AA(): Arbitrary<A>
+    override fun arbitrary(): Gen<NonNegative<A>> = AA().arbitrary().suchThat { it.toDouble() >= 0 }.map { NonNegative(it) }
+
+    override fun shrink(fail: NonNegative<A>): Sequence<NonNegative<A>> = AA().shrink(fail.a).filter { it.toDouble() >= 0 }
+        .map { NonNegative(it) }
+}
+
+// --------------- Negative numbers < 0
+// @higherkind boilerplate
+class ForNegative private constructor() {
+    companion object
+}
+typealias NegativeOf<A> = arrow.Kind<ForNegative, A>
+@Suppress("UNCHECKED_CAST", "NOTHING_TO_INLINE")
+inline fun <A> NegativeOf<A>.fix(): Negative<A> =
+    this as Negative<A>
+/**
+ * A's but shrinking now carries a state
+ */
+data class Negative<A>(val a: A): NegativeOf<A> {
+    companion object
+}
+
+@extension
+interface NegativeFunctor : Functor<ForNegative> {
+    override fun <A, B> Kind<ForNegative, A>.map(f: (A) -> B): Kind<ForNegative, B> =
+        Negative(f(fix().a))
+}
+
+@extension
+interface NegativeEq<A> : Eq<Negative<A>> {
+    fun EQA(): Eq<A>
+    override fun Negative<A>.eqv(b: Negative<A>): Boolean = EQA().run {
+        a.eqv(b.a)
+    }
+}
+
+@extension
+interface NegativeShow<A> : Show<Negative<A>> {
+    fun SA(): Show<A>
+    override fun Negative<A>.show(): String = SA().run { a.show() }
+}
+
+@extension
+interface NegativeArbitrary<A: Number> : Arbitrary<Negative<A>> {
+    fun AA(): Arbitrary<A>
+    override fun arbitrary(): Gen<Negative<A>> = AA().arbitrary().suchThat { it.toDouble() < 0 }.map { Negative(it) }
+
+    override fun shrink(fail: Negative<A>): Sequence<Negative<A>> = AA().shrink(fail.a).filter { it.toDouble() < 0 }
+        .map { Negative(it) }
+}
+
+// --------------- Non positive numbers <= 0
+// @higherkind boilerplate
+class ForNonPositive private constructor() {
+    companion object
+}
+typealias NonPositiveOf<A> = arrow.Kind<ForNonPositive, A>
+@Suppress("UNCHECKED_CAST", "NOTHING_TO_INLINE")
+inline fun <A> NonPositiveOf<A>.fix(): NonPositive<A> =
+    this as NonPositive<A>
+/**
+ * A's but shrinking now carries a state
+ */
+data class NonPositive<A>(val a: A): NonPositiveOf<A> {
+    companion object
+}
+
+@extension
+interface NonPositiveFunctor : Functor<ForNonPositive> {
+    override fun <A, B> Kind<ForNonPositive, A>.map(f: (A) -> B): Kind<ForNonPositive, B> =
+        NonPositive(f(fix().a))
+}
+
+@extension
+interface NonPositiveEq<A> : Eq<NonPositive<A>> {
+    fun EQA(): Eq<A>
+    override fun NonPositive<A>.eqv(b: NonPositive<A>): Boolean = EQA().run {
+        a.eqv(b.a)
+    }
+}
+
+@extension
+interface NonPositiveShow<A> : Show<NonPositive<A>> {
+    fun SA(): Show<A>
+    override fun NonPositive<A>.show(): String = SA().run { a.show() }
+}
+
+@extension
+interface NonPositiveArbitrary<A: Number> : Arbitrary<NonPositive<A>> {
+    fun AA(): Arbitrary<A>
+    override fun arbitrary(): Gen<NonPositive<A>> = AA().arbitrary().suchThat { it.toDouble() <= 0 }.map { NonPositive(it) }
+
+    override fun shrink(fail: NonPositive<A>): Sequence<NonPositive<A>> = AA().shrink(fail.a).filter { it.toDouble() <= 0 }
+        .map { NonPositive(it) }
+}
+
 // ------------ ASCII strings
 data class ASCIIString(val a: String) {
     companion object

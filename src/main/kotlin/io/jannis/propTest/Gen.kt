@@ -11,6 +11,8 @@ import arrow.effects.extensions.io.applicative.applicative
 import arrow.effects.extensions.io.monad.monad
 import arrow.effects.fix
 import arrow.extension
+import arrow.free.bindingStackSafe
+import arrow.free.run
 import arrow.typeclasses.Applicative
 import arrow.typeclasses.Functor
 import arrow.typeclasses.Monad
@@ -49,28 +51,28 @@ class Gen<A>(val unGen: (Tuple2<Long, Int>) -> A) : GenOf<A> {
     fun scale(f: (Int) -> Int): Gen<A> = sized { resize(f(it)) }
 
     /**
-     * generate values that pass a predicate, increase size on failure untill a value was generated
+     * generate values that pass a predicate, increase size on failure until a value was generated
      */
-    fun suchThat(pred: (A) -> Boolean): Gen<A> = Gen.monad().binding {
+    fun suchThat(pred: (A) -> Boolean): Gen<A> = Gen.monad().bindingStackSafe {
         suchThatOption(pred).bind().fold({
             sized { suchThat(pred).resize(it + 1) }.bind()
         }, {
             it
         })
-    }.fix()
+    }.run(Gen.monad()).fix()
 
     /**
      * generate values that pass a predicate, increase size on failure up to a maximum (where none is returned)
      */
     fun suchThatOption(pred: (A) -> Boolean): Gen<Option<A>> =
         sized {
-            fun attempt(m: Int, n: Int): Gen<Option<A>> = Gen.monad().binding {
+            fun attempt(m: Int, n: Int): Gen<Option<A>> = Gen.monad().bindingStackSafe {
                 if (m > n) none()
                 else {
                     val res = resize(m).bind()
                     if (pred(res)) res.some() else attempt(m + 1, n).bind()
                 }
-            }.fix()
+            }.run(Gen.monad()).fix()
             attempt(it, it * 2)
         }
 
@@ -104,7 +106,7 @@ class Gen<A>(val unGen: (Tuple2<Long, Int>) -> A) : GenOf<A> {
      * generate lists of a given size
      */
     fun vectorOf(n: Int): Gen<List<A>> = Gen.monad().binding {
-        (0..n).toList().map { this@Gen.bind() }
+        (0..(n - 1)).toList().map { this@Gen.bind() }
     }.fix()
 
     companion object {
@@ -134,8 +136,8 @@ class Gen<A>(val unGen: (Tuple2<Long, Int>) -> A) : GenOf<A> {
         /**
          * choose between any of the supplied generators
          */
-        fun <A> oneOf(vararg gens: Gen<A>): Gen<A> = if (gens.size < 0)
-            throw IllegalArgumentException("oneOf cannot work with 0 generators")
+        fun <A> oneOf(vararg gens: Gen<A>): Gen<A> = if (gens.isEmpty())
+            throw IllegalArgumentException("oneOf cannot work without generators")
         else Gen.monad().binding {
             gens[choose(0 toT (gens.size - 1), Int.random()).bind()].bind()
         }.fix()
@@ -143,8 +145,8 @@ class Gen<A>(val unGen: (Tuple2<Long, Int>) -> A) : GenOf<A> {
         /**
          * choose between any of the supplied generators but add weights to them
          */
-        fun <A> frequency(vararg gens: Tuple2<Int, Gen<A>>): Gen<A> = if (gens.size < 0)
-            throw IllegalArgumentException("frequency cannot work with 0 generators")
+        fun <A> frequency(vararg gens: Tuple2<Int, Gen<A>>): Gen<A> = if (gens.isEmpty())
+            throw IllegalArgumentException("frequency cannot work without generators")
         else Gen.monad().binding {
             val sum = gens.map { it.a }.sum() + 1 // + 1 for inclusive range
             val c = choose(0 toT sum, Int.random()).bind()
@@ -161,7 +163,7 @@ class Gen<A>(val unGen: (Tuple2<Long, Int>) -> A) : GenOf<A> {
         /**
          * choose between the supplied elements
          */
-        fun <A> elements(vararg el: A): Gen<A> = if (el.size < 0)
+        fun <A> elements(vararg el: A): Gen<A> = if (el.isEmpty())
             throw IllegalArgumentException("elements cannot work without elements")
         else Gen.monad().binding {
             el[choose(0 toT (el.size - 1), Int.random()).bind()]

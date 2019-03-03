@@ -55,6 +55,14 @@ import io.jannis.propTest.instances.tuple7.arbitrary.arbitrary
 import io.jannis.propTest.instances.tuple8.arbitrary.arbitrary
 import io.jannis.propTest.instances.tuple9.arbitrary.arbitrary
 import io.jannis.propTest.instances.validated.arbitrary.arbitrary
+import io.jannis.propTest.negative.arbitrary.arbitrary
+import io.jannis.propTest.negative.show.show
+import io.jannis.propTest.nonnegative.arbitrary.arbitrary
+import io.jannis.propTest.nonnegative.show.show
+import io.jannis.propTest.nonpositive.arbitrary.arbitrary
+import io.jannis.propTest.nonpositive.show.show
+import io.jannis.propTest.positive.arbitrary.arbitrary
+import io.jannis.propTest.positive.show.show
 import io.jannis.propTest.shrink2.arbitrary.arbitrary
 import io.jannis.propTest.shrink2.show.show
 import io.jannis.propTest.smart.arbitrary.arbitrary
@@ -135,15 +143,19 @@ fun <A : Any> lookupShowWithGenerics(klass: Class<A>, l: Nel<Type>): Show<A> =
             name == Map::class.qualifiedName || name == MapK::class.qualifiedName ||
                     name == Map::class.java.name || name == MapK::class.java.name -> MapK.show<Any, Any>()
             name == Blind::class.qualifiedName || name == Blind::class.java.name -> Blind.show<Any>()
-            name == Fixed::class.qualifiedName || name == Fixed::class.java.name -> lookupFixedShow(klass, l)
-            name == Smart::class.qualifiedName || name == Smart::class.java.name -> lookupSmartShow(klass, l)
-            name == Shrink2::class.qualifiedName || name == Shrink2::class.java.name -> lookupShrink2Show(klass, l)
+            name == Fixed::class.qualifiedName || name == Fixed::class.java.name -> lookupShowNParameters(klass, 1, l) { Fixed.show(it[0]) }
+            name == Smart::class.qualifiedName || name == Smart::class.java.name -> lookupShowNParameters(klass, 1, l) { Smart.show(it[0]) }
+            name == Shrink2::class.qualifiedName || name == Shrink2::class.java.name -> lookupShowNParameters(klass, 1, l) { Shrink2.show(it[0]) }
             name == Either::class.qualifiedName || name == Either::class.java.name -> Either.show<Any, Any>()
             name == Option::class.qualifiedName || name == Option::class.java.name -> Option.show<Any>()
             name == Id::class.qualifiedName || name == Id::class.java.name -> Id.show<Any>()
             name == Ior::class.qualifiedName || name == Ior::class.java.name -> Ior.show<Any, Any>()
             name == NonEmptyList::class.qualifiedName || name == NonEmptyList::class.java.name -> Nel.show<Any>()
             name == Validated::class.qualifiedName || name == Validated::class.java.name -> Validated.show<Any, Any>()
+            name == Positive::class.qualifiedName || name == Positive::class.java.name -> lookupShowNParameters(klass, 1, l) { Positive.show(it[0]) }
+            name == NonNegative::class.qualifiedName || name == NonNegative::class.java.name -> lookupShowNParameters(klass, 1, l) { NonNegative.show(it[0]) }
+            name == Negative::class.qualifiedName || name == Negative::class.java.name -> lookupShowNParameters(klass, 1, l) { Negative.show(it[0]) }
+            name == NonPositive::class.qualifiedName || name == NonPositive::class.java.name -> lookupShowNParameters(klass, 1, l) { NonPositive.show(it[0]) }
             else -> Show.any()
         } as Show<A>
     }
@@ -159,17 +171,9 @@ fun lookupShowWithPossibleGenerics(type: Type): Show<*> = when (type) {
     else -> println("WTF ARE YOU $type").let { throw IllegalStateException("WTF") }
 }
 
-fun <A : Any> lookupShrink2Show(klass: Class<A>, l: Nel<Type>): Show<A> =
-    if (l.size != 1) throw IllegalStateException("Could not find default show for ${klass.name}")
-    else Shrink2.show(lookupShowWithPossibleGenerics(l.head)) as Show<A>
-
-fun <A : Any> lookupSmartShow(klass: Class<A>, l: Nel<Type>): Show<A> =
-    if (l.size != 1) throw IllegalStateException("Could not find default show for ${klass.name}")
-    else Smart.show(lookupShowWithPossibleGenerics(l.head)) as Show<A>
-
-fun <A : Any> lookupFixedShow(klass: Class<A>, l: Nel<Type>): Show<A> =
-    if (l.size != 1) throw IllegalStateException("Could not find default show for ${klass.name}")
-    else Fixed.show(lookupShowWithPossibleGenerics(l.head)) as Show<A>
+fun <A: Any> lookupShowNParameters(klass: Class<A>, n: Int, l: Nel<Type>, cf: (List<Show<*>>) -> Show<*>): Show<*> =
+    if (l.size != n) throw IllegalStateException("Could not find default show for ${klass.name}")
+    else cf((1..n).map { lookupShowWithPossibleGenerics(l.all[it - 1]) })
 
 fun <A : Any> lookupPairShow(klass: Class<A>, l: Nel<Type>): Show<A> =
     if (l.size != 2) throw IllegalStateException("Could not find default show for ${klass.name}")
@@ -243,6 +247,10 @@ fun lookupArbyWithPossibleGenerics(type: Type): Arbitrary<*> = when (type) {
     else -> println("WTF ARE YOU $type").let { throw IllegalStateException("WTF") }
 }
 
+fun <A: Any> lookupArbitraryNParameters(klass: Class<A>, n: Int, l: Nel<Type>, cf: (List<Arbitrary<*>>) -> Arbitrary<*>): Arbitrary<*> =
+    if (l.size != n) throw IllegalStateException("Could not find default arbitrary for ${klass.name}")
+    else cf((1..n).map { lookupArbyWithPossibleGenerics(l.all[it - 1]) })
+
 fun <A : Any> lookupArbyWithGenerics(klass: Class<A>, l: Nel<Type>): Arbitrary<A> =
     klass.name.let { name ->
         when { // I am keeping the KClass qualified names for now because i might want to use them later ...
@@ -250,88 +258,28 @@ fun <A : Any> lookupArbyWithGenerics(klass: Class<A>, l: Nel<Type>): Arbitrary<A
             name == Pair::class.qualifiedName || name == Pair::class.java.name -> lookupPair(klass, l)
             name == Triple::class.qualifiedName || name == Triple::class.java.name -> lookupTriple(klass, l)
             name == List::class.qualifiedName || name == ListK::class.qualifiedName ||
-                    name == List::class.java.name || name == ListK::class.java.name -> lookupList(klass, l)
+                    name == List::class.java.name || name == ListK::class.java.name -> lookupArbitraryNParameters(klass, 1, l) { ListK.arbitrary(it[0]) }
             name == Set::class.qualifiedName || name == SetK::class.qualifiedName ||
-                    name == Set::class.java.name || name == SetK::class.java.name -> lookupSet(klass, l)
+                    name == Set::class.java.name || name == SetK::class.java.name -> lookupArbitraryNParameters(klass, 1, l) { SetK.arbitrary(it[0]) }
             name == Map::class.qualifiedName || name == MapK::class.qualifiedName ||
-                    name == Map::class.java.name || name == MapK::class.java.name -> lookupMap(klass, l)
-            name == Blind::class.qualifiedName || name == Blind::class.java.name -> lookupBlind(klass, l)
-            name == Fixed::class.qualifiedName || name == Fixed::class.java.name -> lookupFixed(klass, l)
-            name == Smart::class.qualifiedName || name == Smart::class.java.name -> lookupSmart(klass, l)
-            name == Shrink2::class.qualifiedName || name == Shrink2::class.java.name -> lookupShrink2(klass, l)
-            name == Either::class.qualifiedName || name == Either::class.java.name -> lookupEither(klass, l)
-            name == Option::class.qualifiedName || name == Option::class.java.name -> lookupOption(klass, l)
-            name == Id::class.qualifiedName || name == Id::class.java.name -> lookupId(klass, l)
-            name == Ior::class.qualifiedName || name == Ior::class.java.name -> lookupIor(klass, l)
-            name == NonEmptyList::class.qualifiedName || name == NonEmptyList::class.java.name -> lookupNel(klass, l)
-            name == Validated::class.qualifiedName || name == Validated::class.java.name -> lookupValidated(klass, l)
+                    name == Map::class.java.name || name == MapK::class.java.name -> lookupArbitraryNParameters(klass, 2, l) { MapK.arbitrary(it[0], it[1]) }
+            name == Blind::class.qualifiedName || name == Blind::class.java.name -> lookupArbitraryNParameters(klass, 1, l) { Blind.arbitrary(it[0]) }
+            name == Fixed::class.qualifiedName || name == Fixed::class.java.name -> lookupArbitraryNParameters(klass, 1, l) { Fixed.arbitrary(it[0]) }
+            name == Smart::class.qualifiedName || name == Smart::class.java.name -> lookupArbitraryNParameters(klass, 1, l) { Smart.arbitrary(it[0]) }
+            name == Shrink2::class.qualifiedName || name == Shrink2::class.java.name -> lookupArbitraryNParameters(klass, 1, l) { Shrink2.arbitrary(it[0]) }
+            name == Either::class.qualifiedName || name == Either::class.java.name -> lookupArbitraryNParameters(klass, 2, l) { Either.arbitrary(it[0], it[1]) }
+            name == Option::class.qualifiedName || name == Option::class.java.name -> lookupArbitraryNParameters(klass, 1, l) { Option.arbitrary(it[0]) }
+            name == Id::class.qualifiedName || name == Id::class.java.name -> lookupArbitraryNParameters(klass, 1, l) { Id.arbitrary(it[0]) }
+            name == Ior::class.qualifiedName || name == Ior::class.java.name -> lookupArbitraryNParameters(klass, 2, l) { Ior.arbitrary(it[0], it[1]) }
+            name == NonEmptyList::class.qualifiedName || name == NonEmptyList::class.java.name -> lookupArbitraryNParameters(klass, 1, l) { Nel.arbitrary(it[0]) }
+            name == Validated::class.qualifiedName || name == Validated::class.java.name -> lookupArbitraryNParameters(klass, 2, l) { Validated.arbitrary(it[0], it[1]) }
+            name == Positive::class.qualifiedName || name == Positive::class.java.name -> lookupArbitraryNParameters(klass, 1, l) { Positive.arbitrary(it[0] as Arbitrary<Number>) }
+            name == NonNegative::class.qualifiedName || name == NonNegative::class.java.name -> lookupArbitraryNParameters(klass, 1, l) { NonNegative.arbitrary(it[0]  as Arbitrary<Number>) }
+            name == Negative::class.qualifiedName || name == Negative::class.java.name -> lookupArbitraryNParameters(klass, 1, l) { Negative.arbitrary(it[0] as Arbitrary<Number>) }
+            name == NonPositive::class.qualifiedName || name == NonPositive::class.java.name -> lookupArbitraryNParameters(klass, 1, l) { NonPositive.arbitrary(it[0]  as Arbitrary<Number>) }
             else -> throw IllegalStateException("Unsupported class $name")
-        }
+        } as Arbitrary<A>
     }
-
-fun <A : Any> lookupValidated(klass: Class<A>, l: Nel<Type>): Arbitrary<A> =
-    if (l.size != 2) throw IllegalStateException("Could not find default arbitrary for ${klass.name}")
-    else Validated.arbitrary(
-        lookupArbyWithPossibleGenerics(l.head),
-        lookupArbyWithPossibleGenerics(l.tail[0])
-    ) as Arbitrary<A>
-
-fun <A : Any> lookupNel(klass: Class<A>, l: Nel<Type>): Arbitrary<A> =
-    if (l.size != 1) throw IllegalStateException("Could not find default arbitrary for ${klass.name}")
-    else Nel.arbitrary(lookupArbyWithPossibleGenerics(l.head)) as Arbitrary<A>
-
-fun <A : Any> lookupIor(klass: Class<A>, l: Nel<Type>): Arbitrary<A> =
-    if (l.size != 2) throw IllegalStateException("Could not find default arbitrary for ${klass.name}")
-    else Ior.arbitrary(
-        lookupArbyWithPossibleGenerics(l.head),
-        lookupArbyWithPossibleGenerics(l.tail[0])
-    ) as Arbitrary<A>
-
-fun <A : Any> lookupId(klass: Class<A>, l: Nel<Type>): Arbitrary<A> =
-    if (l.size != 1) throw IllegalStateException("Could not find default arbitrary for ${klass.name}")
-    else Id.arbitrary(lookupArbyWithPossibleGenerics(l.head)) as Arbitrary<A>
-
-fun <A : Any> lookupOption(klass: Class<A>, l: Nel<Type>): Arbitrary<A> =
-    if (l.size != 1) throw IllegalStateException("Could not find default arbitrary for ${klass.name}")
-    else Option.arbitrary(lookupArbyWithPossibleGenerics(l.head)) as Arbitrary<A>
-
-fun <A : Any> lookupEither(klass: Class<A>, l: Nel<Type>): Arbitrary<A> =
-    if (l.size != 2) throw IllegalStateException("Could not find default arbitrary for ${klass.name}")
-    else Either.arbitrary(
-        lookupArbyWithPossibleGenerics(l.head),
-        lookupArbyWithPossibleGenerics(l.tail[0])
-    ) as Arbitrary<A>
-
-fun <A : Any> lookupShrink2(klass: Class<A>, l: Nel<Type>): Arbitrary<A> =
-    if (l.size != 1) throw IllegalStateException("Could not find default arbitrary for ${klass.name}")
-    else Shrink2.arbitrary(lookupArbyWithPossibleGenerics(l.head)) as Arbitrary<A>
-
-fun <A : Any> lookupSmart(klass: Class<A>, l: Nel<Type>): Arbitrary<A> =
-    if (l.size != 1) throw IllegalStateException("Could not find default arbitrary for ${klass.name}")
-    else Smart.arbitrary(lookupArbyWithPossibleGenerics(l.head)) as Arbitrary<A>
-
-fun <A : Any> lookupFixed(klass: Class<A>, l: Nel<Type>): Arbitrary<A> =
-    if (l.size != 1) throw IllegalStateException("Could not find default arbitrary for ${klass.name}")
-    else Fixed.arbitrary(lookupArbyWithPossibleGenerics(l.head)) as Arbitrary<A>
-
-fun <A : Any> lookupBlind(klass: Class<A>, l: Nel<Type>): Arbitrary<A> =
-    if (l.size != 1) throw IllegalStateException("Could not find default arbitrary for ${klass.name}")
-    else Blind.arbitrary(lookupArbyWithPossibleGenerics(l.head)) as Arbitrary<A>
-
-fun <A : Any> lookupMap(klass: Class<A>, l: Nel<Type>): Arbitrary<A> =
-    if (l.size != 2) throw IllegalStateException("Could not find default arbitrary for ${klass.name}")
-    else MapK.arbitrary(
-        lookupArbyWithPossibleGenerics(l.head),
-        lookupArbyWithPossibleGenerics(l.tail[0])
-    ) as Arbitrary<A>
-
-fun <A : Any> lookupSet(klass: Class<A>, l: Nel<Type>): Arbitrary<A> =
-    if (l.size != 1) throw IllegalStateException("Could not find default arbitrary for ${klass.name}")
-    else SetK.arbitrary(lookupArbyWithPossibleGenerics(l.all[0])) as Arbitrary<A>
-
-fun <A : Any> lookupList(klass: Class<A>, l: Nel<Type>): Arbitrary<A> =
-    if (l.size != 1) throw IllegalStateException("Could not find default arbitrary for ${klass.name}")
-    else ListK.arbitrary(lookupArbyWithPossibleGenerics(l.all[0])) as Arbitrary<A>
 
 fun <A : Any> lookupPair(klass: Class<A>, l: Nel<Type>): Arbitrary<A> =
     if (l.size != 2) throw IllegalStateException("Could not find default arbitrary for ${klass.name}")
