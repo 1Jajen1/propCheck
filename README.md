@@ -237,9 +237,16 @@ Kotlintest already includes some means of property based testing. However their 
 ## Feedback
 `propCheck` is still in its early days so if you notice bugs or think something can be improved please create issues or shoot me a pull request. All feedback is highly appreciated.
 
-## Credits
-At this point I'd like to thank the [arrow-kt](https://arrow-kt.io/) creators and maintainers as this library would not have been possible without them. The same goes for [quickcheck](https://github.com/nick8325/quickcheck) which `propCheck` is based on.
+## Future plans
+* State-machine based models
+    * and later testing those models in parallel
+* Generate random functions (Coarbitrary or Function in quickcheck)
+    * will be interesting how much kotlin can do here
 
+## Credits
+`propCheck` is a port of the awesome library [quickcheck](https://github.com/nick8325/quickcheck). If you ever come around to use haskell make sure to give it a go!
+Writing `propCheck` was also made much easier by using [arrow-kt](https://arrow-kt.io/) to be able to write code in a similar style to haskell and thus close to the original.
+As with `quickCheck` make sure to check out `arrow` and a more functional programming style in kotlin.
 ---
 
 ## Api overview
