@@ -48,7 +48,7 @@ A powerful concept in property based testing is shrinking. Given a failed test a
 For example: Lists tend to shrink to smaller lists, numbers shrink towards zero and so on.
 This often ends you with a minimal counterexample for the failed test and is very useful if the data would otherwise be messy (as will likely happen with random data).
 
-For most cases enabling shrinking is as easy as changing `forAll` to `forAllShrink`:
+For most cases enabling shrinking is as easy as changing [forAll](https://github.com/1Jajen1/propCheck#forall) to [forAllShrink](https://github.com/1Jajen1/propCheck#forallshrink):
 ```kotlin
 propCheck { 
     forAllShrink { i: Int ->
@@ -163,6 +163,47 @@ fun binaryTreeGen(): Gen<BinaryTree> = Gen.sized { size ->
 This example generates binary-trees based with a maximum depth based on the size parameter. Using `Gen.frequency` the chance of getting a `Branch` instead of a `Leaf` is adjusted.
 > This is using the amazing fp library [arrow](https://arrow-kt.io/) for `binding`. This is not necessary, it will however ease creation of nested `Gen`s and lots of other more complex generators.
 
+## A note regarding test data
+The quality of a property-based test is directly related to the quality of the data fed to it. There are some helpers to test and assure that the generated data holds some invariants.
+
+To inspect results use either [label](https://github.com/1Jajen1/propCheck#label), [cover](https://github.com/1Jajen1/propCheck#cover), [classify](https://github.com/1Jajen1/propCheck#classify) or [tabulate](https://github.com/1Jajen1/propCheck#tabulate).
+
+Here is an example on how to use [classify](https://github.com/1Jajen1/propCheck#classify):
+```kotlin
+propCheck {
+    forAll(OrderedList.arbitrary(Int.order(), Int.arbitrary())) { (l): OrderedList<Int> ->
+        classify(
+            l.size > 1,
+            "non-trivial",
+            l.shuffled().sorted() == l
+        )
+    }
+}
+// prints something like this =>
++++ OK, passed 100 tests (92,00% non-trivial).
+```
+
+To fail a test with insufficient coverage use [checkCoverage](https://github.com/1Jajen1/propCheck#checkcoverage) with functions like [cover](https://github.com/1Jajen1/propCheck#cover) or [coverTable](https://github.com/1Jajen1/propCheck#covertable).
+```kotlin
+propCheck {
+    forAll(OrderedList.arbitrary(Int.order(), Int.arbitrary())) { (l): OrderedList<Int> ->
+        checkCoverage(
+            cover(
+                95.0,
+                l.size > 1,
+                "non-trivial",
+                l.shuffled().sorted() == l
+            )
+        )
+    }
+}
+// prints something like this =>
+*** Failed! (after 800 tests):
+Insufficient coverage
+89,99% non-trivial
+```
+> Here a coverage of 95% non-trivial lists is required, but only 89.99% could be reached.
+
 ## Running these tests with a test runner
 
 propCheck is by itself stand-alone and does not provide test-runner capabilites like kotlintest. It however can and should be used together with a test-runner. By default `propCheck` will throw exceptions on failure and thus will cause the test case it is being run in to fail. (That can be diasbled by using methods like `propCheckWithResult` instead)
@@ -191,7 +232,7 @@ If not then don't worry. The entire api can be used without ever touching upon a
 ## Kotlintest generators vs propCheck
 Kotlintest already includes some means of property based testing. However their data-types and reflection-lookups are severly limited. The reason I ported quickcheck over is because it is built upon lawful instances for its datatypes and features a much richer set of methods. This makes testing with propCheck much easier and much more powerful.
 
-> There is however a helper method to convert a `Arbitrary<A>` to a kotlintest `Gen<A>`. That approach is somewhat limited though. So don't expect them to be equal.
+> There is however a helper method to convert a `Arbitrary<A>` to a kotlintest `Gen<A>`. That approach is somewhat limited though, especially when it comes to shrinking.
 
 ## Feedback
 `propCheck` is still in its early days so if you notice bugs or think something can be improved please create issues or shoot me a pull request. All feedback is highly appreciated.
