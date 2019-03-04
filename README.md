@@ -3,6 +3,24 @@
 > A small library built upon kotlintest that aims to adopt haskell [Quickcheck's](https://github.com/nick8325/quickcheck) functionality.
 It started out as a straight port of quickcheck and was adapted slightly to work better with kotlin
 
+## Table of contents
+
+* [Usage](https://github.com/1Jajen1/propCheck#usage)
+* [Shrinking](https://github.com/1Jajen1/propCheck#shrinking)
+* [Testing custom classes](https://github.com/1Jajen1/propCheck#testing-custom-classes)
+* [The `Gen<A>` datatype](https://github.com/1Jajen1/propCheck#the-gena-datatype)
+* [A note regarding test data](https://github.com/1Jajen1/propCheck#a-note-regarding-test-data)
+* [Running with a test runner](https://github.com/1Jajen1/propCheck#running-these-tests-with-a-test-runner)
+* [Use of arrow in and with propCheck](https://github.com/1Jajen1/propCheck#use-of-arrow-in-and-with-propcheck)
+* [Kotlintest generators vs propCheck](https://github.com/1Jajen1/propCheck#kotlintest-generators-vs-propcheck)
+* [Feedback](https://github.com/1Jajen1/propCheck#feedback)
+* [Credits](https://github.com/1Jajen1/propCheck#credits)
+* [Api overview](https://github.com/1Jajen1/propCheck#api-overview)
+    * [Setting up properties](https://github.com/1Jajen1/propCheck#setting-up-property-based-tests)
+    * [Generator combinators](https://github.com/1Jajen1/propCheck#generator-combinators)
+    * [Helpers to implement `Arbitrary<A>`](https://github.com/1Jajen1/propCheck#helpers-to-implement-arbitrarya-instances)
+    * [Types with default implementations](https://github.com/1Jajen1/propCheck#helpers-to-implement-arbitrarya-instances)
+    
 ## Usage
 
 Add the following to your `build.gradle`:
@@ -75,34 +93,34 @@ In the following examplee we wirite a simple generator for a user data class:
 ```kotlin
 data class User(val name: String, val age: Int, val friends: List<String>)
 
-val userArb = object : Arbitrary<User> {
-    override fun arbitrary(): Gen<User> = Gen.applicative().map(
+val userArb: Arbitrary<User> = Arbitrary(
+    Gen.applicative().map(
         arbitraryASCIIString(),
         arbitrarySizedInt(),
         ListK.arbitrary(String.arbitrary()).arbitrary()
     ) { (name, age, friends) ->
         User(name, age, friends)
     }.fix()
-}
+)
 ```
 Here we combine three generators (String, Int, List<String>) and map their result to a user.
+> This is also using the invoke constructor from `Arbitrary` that constructs an Arbitrary without shrinking.
 
 Let's add a way to shrink this user:
 ```kotlin
 val userArb = object : Arbitrary<User> {
     override fun arbitrary(): Gen<User> = ...
     override fun shrink(fail: User): Sequence<User> =
-        override fun shrink(fail: User): Sequence<User> =
-                    shrinkMap({ user ->
-                        Tuple3(user.name, user.age, user.friends.k())
-                    }, { (name, age, friends) ->
-                        User(name, age, friends)
-                    }, Tuple3.arbitrary(
-                         String.arbitrary(),
-                         Int.arbitrary(),
-                         ListK.arbitrary(String.arbitrary())
-                       )
-                    ).invoke(fail)
+            shrinkMap({ user ->
+                Tuple3(user.name, user.age, user.friends.k())
+            }, { (name, age, friends) ->
+                User(name, age, friends)
+            }, Tuple3.arbitrary(
+                 String.arbitrary(),
+                 Int.arbitrary(),
+                 ListK.arbitrary(String.arbitrary())
+               )
+            ).invoke(fail)
 }
 ```
 Here `shrinkMap` is used to implement shrinking. `shrinkMap` returns a shrinking function for a type that can be converted from `A` to `B` and back by using an existing instance of `Arbitrary<B>`. Since data classes in general can be expressed as tuples and `Tuple3` already has an arbitrary instance (with shrinking) we can take advantage of that.
@@ -888,6 +906,8 @@ ShrinkList will shrink a list in a few different ways: By removing elements, by 
 Shrinkmap takes a function from an `A` to a `B` and an `Arbitrary<B>` and returns a shrinking function `(A) -> Sequence<B>`.
 This is especially useful if your type `A` has an almost isomorphic type `B` that already has a shrinking instance defined.
 > fromTup is implemented using this
+
+> For arrow-optics users: There is an overload of shrinkMap which can take an ISO<A, B> instead of two functions instead.
 
 #### `shrinkByte`, `shrinkInt`, `shrinkLong`
 

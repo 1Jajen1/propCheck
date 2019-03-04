@@ -2,6 +2,7 @@ package propCheck
 
 import arrow.core.Tuple2
 import arrow.core.toT
+import arrow.optics.Iso
 import arrow.typeclasses.Order
 import propCheck.gen.functor.functor
 import propCheck.gen.monad.monad
@@ -21,6 +22,12 @@ interface Arbitrary<A> {
      * shrink an A to a Sequence of A's
      */
     fun shrink(fail: A): Sequence<A> = emptySequence()
+
+    companion object {
+        operator fun <A>invoke(g: Gen<A>): Arbitrary<A> = object: Arbitrary<A> {
+            override fun arbitrary(): Gen<A> = g
+        }
+    }
 }
 
 // ----------------------- Helpers for numbers
@@ -98,6 +105,13 @@ fun <A> shrinkNothing(): () -> List<A> = { emptyList() }
  */
 fun <A, B> shrinkMap(f: (A) -> B, g: (B) -> A, arbA: Arbitrary<B>): (A) -> Sequence<A> = { fail ->
     arbA.shrink(f(fail)).map(g)
+}
+
+/**
+ * implement a shrink function using an isomorphism from arrow-optics and an Arbitrary<B>
+ */
+fun <A, B> shrinkMap(iso: Iso<A, B>, arbB: Arbitrary<B>): (A) -> Sequence<A> = { fail ->
+    arbB.shrink(iso.get(fail)).map { iso.reverseGet(it) }
 }
 
 /**
