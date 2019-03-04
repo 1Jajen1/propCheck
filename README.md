@@ -874,7 +874,7 @@ val userArb: Arbitrary<User> = fromTup({ (name, age) ->
 This function can lookup basic types (full list [here](https://github.com/1Jajen1/propCheck/blob/master/README.md#types-with-default-implementations)) at runtime so you don't have to specify it.
 
 ```kotlin
-val stringArb: Arbitrary<String> = defArbitrary<String>()```
+val stringArb: Arbitrary<String> = defArbitrary<String>()
 ```
 > Be carful with using this function, it will throw you try to get an unsupported type.
 
