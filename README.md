@@ -247,6 +247,7 @@ Kotlintest already includes some means of property based testing. However their 
 `propCheck` is a port of the awesome library [quickcheck](https://github.com/nick8325/quickcheck). If you ever come around to use haskell make sure to give it a go!
 Writing `propCheck` was also made much easier by using [arrow-kt](https://arrow-kt.io/) to be able to write code in a similar style to haskell and thus close to the original.
 As with `quickCheck` make sure to check out `arrow` and a more functional programming style in kotlin.
+
 ---
 
 ## Api overview
