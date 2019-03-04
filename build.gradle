@@ -22,7 +22,7 @@ apply plugin: 'com.jfrog.bintray'
 apply plugin: 'kotlin-kapt'
 
 group 'propCheck'
-version '1.0-SNAPSHOT'
+version '0.9'
 
 def arrow_version = "0.9.0-SNAPSHOT"
 dependencies {
@@ -53,16 +53,51 @@ dependencies {
 
 task sourcesJar(type: Jar, dependsOn: classes) {
     classifier = 'sources'
-    from sourceSets.main.allSource, 'build/generated/source/kapt/main', 'build/generated/source/kaptKotlin/main'
+    from sourceSets.main.allSource
+}
+
+artifacts {
+    archives sourcesJar
+}
+
+def pomConfig = {
+    licenses {
+        license {
+            name "BSD 3-Clause"
+            url "https://github.com/1Jajen1/propCheck/blob/master/LICENSE"
+            distribution "repo"
+        }
+    }
+    developers {
+        developer {
+            id "jannis"
+            name "Jannis Overesch"
+            email "overesch.jannis@gmail.com"
+        }
+    }
+
+    scm {
+        url "https://github.com/1Jajen1/propCheck"
+    }
 }
 
 publishing {
     publications {
-        MyPublication(MavenPublication) {
-            artifact shadowJar
+        mavenPublication(MavenPublication) {
+            from components.java
+            artifact sourcesJar {
+                classifier "sources"
+            }
             groupId 'propCheck'
             artifactId 'propCheck-kt'
-            version '1.0-SNAPSHOT'
+            version '0.9'
+            pom.withXml {
+                def root = asNode()
+                root.appendNode('description', 'Property based testing for kotlin')
+                root.appendNode('name', 'propCheck-kt')
+                root.appendNode('url', 'https://github.com/1Jajen1/propCheck')
+                root.children().last() + pomConfig
+            }
         }
     }
 }
@@ -71,14 +106,14 @@ bintray {
     publish = true
     user = System.getenv('BINTRAY_USER')
     key = System.getenv('BINTRAY_KEY')
-    publications = ['MyPublication']
+    publications = ['mavenPublication']
     pkg {
         repo = 'propCheck-kt'
         name = 'propCheck-kt'
         licenses = ['BSD 3-Clause']
         vcsUrl = 'https://github.com/1Jajen1/propCheck'
         version {
-            name = '1.0'
+            name = '0.9'
             released  = new Date()
         }
     }
@@ -93,11 +128,4 @@ compileKotlin {
 }
 compileTestKotlin {
     kotlinOptions.jvmTarget = "1.8"
-}
-
-
-def artifactID = "propCheck-kt"
-shadowJar {
-    baseName = artifactID
-    classifier = null
 }
