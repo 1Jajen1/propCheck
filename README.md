@@ -246,7 +246,7 @@ Kotlintest already includes some means of property based testing. However their 
 ## Credits
 `propCheck` is a port of the awesome library [quickcheck](https://github.com/nick8325/quickcheck). If you ever come around to use haskell make sure to give it a go!
 Writing `propCheck` was also made much easier by using [arrow-kt](https://arrow-kt.io/) to be able to write code in a similar style to haskell and thus close to the original.
-As with `quickCheck` make sure to check out `arrow` and a more functional programming style in kotlin.
+As with `quickCheck` make sure to check out `arrow` for a more functional programming style in kotlin.
 
 ---
 
@@ -286,14 +286,49 @@ inline fun <reified A, B> forAll(
 #### forAllShrink
 
 Like `forAll` but tries to shrink failed test cases.
+```kotlin
+propCheck {
+    forAllShrink { (iP, jN): Pair<Positive<Int>, NonPositive<Int>> ->
+        val (i) = iP; val (j) = jN
+        i + j < i
+    }
+}
+// prints =>
+*** Failed! (after 1 test and 2 shrinks):
+Falsifiable
+(1, 0)
+```
+
 
 #### forAllBlind
 
 Like `forAll` but does not print a counterexample on failure.
+```kotlin
+propCheck {
+    forAllBlind { (iP, jN): Pair<Positive<Int>, NonPositive<Int>> ->
+        val (i) = iP; val (j) = jN
+        i + j < i
+    }
+}
+// prints =>
+*** Failed! (after 1 test):
+Falsifiable
+```
 
 #### forAllShrinkBlind
 
 like `forAllShrink` but does not print a counterexample on failure.
+```kotlin
+propCheck {
+    forAllBlind { (iP, jN): Pair<Positive<Int>, NonPositive<Int>> ->
+        val (i) = iP; val (j) = jN
+        i + j < i
+    }
+}
+// prints =>
+*** Failed! (after 1 test and 2 shrinks):
+Falsifiable
+```
 
 #### discardIf
 
@@ -311,7 +346,7 @@ propCheck {
 }
 ```
 
-Use functions like label/classify/tabulate to check if your test data is still good.
+Use functions like [label](https://github.com/1Jajen1/propCheck#label), [classify](https://github.com/1Jajen1/propCheck#classify) or [tabulate](https://github.com/1Jajen1/propCheck#tabulate) to check if your test data is still good.
 
 #### verbose
 
@@ -338,6 +373,25 @@ Falsifiable
 #### verboseShrinking
 
 Like `verbose` but prints on shrink attempts as well.
+```kotlin
+propCheck {
+    forAllShrink { i: Int ->
+        verboseShrinking(
+            i < 10
+        )
+    }
+}
+// prints something like this =>
+Failed: 12
+
+Failed: 11
+
+Failed: 10
+
+*** Failed! (after 19 tests and 2 shrinks):
+Falsifiable
+10
+```
 
 #### whenFail
 
@@ -348,23 +402,82 @@ propCheck {
         whenFail({ println("We failed") }, i > 10)
     }
 }
+// prints =>
+We failed
+*** Failed! (after 1 test):
+Falsifiable
+0
 ```
 
 #### whenFailIO
 
 Variant of `whenFail` that takes an `IO<Unit>` instead of a function.
+```kotlin
+propCheck {
+    forAll { i: Int ->
+        whenFailIO(IO { println("We failed") }, i > 10)
+    }
+}
+// prints =>
+We failed
+*** Failed! (after 1 test):
+Falsifiable
+0
+```
 
 #### whenFailEvery
 
 Performs an action after every failed test (includes shrinking).
+```kotlin
+propCheck {
+    forAllShrink { i: Int ->
+        whenFailEvery({ println("We failed") }, i < 10)
+    }
+}
+// prints =>
+We failed
+We failed
+*** Failed! (after 15 tests and 1 shrink):
+Falsifiable
+10
+```
 
 #### whenFailEveryIO
 
 Variant of `whenFailEvery` that takes an `IO<Unit>` instead of a function. 
+```kotlin
+propCheck {
+    forAllShrink { i: Int ->
+        whenFailEvery(IO { println("We failed") }, i < 10)
+    }
+}
+// prints =>
+We failed
+We failed
+*** Failed! (after 15 tests and 1 shrink):
+Falsifiable
+10
+```
 
 #### callback
 
 Attach a callback to a test case.
+```kotlin
+propCheck {
+    forAllShrink { i: Int ->
+        callback(
+            Callback.PostFinalFailure(
+                CallbackKind.NoCounterexample
+            ) { state, res -> IO { println("Failed with testresult: $res") } },
+            i < 10)
+    }
+}
+// prints =>
+Failed with testresult: TestResult(ok=Some(false), expected=true, reason=Falsifiable, exception=None, abort=false, optionNumOfTests=None, optionCheckCoverage=None, labels=[], classes=[], tables=[], requiredCoverage=[], testCase=[10], callbacks=[propCheck.assertions.Callback$PostFinalFailure@4fe3c938, propCheck.assertions.Callback$PostFinalFailure@5383967b])
+*** Failed! (after 21 tests and 2 shrinks):
+Falsifiable
+10
+```
 
 #### label
 
@@ -388,6 +501,21 @@ propCheck {
 #### collect
 
 Like label, but uses an implicit show function. (Basically calls toString on every testcase and uses that as its label)
+```kotlin
+propCheck {
+    forAll { (i): NonNegative<Int> ->
+        collect(
+            i.rem(2),
+            i >= 0
+            )
+    }
+}
+// prints =>
++++ OK, passed 100 tests:
+56,00% 1
+44,00% 0
+```
+
 
 #### classify
 
@@ -457,14 +585,51 @@ Data (100 in total)
 #### coverTable
 
 Like `cover` but for labels in tables. Again no failure unless used with `checkCoverage`
+```kotlin
+propCheck {
+    forAll { intArr: IntArray ->
+        checkCoverage(
+            tabulate(
+                "Data",
+                listOf(if (intArr.isNotEmpty()) "not empty" else "empty"),
+                coverTable(
+                    "Data",
+                    listOf("not empty" toT 90.0),
+                    true
+                )
+            )
+        )
+    }
+}
+// prints =>
++++ OK, passed 200 tests.
+Data (200 in total)
+99,00% not empty
+1,00% empty
+```
 
 #### checkCoverage
 
-Enable coverage based checks based.
+Enable coverage based checks based. Without if a test is not sufficiently covered it will not fail.
 
 #### withMaxSuccess
 
 Change the number of tests to run.
+```kotlin
+propCheck {
+    forAllShrink { intArr: IntArray ->
+        discardIf(
+            intArr.isEmpty(),
+            withMaxSuccess(
+                200,
+                intArr.sum() / intArr.size.toDouble() == intArr.average()
+            )
+        )
+    }
+}
+// prints =>
++++ OK, passed 200 tests; 20 discarded.
+```
 
 #### again
 
@@ -476,11 +641,39 @@ Abort after this test regardless of result.
 
 #### expectFailure
 
-Expect the test to fail. 
+Expect the test to fail.
+```kotlin
+propCheck {
+    forAllShrink { intArr: IntArray ->
+        expectFailure(
+            intArr.sum() / intArr.size.toDouble() == intArr.average()
+        )
+    }
+}
+// prints => 
++++ OK, failed as expected. (after 1 test):
+Falsifiable
+[]
+```
 
 #### counterexample
 
 Provide a counterexample that will be printed on failure.
+```kotlin
+propCheck {
+    forAllBlind { (i, j): Tuple2<Int, Int> ->
+        counterexample(
+            "($i,$j)",
+            i + j == 0 // bogus test :)
+        )
+    }
+}
+// prints =>
+*** Failed! (after 2 tests):
+Falsifiable
+(0,-1)
+```
+
 
 #### noShrinking
 
@@ -493,26 +686,58 @@ Enable shrinking.
 #### mapSize
 
 Change the current size parameter used.
+```kotlin
+propCheck {
+    mapSize({ it + 20 },
+        forAll { i: Int ->
+            classify(i > 30, "greater 30", true)
+        }
+    )
+}
+// prints =>
++++ OK, passed 100 tests (15,00% greater 30).
+```
+> By default the size is 30 and the int generator by default generates in a range of -size to size. With the increase we will now get values above 30.
+> Note: There are other methods changing the size, so this is not an upper bound.
 
 #### mapTotalResult
 
 Map over the current test result. Must be a total function. (Should never throw)
 
-#### liftBoolean
-
-Lift a boolean to a test result.
-```kotlin
-true -> test succeeds
-false -> failure
-```
-
 #### ioProperty
 
 Run a test in `ÌO<A>`. Will not use shrinking.
+```kotlin
+fun doSideEffectsWithLong(l: Long): IO<Boolean> = IO { throw Throwable("Side effects are bad") }
+propCheck {
+    forAll { l: Long ->
+        ioProperty(
+            doSideEffectsWithLong(l)
+        )
+    }
+}
+*** Failed! (after 1 test):
+Exception
+0
+```
 
 #### idempotentIOProperty
 
-Run a test in `IO<A>` with shrinking. Might rerun the `IO` during shrinking!
+Run a test in `IO<A>` with shrinking.
+```kotlin
+fun doSideEffectsWithString(l: Long): IO<Boolean> = IO { l < 20 || throw Throwable("Side effects are bad") }
+propCheck {
+    forAllShrink { l: Long ->
+        idempotentIOProperty(
+            doSideEffectsWithString(l)
+        )
+    }
+}
+*** Failed! (after 24 tests and 1 shrink):
+Exception
+20
+```
+> Be aware that this can re-execute the IO on shrinking.
 
 ---
 
@@ -603,6 +828,74 @@ Generate random sublists of `l`.
 #### `Gen.shuffle(l: List<A>): Gen<List<A>>`
 
 Generate different permutations of l.
+
+---
+
+### Helpers to implement `Arbitrary<A>` instances
+
+#### `fromTup(to: (A) -> TupleN, from: (TupleN) -> A, Arbitrary<Tuple2N>)`
+
+This is a helper function to create instances by mapping to and from a tuple.
+```koltin
+data class User(val name: String, val age: Int)
+    
+val userArb: Arbitrary<User> = fromTup({ (name, age) ->
+    name toT age
+}, { (name, age) ->
+    User(name, age)
+}, Tuple2.arbitrary(String.arbitrary(), Int.arbitrary()))
+```
+
+Since the tuple consists of only Strings and Ints (types [defArbitrary]() can lookup) we can shorten this to:
+```koltin
+data class User(val name: String, val age: Int)
+    
+val userArb: Arbitrary<User> = fromTup({ (name, age) ->
+    name toT age
+}, { (name, age) ->
+    User(name, age)
+}, Tuple2.arbitrary(defArbitrary(), defArbitrary()))
+```
+
+And since Tuple2 can also be looked up we can replace it with `defArbitrary()` as well (which is the defaul, so we can omit it)
+This leaves us with:
+```kotlin
+data class User(val name: String, val age: Int)
+    
+val userArb: Arbitrary<User> = fromTup({ (name, age) ->
+    name toT age
+}, { (name, age) ->
+    User(name, age)
+})
+```
+
+#### `defArbitrary<A>(): Arbitrary<A>`
+
+This function can lookup basic types (full list [here](https://github.com/1Jajen1/propCheck/blob/master/README.md#types-with-default-implementations)) at runtime so you don't have to specify it.
+
+```kotlin
+val stringArb: Arbitrary<String> = defArbitrary<String>()```
+```
+> Be carful with using this function, it will throw you try to get an unsupported type.
+
+####`shrinkList<A>(shrinkA: (A) -> Sequence<A>): (List<A>) -> Sequence<List<A>>`
+
+ShrinkList will shrink a list in a few different ways: By removing elements, by shrinking its content using the supplied function `shrinkA` and recursively on the results of the former methods.
+> This function is very useful if you can conert your datatype to a list and back.
+
+#### `shrinkMap`
+
+Shrinkmap takes a function from an `A` to a `B` and an `Arbitrary<B>` and returns a shrinking function `(A) -> Sequence<B>`.
+This is especially useful if your type `A` has an almost isomorphic type `B` that already has a shrinking instance defined.
+> fromTup is implemented using this
+
+#### `shrinkByte`, `shrinkInt`, `shrinkLong`
+
+Functions that proved shrinking functions for the types `Byte`, `Int` and `Long`
+
+#### `shrinkFloat`, `shrinkDouble`
+
+Functions that proved shrinking functions for the types `Float` and `Double`
 
 ---
 
