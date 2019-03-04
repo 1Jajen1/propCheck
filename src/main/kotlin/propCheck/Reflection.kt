@@ -12,6 +12,9 @@ import arrow.data.extensions.mapk.show.show
 import arrow.data.extensions.nonemptylist.show.show
 import arrow.data.extensions.setk.show.show
 import arrow.data.extensions.validated.show.show
+import arrow.effects.IO
+import arrow.effects.extensions.io.applicativeError.handleError
+import arrow.effects.extensions.io.monadThrow.monadThrow
 import arrow.typeclasses.Show
 import propCheck.asciistring.arbitrary.arbitrary
 import propCheck.asciistring.show.show
@@ -119,11 +122,13 @@ fun <A : Any> lookupShow(qualifiedName: String): Show<A> = when (qualifiedName) 
     else -> Show.any()
 } as Show<A>
 
-inline fun <reified A : Any> defShow(): Show<A> = Nel.fromList(getGenericTypes<A>()).fold({
-    lookupShow(A::class.qualifiedName!!)
-}, {
-    lookupShowWithGenerics(A::class.java, it)
-})
+inline fun <reified A : Any> defShow(): Show<A> = IO.monadThrow().bindingCatch {
+    Nel.fromList(getGenericTypes<A>()).fold({
+        lookupShow<A>(A::class.qualifiedName!!)
+    }, {
+        lookupShowWithGenerics(A::class.java, it)
+    })
+}.handleError { Show.any() }.unsafeRunSync()
 
 fun <A : Any> lookupShowWithGenerics(klass: Class<A>, l: Nel<Type>): Show<A> =
     klass.name.let { name ->

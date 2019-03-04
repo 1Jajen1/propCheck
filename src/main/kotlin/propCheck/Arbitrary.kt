@@ -24,8 +24,9 @@ interface Arbitrary<A> {
     fun shrink(fail: A): Sequence<A> = emptySequence()
 
     companion object {
-        operator fun <A>invoke(g: Gen<A>): Arbitrary<A> = object: Arbitrary<A> {
+        operator fun <A>invoke(g: Gen<A>, shrinkA: (A) -> Sequence<A> = { emptySequence<A>() }): Arbitrary<A> = object: Arbitrary<A> {
             override fun arbitrary(): Gen<A> = g
+            override fun shrink(fail: A): Sequence<A> = shrinkA.invoke(fail)
         }
     }
 }
