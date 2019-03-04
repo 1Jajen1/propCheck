@@ -124,7 +124,7 @@ Our shrinking worked and we are left with a minimal example.
 Now there are several ways of simplifying all of this:
 * use `fromTup` which given a function from and to a TupleN returns an Arbitrary instance with shrinking
 * use [arrow-generic](https://arrow-kt.io/docs/generic/product/) to auto generate from and to tuple functions
-* use `defArbitrary` which can for most `A`'s infer a Arbitrary instance. A full list can be seen [here](https://github.com/1Jajen1/propCheck/blob/master/README.md#types-with-default-implementations).
+* use [defArbitrary](https://github.com/1Jajen1/propCheck/blob/master/README.md#defarbitrarya-arbitrarya) which can for most `A`'s infer a Arbitrary instance. A full list can be seen [here](https://github.com/1Jajen1/propCheck/blob/master/README.md#types-with-default-implementations).
 
 This is as concise as it can get: (Given functions for to and from tup are defined or generated with arrow)
 ```kotlin
@@ -846,7 +846,7 @@ val userArb: Arbitrary<User> = fromTup({ (name, age) ->
 }, Tuple2.arbitrary(String.arbitrary(), Int.arbitrary()))
 ```
 
-Since the tuple consists of only Strings and Ints (types [defArbitrary]() can lookup) we can shorten this to:
+Since the tuple consists of only Strings and Ints (types [defArbitrary](https://github.com/1Jajen1/propCheck/blob/master/README.md#defarbitrarya-arbitrarya) can lookup) we can shorten this to:
 ```koltin
 data class User(val name: String, val age: Int)
     
