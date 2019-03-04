@@ -878,7 +878,7 @@ val stringArb: Arbitrary<String> = defArbitrary<String>()
 ```
 > Be carful with using this function, it will throw you try to get an unsupported type.
 
-####`shrinkList<A>(shrinkA: (A) -> Sequence<A>): (List<A>) -> Sequence<List<A>>`
+#### `shrinkList<A>(shrinkA: (A) -> Sequence<A>): (List<A>) -> Sequence<List<A>>`
 
 ShrinkList will shrink a list in a few different ways: By removing elements, by shrinking its content using the supplied function `shrinkA` and recursively on the results of the former methods.
 > This function is very useful if you can conert your datatype to a list and back.
