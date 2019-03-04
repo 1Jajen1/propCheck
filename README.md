@@ -846,7 +846,7 @@ val userArb: Arbitrary<User> = fromTup({ (name, age) ->
 }, Tuple2.arbitrary(String.arbitrary(), Int.arbitrary()))
 ```
 
-Since the tuple consists of only Strings and Ints (types [defArbitrary](https://github.com/1Jajen1/propCheck/blob/master/README.md#defarbitrarya-arbitrarya) can lookup) we can shorten this to:
+Since the tuple consists of only strings and ints (types [defArbitrary](https://github.com/1Jajen1/propCheck/blob/master/README.md#defarbitrarya-arbitrarya) can lookup) we can shorten this to:
 ```kotlin
 data class User(val name: String, val age: Int)
     
@@ -857,7 +857,7 @@ val userArb: Arbitrary<User> = fromTup({ (name, age) ->
 }, Tuple2.arbitrary(defArbitrary(), defArbitrary()))
 ```
 
-And since Tuple2 can also be looked up we can replace it with `defArbitrary()` as well (which is the defaul, so we can omit it)
+And since Tuple2 can also be looked up we can replace it with `defArbitrary()` as well (which is the default, so we can omit it)
 This leaves us with:
 ```kotlin
 data class User(val name: String, val age: Int)
