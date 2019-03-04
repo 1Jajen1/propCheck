@@ -73,7 +73,7 @@ artifacts {
 def pomConfig = {
     licenses {
         license {
-            name ["BSD 3-Clause"]
+            name "BSD 3-Clause"
             url "https://github.com/1Jajen1/propCheck/blob/master/LICENSE"
             distribution "repo"
         }
@@ -81,7 +81,7 @@ def pomConfig = {
     developers {
         developer {
             id "jannis"
-            name ["Jannis Overesch"]
+            name "Jannis Overesch"
             email "overesch.jannis@gmail.com"
         }
     }

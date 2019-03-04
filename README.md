@@ -5,8 +5,18 @@ It started out as a straight port of quickcheck and was adapted slightly to work
 
 ## Usage
 
-> TODO add dependency part here
+Add the following to your `build.gradle`:
+```groovy
+repositories {
+    maven { url 'https://dl.bintray.com/jannis/propCheck-kt' }
+}
 
+dependencies {
+    testImplementation: 'propCheck:propCheck-kt:0.9'
+}
+```
+
+Example usage:
 ```kotlin
 propCheck {
     forAll { (a, b): Pair<Int, Int> ->
