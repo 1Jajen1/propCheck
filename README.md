@@ -222,12 +222,12 @@ class TestSpec : StringSpec({
 })
 ```
 
-## Use of arrow with propCheck
+## Use of arrow in and with propCheck
 
-First of all: If you are using [arrow-kt](https://arrow-kt.io/) everything is good. There are plenty of instances already defined for arrows data-types.
+First of all: If you are using [arrow-kt](https://arrow-kt.io/): Great! There are plenty of instances already defined for arrows data-types.
 
-If not then don't worry. The entire api can be used without ever touching upon arrows datatypes and there are overloads specifically to avoid those cases if they do come up.
-> That is excluding Option but I don't think that will be a problem
+If not then don't worry. Most of the api can be used without ever touching upon arrows datatypes and there are overloads specifically to avoid those cases if they do come up.
+> That is excluding types like Option or TupleN, which should be fine.
 
 ## Kotlintest generators vs propCheck
 Kotlintest already includes some means of property based testing. However their data-types and reflection-lookups are severly limited. The reason I ported quickcheck over is because it is built upon lawful instances for its datatypes and features a much richer set of methods. This makes testing with propCheck much easier and much more powerful.
