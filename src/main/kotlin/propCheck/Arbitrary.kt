@@ -63,7 +63,13 @@ fun arbitrarySizedDouble(): Gen<Double> = Gen.sized { n ->
 
 fun arbitrarySizedByte(): Gen<Byte> = Gen.sized { n ->
     Gen.choose(
-        Math.min(-n, Byte.MIN_VALUE.toInt()).toByte() toT Math.max(n, Byte.MAX_VALUE.toInt()).toByte(),
+        when {
+            -n < Byte.MIN_VALUE -> Byte.MIN_VALUE
+            else -> (-n).toByte()
+        } toT when {
+            n > Byte.MAX_VALUE -> Byte.MAX_VALUE
+            else -> n.toByte()
+        },
         Byte.random()
     )
 }

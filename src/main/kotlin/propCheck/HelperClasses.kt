@@ -331,7 +331,7 @@ interface ShrinkingArbitrary<S, A> : Arbitrary<Shrinking<S, A>> {
 
 interface ShrinkState<S, A> {
     fun shrinkInit(a: A): S
-    fun shrinkState(a: A, s: S): Sequence<Tuple2<A, S>>
+    fun shrinkState(a: A, state: S): Sequence<Tuple2<A, S>>
 }
 
 // --------------- Positive numbers > 0

@@ -52,7 +52,13 @@ data class TestResult(
     val testCase: List<String>,
     val callbacks: List<Callback>
 ) {
-    companion object
+    companion object {
+        fun toTuple(res: TestResult) = res.run {
+            Tuple13(ok, expected, reason, exception, abort, optionNumOfTests, optionCheckCoverage, labels, classes, tables, requiredCoverage, testCase, callbacks)
+        }
+        fun fromTuple(tup: Tuple13<Option<Boolean>, Boolean, String, Option<Throwable>, Boolean, Option<Int>, Option<Confidence>, List<String>, List<String>, List<Tuple2<String, String>>, List<Tuple3<Option<String>, String, Double>>, List<String>, List<Callback>>) =
+                TestResult(tup.a, tup.b, tup.c, tup.d, tup.e, tup.f, tup.g, tup.h, tup.i, tup.j, tup.k, tup.l, tup.m)
+    }
 }
 
 // @higherkind boilerplate
@@ -535,7 +541,7 @@ inline fun <reified A, B> forAll(
     showB: Show<B> = Show.any(),
     noinline prop: (B) -> A
 ): Property =
-    forAllShrink(genB, showB, { emptySequence() }, testable, prop)
+    forAllShrink(genB, { emptySequence() }, showB, testable, prop)
 
 /**
  * run a test without printing a counterexample on failure
@@ -552,12 +558,12 @@ inline fun <reified A, B> forAllBlind(
  */
 inline fun <reified A, B> forAllShrink(
     genB: Gen<B>,
-    showB: Show<B> = Show.any(),
     noinline shrinkerB: (B) -> Sequence<B>,
+    showB: Show<B> = Show.any(),
     testable: Testable<A> = defTestable(),
     noinline prop: (B) -> A
 ): Property =
-    forAllShrinkShow(genB, shrinkerB, { showB.run { it.show() } }, testable, prop)
+    forAllShrinkShow(genB, shrinkerB, { showB.run { it.show() } }, prop)
 
 /**
  * run a test with shrinking and a specific show function
@@ -566,7 +572,6 @@ inline fun <reified A, B> forAllShrinkShow(
     genB: Gen<B>,
     noinline shrinkerB: (B) -> Sequence<B>,
     noinline showerB: (B) -> String,
-    testable: Testable<A> = defTestable(),
     noinline prop: (B) -> A
 ): Property =
     forAllShrinkBlind(genB, shrinkerB) { x: B ->
@@ -620,7 +625,7 @@ inline fun <reified A, reified B : Any> forAllShrink(
     showB: Show<B> = defShow(),
     noinline prop: (B) -> A
 ): Property =
-    forAllShrink(arbB.arbitrary(), showB, { arbB.shrink(it) }, testable, prop)
+    forAllShrink(arbB.arbitrary(), { arbB.shrink(it) }, showB, testable, prop)
 
 /**
  * Helper that looks up instances based on generics
