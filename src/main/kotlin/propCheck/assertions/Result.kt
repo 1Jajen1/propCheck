@@ -203,10 +203,43 @@ fun propCheckIOWithError(
 ): IO<Unit> = propCheckIO(args, f).flatMap {
     when (it) {
         is Result.Success -> IO.unit
-        is Result.GivenUp -> IO.raiseError(Throwable("TODO"))
-        is Result.NoExpectedFailure -> IO.raiseError(Throwable("TODO"))
-        is Result.Failure -> IO.raiseError(Throwable("TODO"))
+        is Result.GivenUp -> IO.raiseError(
+            createAssertionError(it)
+        )
+        is Result.NoExpectedFailure -> IO.raiseError(
+            createAssertionError(it)
+        )
+        is Result.Failure -> IO.raiseError(
+            createAssertionError(it)
+        )
     }
+}
+
+internal fun createAssertionError(res: Result): AssertionError = AssertionError(failureMessage(res)).apply {
+    initCause(null)
+}
+
+internal fun failureMessage(result: Result): String = when (result) {
+    is Result.Failure -> "Failed: " + result.reason +
+            (if (result.failingTestCase.isNotEmpty())
+                "\n" + result.failingTestCase.joinToString() + "\n"
+            else "") +
+            "after " + result.numTests.number("test") +
+            (if (result.numDiscardedTests > 0)
+                " discarded " + result.numDiscardedTests
+            else "") +
+            (if (result.numShrinks > 0)
+                " shrunk " + result.numShrinks.number("time")
+            else "")
+    is Result.GivenUp -> "Gave up " + "after " + result.numTests.number("test") +
+            (if (result.numDiscardedTests > 0)
+                " discarded " + result.numDiscardedTests
+            else "")
+    is Result.NoExpectedFailure -> "No expected failure " + "after " + result.numTests.number("test") +
+            (if (result.numDiscardedTests > 0)
+                " discarded " + result.numDiscardedTests
+            else "")
+    else -> throw IllegalStateException("Never")
 }
 
 /**
