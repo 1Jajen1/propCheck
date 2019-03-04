@@ -836,7 +836,7 @@ Generate different permutations of l.
 #### `fromTup(to: (A) -> TupleN, from: (TupleN) -> A, Arbitrary<Tuple2N>)`
 
 This is a helper function to create instances by mapping to and from a tuple.
-```koltin
+```kotlin
 data class User(val name: String, val age: Int)
     
 val userArb: Arbitrary<User> = fromTup({ (name, age) ->
@@ -847,7 +847,7 @@ val userArb: Arbitrary<User> = fromTup({ (name, age) ->
 ```
 
 Since the tuple consists of only Strings and Ints (types [defArbitrary](https://github.com/1Jajen1/propCheck/blob/master/README.md#defarbitrarya-arbitrarya) can lookup) we can shorten this to:
-```koltin
+```kotlin
 data class User(val name: String, val age: Int)
     
 val userArb: Arbitrary<User> = fromTup({ (name, age) ->
