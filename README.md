@@ -1,5 +1,8 @@
 # propCheck - Property based testing in kotlin
 
+[![CircleCI](https://circleci.com/gh/1Jajen1/propCheck/tree/master.svg?style=svg)](https://circleci.com/gh/1Jajen1/propCheck/tree/master)
+[![License](https://img.shields.io/badge/License-BSD%203--Clause-blue.svg)](https://opensource.org/licenses/BSD-3-Clause)
+
 > A small library built upon kotlintest that aims to adopt haskell [Quickcheck's](https://github.com/nick8325/quickcheck) functionality.
 It started out as a straight port of quickcheck and was adapted slightly to work better with kotlin
 
