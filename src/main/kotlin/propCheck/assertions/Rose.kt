@@ -18,6 +18,7 @@ import propCheck.*
 import propCheck.assertions.property.testable.testable
 import propCheck.assertions.rose.monad.monad
 import propCheck.assertions.testresult.testable.testable
+import propCheck.gen.monad.flatMap
 import propCheck.gen.monad.monad
 
 /**
@@ -54,10 +55,25 @@ data class TestResult(
 ) {
     companion object {
         fun toTuple(res: TestResult) = res.run {
-            Tuple13(ok, expected, reason, exception, abort, optionNumOfTests, optionCheckCoverage, labels, classes, tables, requiredCoverage, testCase, callbacks)
+            Tuple13(
+                ok,
+                expected,
+                reason,
+                exception,
+                abort,
+                optionNumOfTests,
+                optionCheckCoverage,
+                labels,
+                classes,
+                tables,
+                requiredCoverage,
+                testCase,
+                callbacks
+            )
         }
+
         fun fromTuple(tup: Tuple13<Option<Boolean>, Boolean, String, Option<Throwable>, Boolean, Option<Int>, Option<Confidence>, List<String>, List<String>, List<Tuple2<String, String>>, List<Tuple3<Option<String>, String, Double>>, List<String>, List<Callback>>) =
-                TestResult(tup.a, tup.b, tup.c, tup.d, tup.e, tup.f, tup.g, tup.h, tup.i, tup.j, tup.k, tup.l, tup.m)
+            TestResult(tup.a, tup.b, tup.c, tup.d, tup.e, tup.f, tup.g, tup.h, tup.i, tup.j, tup.k, tup.l, tup.m)
     }
 }
 
@@ -654,3 +670,151 @@ inline fun <reified A> idempotentIOProperty(propIO: IO<A>, testable: Testable<A>
             testable.run { it.property() }.unProperty
         }.promote(IO.monad()).map { Prop(ioRose(it.fix().map { it.unProp })) }
     )
+
+inline fun <reified A, reified B> choice(
+    a: A,
+    b: B,
+    testableA: Testable<A> = defTestable(),
+    testableB: Testable<B> = defTestable()
+): Property =
+    again(
+        Property(
+            Gen.elements(false, true).flatMap { bool ->
+                counterexample(
+                    if (bool) "Left" else "Right",
+                    if (bool) testableA.run { a.property() } else testableB.run { b.property() }
+                ).unProperty
+            }
+        )
+    )
+
+inline fun <reified A, reified B> and(
+    a: A,
+    b: B,
+    testableA: Testable<A> = defTestable(),
+    testableB: Testable<B> = defTestable()
+): Property =
+    conjoin(testableA.run { a.property() }, testableB.run { b.property() })
+
+inline fun <reified A> conjoin(vararg props: A, testableA: Testable<A> = defTestable()): Property =
+    again(
+        Property(
+            Gen.monad().binding {
+                val roses = props.map { testableA.run { it.property() }.unProperty.map { it.unProp }.bind() }
+                Prop(conj(roses, ::identity))
+            }.fix()
+        )
+    )
+
+@PublishedApi
+internal fun conj(roses: List<Rose<TestResult>>, k: (TestResult) -> TestResult): Rose<TestResult> = when {
+    roses.isEmpty() -> Rose.MkRose(k(succeeded()), emptySequence())
+    else -> Rose.IORose(
+        IO.monad().binding {
+            val reduced = when (val it = reduceRose(roses.first()).bind()) {
+                is Rose.MkRose -> it
+                is Rose.IORose -> throw IllegalStateException("The impossible happened")
+            }
+            if (reduced.res.expected.not())
+                Rose.just(failed("expect failure may not be used inside a conjunction"))
+            else
+                when (reduced.res.ok) {
+                    true.some() -> conj(roses.drop(1)) {
+                        addLabels(reduced.res, addCallbacksAndCoverage(reduced.res, k(it)))
+                    }
+                    false.some() -> reduced
+                    None -> IO.monad().binding {
+                        val reduced2 = when (val it =
+                            reduceRose(conj(roses.drop(1)) { addCallbacksAndCoverage(reduced.res, k(it)) }).bind()) {
+                            is Rose.MkRose -> it
+                            is Rose.IORose -> throw IllegalStateException("The impossible happened")
+                        }
+                        when (reduced2.res.ok) {
+                            true.some() -> Rose.MkRose(TestResult.optionOk.set(reduced2.res, none()), emptySequence())
+                            false.some() -> reduced2
+                            None -> reduced2
+                            else -> throw IllegalStateException("The impossible happened")
+                        }
+                    }.bind()
+                    else -> throw IllegalStateException("The impossible happened")
+                }
+        }.fix()
+    )
+}
+
+internal fun addCallbacksAndCoverage(result: TestResult, r: TestResult): TestResult =
+    TestResult.callbacks.modify(
+        TestResult.requiredCoverage.modify(r) { result.requiredCoverage + it }
+    ) { result.callbacks + it }
+
+internal fun addLabels(result: TestResult, r: TestResult): TestResult =
+    TestResult.labels.modify(
+        TestResult.classes.modify(
+            TestResult.tables.modify(r) { result.tables + it }
+        ) { result.classes + it }
+    ) { result.labels + it }
+
+inline fun <reified A, reified B> or(
+    a: A,
+    b: B,
+    testableA: Testable<A> = defTestable(),
+    testableB: Testable<B> = defTestable()
+): Property =
+    disjoin(testableA.run { a.property() }, testableB.run { b.property() })
+
+inline fun <reified A> disjoin(vararg props: A, testableA: Testable<A> = defTestable()): Property =
+    again(
+        Property(
+            Gen.monad().binding {
+                val roses = props.map { testableA.run { it.property() }.unProperty.map { it.unProp }.bind() }
+                Prop(
+                    roses.foldRight(Rose.just(failed(""))) { r, acc ->
+                        disj(acc, r)
+                    }
+                )
+            }.fix()
+        )
+    )
+
+@PublishedApi
+internal fun disj(p: Rose<TestResult>, q: Rose<TestResult>): Rose<TestResult> = Rose.monad().binding {
+    val res1 = p.bind()
+    if (res1.expected.not())
+        failed("expectFailure may not occur inside a disjunction")
+    else
+        when (res1.ok) {
+            false.some() -> {
+                val res2 = q.bind()
+                if (res2.expected.not())
+                    failed("expectFailure may not occur inside a disjunction")
+                else
+                    when (res2.ok) {
+                        true.some() -> addCoverage(res1, res2)
+                        false.some() -> TestResult(
+                            ok = false.some(),
+                            expected = true,
+                            reason = listOf(res1.reason, res2.reason).filter { it.isNotEmpty() }.joinToString(),
+                            exception = res1.exception.or(res2.exception),
+                            abort = false,
+                            optionNumOfTests = none(),
+                            optionCheckCoverage = none(),
+                            labels = emptyList(),
+                            classes = emptyList(),
+                            tables = emptyList(),
+                            requiredCoverage = emptyList(),
+                            callbacks = res1.callbacks +
+                                    listOf(Callback.PostFinalFailure(CallbackKind.Counterexample) { st, _ ->
+                                        st.output.update { it + "\n" }.fix()
+                                    }) +
+                                    res2.callbacks,
+                            testCase = res1.testCase + res2.testCase
+                        )
+                        else -> res2
+                    }
+            }
+            else -> res1
+        }
+}.fix()
+
+internal fun addCoverage(r: TestResult, s: TestResult): TestResult =
+    TestResult.requiredCoverage.modify(s) { r.requiredCoverage + it }
