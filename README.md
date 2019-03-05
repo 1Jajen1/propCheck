@@ -14,6 +14,7 @@ It started out as a straight port of quickcheck and was adapted slightly to work
 * [Use of arrow in and with propCheck](https://github.com/1Jajen1/propCheck#use-of-arrow-in-and-with-propcheck)
 * [Kotlintest generators vs propCheck](https://github.com/1Jajen1/propCheck#kotlintest-generators-vs-propcheck)
 * [Feedback](https://github.com/1Jajen1/propCheck#feedback)
+* [Future plans](https://github.com/1Jajen1/propCheck#future-plans)
 * [Credits](https://github.com/1Jajen1/propCheck#credits)
 * [Api overview](https://github.com/1Jajen1/propCheck#api-overview)
     * [Setting up properties](https://github.com/1Jajen1/propCheck#setting-up-property-based-tests)
