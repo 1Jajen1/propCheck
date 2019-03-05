@@ -7,7 +7,6 @@ import arrow.core.extensions.option.show.show
 import arrow.core.extensions.show
 import arrow.data.*
 import arrow.data.extensions.ior.show.show
-import arrow.data.extensions.listk.show.show
 import arrow.data.extensions.mapk.show.show
 import arrow.data.extensions.nonemptylist.show.show
 import arrow.data.extensions.setk.show.show
@@ -77,7 +76,6 @@ import java.lang.reflect.WildcardType
  */
 
 // ------------------ Show
-
 fun <A : Any> lookupShow(qualifiedName: String): Show<A> = when (qualifiedName) {
     "kotlin.Int", "java.lang.Integer" -> Int.show()
     "kotlin.Long", "java.lang.Long" -> Long.show()
@@ -134,14 +132,46 @@ fun <A : Any> lookupShowWithGenerics(klass: Class<A>, l: Nel<Type>): Show<A> =
     klass.name.let { name ->
         when { // I am keeping the KClass qualified names for now because i might want to use them later ...
             name.startsWith("arrow.core.Tuple") -> Show.any()
-            name == Pair::class.qualifiedName || name == Pair::class.java.name -> lookupPairShow(klass, l)
-            name == Triple::class.qualifiedName || name == Triple::class.java.name -> lookupTripleShow(klass, l)
+            name == Pair::class.qualifiedName || name == Pair::class.java.name -> lookupShowNParameters(klass, 2, l) {
+                object : PairShow<Any, Any> {
+                    override fun SA(): Show<Any> = it[0] as Show<Any>
+                    override fun SB(): Show<Any> = it[1] as Show<Any>
+                }
+            }
+            name == Triple::class.qualifiedName || name == Triple::class.java.name -> lookupShowNParameters(
+                klass,
+                2,
+                l
+            ) {
+                object : TripleShow<Any, Any, Any> {
+                    override fun SA(): Show<Any> = it[0] as Show<Any>
+                    override fun SB(): Show<Any> = it[1] as Show<Any>
+                    override fun SC(): Show<Any> = it[2] as Show<Any>
+                }
+            }
             name == List::class.qualifiedName || name == ListK::class.qualifiedName ||
-                    name == List::class.java.name || name == ListK::class.java.name -> ListK.show<Any>()
+                    name == List::class.java.name || name == ListK::class.java.name -> lookupShowNParameters(
+                klass,
+                1,
+                l
+            ) {
+                object : ListKShow<Any> {
+                    override fun SA(): Show<Any> = it[0] as Show<Any>
+                }
+            }
             name == Set::class.qualifiedName || name == SetK::class.qualifiedName ||
-                    name == Set::class.java.name || name == SetK::class.java.name -> SetK.show<Any>()
+                    name == Set::class.java.name || name == SetK::class.java.name -> lookupShowNParameters(klass, 1, l) {
+                object : SetKShow<Any> {
+                    override fun SA(): Show<Any> = it[0] as Show<Any>
+                }
+            }
             name == Map::class.qualifiedName || name == MapK::class.qualifiedName ||
-                    name == Map::class.java.name || name == MapK::class.java.name -> MapK.show<Any, Any>()
+                    name == Map::class.java.name || name == MapK::class.java.name -> lookupShowNParameters(klass, 2, l) {
+                object: MapKShow<Any, Any> {
+                    override fun SK(): Show<Any> = it[0] as Show<Any>
+                    override fun SV(): Show<Any> = it[1] as Show<Any>
+                }
+            }
             name == Blind::class.qualifiedName || name == Blind::class.java.name -> Blind.show<Any>()
             name == Fixed::class.qualifiedName || name == Fixed::class.java.name -> lookupShowNParameters(
                 klass,
@@ -158,12 +188,39 @@ fun <A : Any> lookupShowWithGenerics(klass: Class<A>, l: Nel<Type>): Show<A> =
                 1,
                 l
             ) { Shrink2.show(it[0]) }
-            name == Either::class.qualifiedName || name == Either::class.java.name -> Either.show<Any, Any>()
-            name == Option::class.qualifiedName || name == Option::class.java.name -> Option.show<Any>()
-            name == Id::class.qualifiedName || name == Id::class.java.name -> Id.show<Any>()
-            name == Ior::class.qualifiedName || name == Ior::class.java.name -> Ior.show<Any, Any>()
-            name == NonEmptyList::class.qualifiedName || name == NonEmptyList::class.java.name -> Nel.show<Any>()
-            name == Validated::class.qualifiedName || name == Validated::class.java.name -> Validated.show<Any, Any>()
+            name == Either::class.qualifiedName || name == Either::class.java.name -> lookupShowNParameters(klass, 2, l) {
+                object: EitherShow<Any, Any> {
+                    override fun SL(): Show<Any> = it[0] as Show<Any>
+                    override fun SR(): Show<Any> = it[1] as Show<Any>
+                }
+            }
+            name == Option::class.qualifiedName || name == Option::class.java.name -> lookupShowNParameters(klass, 1, l) {
+                object: OptionShow<Any> {
+                    override fun SA(): Show<Any> = it[0] as Show<Any>
+                }
+            }
+            name == Id::class.qualifiedName || name == Id::class.java.name -> lookupShowNParameters(klass, 1, l) {
+                object: IdShow<Any> {
+                    override fun SA(): Show<Any> = it[0] as Show<Any>
+                }
+            }
+            name == Ior::class.qualifiedName || name == Ior::class.java.name -> lookupShowNParameters(klass, 2, l) {
+                object: IorShow<Any, Any> {
+                    override fun SL(): Show<Any> = it[0] as Show<Any>
+                    override fun SR(): Show<Any> = it[1] as Show<Any>
+                }
+            }
+            name == NonEmptyList::class.qualifiedName || name == NonEmptyList::class.java.name -> lookupShowNParameters(klass, 1, l) {
+                object: NonEmptyListShow<Any> {
+                    override fun SA(): Show<Any> = it[0] as Show<Any>
+                }
+            }
+            name == Validated::class.qualifiedName || name == Validated::class.java.name -> lookupShowNParameters(klass, 2, l) {
+                object: ValidatedShow<Any, Any> {
+                    override fun SE(): Show<Any> = it[0] as Show<Any>
+                    override fun SA(): Show<Any> = it[1] as Show<Any>
+                }
+            }
             name == Positive::class.qualifiedName || name == Positive::class.java.name -> lookupShowNParameters(
                 klass,
                 1,
@@ -200,30 +257,10 @@ fun lookupShowWithPossibleGenerics(type: Type): Show<*> = when (type) {
 }
 
 fun <A : Any> lookupShowNParameters(klass: Class<A>, n: Int, l: Nel<Type>, cf: (List<Show<*>>) -> Show<*>): Show<*> =
-    if (l.size != n) throw IllegalStateException("Could not find default show for ${klass.name}")
+    if (l.size != n) Show.any()
     else cf((1..n).map { lookupShowWithPossibleGenerics(l.all[it - 1]) })
 
-fun <A : Any> lookupPairShow(klass: Class<A>, l: Nel<Type>): Show<A> =
-    if (l.size != 2) throw IllegalStateException("Could not find default show for ${klass.name}")
-    else object : Show<Pair<Any, Any>> {
-        override fun Pair<Any, Any>.show(): String =
-            "(" +
-                    (lookupShowWithPossibleGenerics(l.head) as Show<Any>).run { this@show.first.show() } + ", " +
-                    (lookupShowWithPossibleGenerics(l.tail[0]) as Show<Any>).run { this@show.second.show() } + ")"
-    } as Show<A>
-
-fun <A : Any> lookupTripleShow(klass: Class<A>, l: Nel<Type>): Show<A> =
-    if (l.size != 3) throw IllegalStateException("Could not find default show for ${klass.name}")
-    else object : Show<Triple<Any, Any, Any>> {
-        override fun Triple<Any, Any, Any>.show(): String =
-            "(" +
-                    (lookupShowWithPossibleGenerics(l.head) as Show<Any>).run { this@show.first.show() } + ", " +
-                    (lookupShowWithPossibleGenerics(l.tail[0]) as Show<Any>).run { this@show.second.show() } + ", " +
-                    (lookupShowWithPossibleGenerics(l.tail[1]) as Show<Any>).run { this@show.third.show() } + ")"
-    } as Show<A>
-
 fun lookupShowByName(s: String): Show<*> = lookupShow<Any>(s)
-
 
 // ------------------ Arbitrary
 
@@ -288,8 +325,27 @@ fun <A : Any> lookupArbyWithGenerics(klass: Class<A>, l: Nel<Type>): Arbitrary<A
     klass.name.let { name ->
         when { // I am keeping the KClass qualified names for now because i might want to use them later ...
             name.startsWith("arrow.core.Tuple") -> lookupTuple(klass, Integer.parseInt("${name[16]}"), l)
-            name == Pair::class.qualifiedName || name == Pair::class.java.name -> lookupPair(klass, l)
-            name == Triple::class.qualifiedName || name == Triple::class.java.name -> lookupTriple(klass, l)
+            name == Pair::class.qualifiedName || name == Pair::class.java.name -> lookupArbitraryNParameters(
+                klass,
+                2,
+                l
+            ) {
+                object : PairArbitrary<Any, Any> {
+                    override fun AA(): Arbitrary<Any> = it[0] as Arbitrary<Any>
+                    override fun AB(): Arbitrary<Any> = it[1] as Arbitrary<Any>
+                }
+            }
+            name == Triple::class.qualifiedName || name == Triple::class.java.name -> lookupArbitraryNParameters(
+                klass,
+                3,
+                l
+            ) {
+                object : TripleArbitrary<Any, Any, Any> {
+                    override fun AA(): Arbitrary<Any> = it[0] as Arbitrary<Any>
+                    override fun AB(): Arbitrary<Any> = it[1] as Arbitrary<Any>
+                    override fun AC(): Arbitrary<Any> = it[2] as Arbitrary<Any>
+                }
+            }
             name == List::class.qualifiedName || name == ListK::class.qualifiedName ||
                     name == List::class.java.name || name == ListK::class.java.name -> lookupArbitraryNParameters(
                 klass,
@@ -381,30 +437,6 @@ fun <A : Any> lookupArbyWithGenerics(klass: Class<A>, l: Nel<Type>): Arbitrary<A
             else -> throw IllegalStateException("Unsupported class $name")
         } as Arbitrary<A>
     }
-
-fun <A : Any> lookupPair(klass: Class<A>, l: Nel<Type>): Arbitrary<A> =
-    if (l.size != 2) throw IllegalStateException("Could not find default arbitrary for ${klass.name}")
-    else object : Arbitrary<Pair<Any, Any>> {
-        val tupArb = lookupTuple(klass, 2, l)
-        override fun arbitrary(): Gen<Pair<Any, Any>> =
-            tupArb.arbitrary().map { (it as Tuple2<Any, Any>).let { it.a to it.b } }
-
-        override fun shrink(fail: Pair<Any, Any>): Sequence<Pair<Any, Any>> =
-            tupArb.shrink((fail.first toT fail.second) as A)
-                .map { (it as Tuple2<Any, Any>).let { it.a to it.b } }
-    } as Arbitrary<A>
-
-fun <A : Any> lookupTriple(klass: Class<A>, l: Nel<Type>): Arbitrary<A> =
-    if (l.size != 3) throw IllegalStateException("Could not find default arbitrary for ${klass.name}")
-    else object : Arbitrary<Triple<Any, Any, Any>> {
-        val tupArb = lookupTuple(klass, 3, l)
-        override fun arbitrary(): Gen<Triple<Any, Any, Any>> =
-            tupArb.arbitrary().map { (it as Tuple3<Any, Any, Any>).let { Triple(it.a, it.b, it.c) } }
-
-        override fun shrink(fail: Triple<Any, Any, Any>): Sequence<Triple<Any, Any, Any>> =
-            tupArb.shrink((Tuple3(fail.first, fail.second, fail.third)) as A)
-                .map { (it as Tuple3<Any, Any, Any>).let { Triple(it.a, it.b, it.c) } }
-    } as Arbitrary<A>
 
 fun <A : Any> lookupTuple(klass: Class<A>, n: Int, l: Nel<Type>): Arbitrary<A> =
     if (l.size != n) throw IllegalStateException("Could not find default arbitrary for ${klass.name}")

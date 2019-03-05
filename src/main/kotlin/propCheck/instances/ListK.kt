@@ -3,6 +3,7 @@ package propCheck.instances
 import arrow.data.ListK
 import arrow.data.k
 import arrow.extension
+import arrow.typeclasses.Show
 import propCheck.Arbitrary
 import propCheck.Gen
 import propCheck.shrinkList
@@ -26,4 +27,17 @@ interface ListArbitrary<A> : Arbitrary<List<A>> {
     override fun arbitrary(): Gen<List<A>> = AA().arbitrary().listOf()
     override fun shrink(fail: List<A>): Sequence<List<A>> = shrinkList<A> { AA().shrink(it) }
         .invoke(fail)
+}
+
+interface ListKShow<A> : Show<ListK<A>> {
+    fun SA(): Show<A>
+    override fun ListK<A>.show(): String =
+            "List(" + joinToString { SA().run { it.show() } } + ")"
+}
+
+
+interface ListShow<A> : Show<List<A>> {
+    fun SA(): Show<A>
+    override fun List<A>.show(): String =
+        "List(" + joinToString { SA().run { it.show() } } + ")"
 }

@@ -38,7 +38,7 @@ class Gen<A>(val unGen: (Tuple2<Long, Int>) -> A) : GenOf<A> {
     internal fun <B> genMap(f: (A) -> B): Gen<B> = Gen { f(fix().unGen(it)) }
 
     /**
-     * Change the size parameter. Must be > 0
+     * Change the size parameter. Must be >= 0
      */
     fun resize(i: Int): Gen<A> = if (i < 0)
         throw IllegalArgumentException("Size must be non-negative")
@@ -51,6 +51,7 @@ class Gen<A>(val unGen: (Tuple2<Long, Int>) -> A) : GenOf<A> {
     fun scale(f: (Int) -> Int): Gen<A> = sized { resize(f(it)) }
 
     /**
+     * FIXME This is as of now not stacksafe
      * generate values that pass a predicate, increase size on failure until a value was generated
      */
     fun suchThat(pred: (A) -> Boolean): Gen<A> = Gen.monad().bindingStackSafe {
@@ -62,6 +63,7 @@ class Gen<A>(val unGen: (Tuple2<Long, Int>) -> A) : GenOf<A> {
     }.run(Gen.monad()).fix()
 
     /**
+     * FIXME This is as of now not stacksafe
      * generate values that pass a predicate, increase size on failure up to a maximum (where none is returned)
      */
     fun suchThatOption(pred: (A) -> Boolean): Gen<Option<A>> =
@@ -77,6 +79,7 @@ class Gen<A>(val unGen: (Tuple2<Long, Int>) -> A) : GenOf<A> {
         }
 
     /**
+     * FIXME This is as of now not stacksafe
      * suchThat + map, will filter all none values
      */
     fun <B> suchThatMap(pred: (A) -> Option<B>): Gen<B> = map(pred).suchThat { it.isDefined() }

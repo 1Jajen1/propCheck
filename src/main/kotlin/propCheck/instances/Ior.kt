@@ -4,6 +4,7 @@ import arrow.data.Ior
 import arrow.data.leftIor
 import arrow.data.rightIor
 import arrow.extension
+import arrow.typeclasses.Show
 import propCheck.Arbitrary
 import propCheck.Gen
 import propCheck.fix
@@ -28,5 +29,17 @@ interface IorArbitrary<L, R> : Arbitrary<Ior<L, R>> {
     }, { l, r ->
         AL().shrink(l).map { Ior.Both(it, r) } +
                 AR().shrink(r).map { Ior.Both(l, it) }
+    })
+}
+
+interface IorShow<L, R> : Show<Ior<L, R>> {
+    fun SL(): Show<L>
+    fun SR(): Show<R>
+    override fun Ior<L, R>.show(): String = fold({
+        "Left(" + SL().run { it.show() } + ")"
+    }, {
+        "Right(" + SR().run { it.show() } + ")"
+    }, { l, r ->
+        "Both(" + SL().run { l.show() } + "," + SR().run { r.show() } + ")"
     })
 }

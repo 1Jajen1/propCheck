@@ -3,6 +3,7 @@ package propCheck.instances
 import arrow.data.SetK
 import arrow.data.k
 import arrow.extension
+import arrow.typeclasses.Show
 import propCheck.Arbitrary
 import propCheck.Gen
 import propCheck.shrinkList
@@ -13,4 +14,10 @@ interface SetKArbitrary<A> : Arbitrary<SetK<A>> {
     override fun arbitrary(): Gen<SetK<A>> = AA().arbitrary().listOf().map { it.toSet().k() }
     override fun shrink(fail: SetK<A>): Sequence<SetK<A>> = shrinkList<A> { AA().shrink(it) }
         .invoke(fail.toList()).map { it.toSet().k() }
+}
+
+interface SetKShow<A> : Show<SetK<A>> {
+    fun SA(): Show<A>
+    override fun SetK<A>.show(): String =
+            "Set(" + joinToString { SA().run { it.show() } } + ")"
 }

@@ -5,6 +5,7 @@ import arrow.core.toT
 import arrow.data.MapK
 import arrow.data.mapOf
 import arrow.extension
+import arrow.typeclasses.Show
 import propCheck.Arbitrary
 import propCheck.Gen
 import propCheck.instances.tuple2.arbitrary.arbitrary
@@ -21,4 +22,11 @@ interface MapKArbitrary<K, V> : Arbitrary<MapK<K, V>> {
     override fun shrink(fail: MapK<K, V>): Sequence<MapK<K, V>> = shrinkList<Tuple2<K, V>> {
         Tuple2.arbitrary(AK(), AV()).shrink(it)
     }.invoke(fail.toList().map { (a, b) -> a toT b }).map { mapOf(*it.toTypedArray()) }
+}
+
+interface MapKShow<K, V> : Show<MapK<K, V>> {
+    fun SK(): Show<K>
+    fun SV(): Show<V>
+    override fun MapK<K, V>.show(): String =
+            "Map(" + entries.joinToString { (k, v) -> SK().run { k.show() } + " -> " + SV().run { v.show() } } + ")"
 }

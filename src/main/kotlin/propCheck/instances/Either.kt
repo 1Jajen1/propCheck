@@ -4,6 +4,7 @@ import arrow.core.Either
 import arrow.core.left
 import arrow.core.right
 import arrow.extension
+import arrow.typeclasses.Show
 import propCheck.Arbitrary
 import propCheck.Gen
 
@@ -22,4 +23,13 @@ interface EitherArbitrary<L, R> : Arbitrary<Either<L, R>> {
     }, { r ->
         AR().shrink(r).map { it.right() }
     })
+}
+
+interface EitherShow<L, R> : Show<Either<L, R>> {
+    fun SL(): Show<L>
+    fun SR(): Show<R>
+    override fun Either<L, R>.show(): String = when (this) {
+        is Either.Left -> "Left(" + SL().run { a.show() } + ")"
+        is Either.Right -> "Right(" + SR().run { b.show() } + ")"
+    }
 }

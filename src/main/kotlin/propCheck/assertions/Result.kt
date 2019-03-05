@@ -183,14 +183,15 @@ fun propCheckIO(
     withState(args) {
         runTest(it, f())
     }.bind().bind().also {
-        println(
-            when (it) {
-                is Result.Success -> it.output
-                is Result.Failure -> it.output
-                is Result.NoExpectedFailure -> it.output
-                is Result.GivenUp -> it.output
-            }
-        )
+        if (args.verbose)
+            println(
+                when (it) {
+                    is Result.Success -> it.output
+                    is Result.Failure -> it.output
+                    is Result.NoExpectedFailure -> it.output
+                    is Result.GivenUp -> it.output
+                }
+            )
     }
 }.fix()
 
@@ -655,9 +656,21 @@ fun labelsAndTables(state: State): Tuple2<List<String>, List<String>> {
         showTable(state.numSuccessTests, none(), it)
     }.map { it.filter { it.isNotEmpty() } }.filter { it.isNotEmpty() }.map { it.joinToString(". ") }
 
-    val tables = state.tables.toList().map {
+    val tables = (state.tables.toList().map {
         showTable(it.second.combineAll(Int.monoid()), it.first.some(), it.second)
-    }.filter { it.isNotEmpty() }.map { it.joinToString("\n") }
+    } + (
+            allCoverage(state).filter { (optTable, label, tot, n, p) ->
+                insufficientlyCovered(
+                    state.coverageConfidence.map { it.certainty },
+                    tot, n, p
+                )
+            }.map { (optTable, label, tot, n, p) ->
+                listOf(
+                    optTable.fold({ "Only " }, { "Table \'$it\' had only " }) +
+                            n.toPercentage(tot) + "% " + label + ", but expected " + (p * 100).toPercentage(tot) + "%"
+                )
+            })
+            ).filter { it.isNotEmpty() }.map { it.joinToString("\n") }
 
     return labels toT tables
 }
@@ -667,7 +680,7 @@ fun showTable(k: Int, tableName: Option<String>, table: Map<String, Int>): List<
             table.entries.sortedBy { it.key }.reversed().sortedBy { it.value }
                 .reversed().map { it.value.toPercentage(k) + "% ${it.key}" }
 
-fun Int.toPercentage(max: Int): String =
+fun Number.toPercentage(max: Number): String =
     "%.2f".format(100 * (this.toDouble() / max.toDouble()))
 
 // ------------------------- Coverage check functions

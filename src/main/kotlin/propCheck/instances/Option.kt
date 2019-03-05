@@ -5,6 +5,7 @@ import arrow.core.none
 import arrow.core.some
 import arrow.core.toT
 import arrow.extension
+import arrow.typeclasses.Show
 import propCheck.Arbitrary
 import propCheck.Gen
 
@@ -20,5 +21,14 @@ interface OptionArbitrary<A> : Arbitrary<Option<A>> {
         emptySequence()
     }, { a ->
         sequenceOf<Option<A>>(none()) + AA().shrink(a).map { it.some() }
+    })
+}
+
+interface OptionShow<A> : Show<Option<A>> {
+    fun SA(): Show<A>
+    override fun Option<A>.show(): String = fold({
+        "None"
+    }, {
+        "Some(" + SA().run { it.show() } + ")"
     })
 }

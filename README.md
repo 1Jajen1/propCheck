@@ -104,7 +104,7 @@ val userArb: Arbitrary<User> = Arbitrary(
 )
 ```
 Here we combine three generators (String, Int, List<String>) and map their result to a user.
-> This is also using the invoke constructor from `Arbitrary` that constructs an Arbitrary without shrinking.
+> This is also using the invoke constructor from `Arbitrary`.
 
 Let's add a way to shrink this user:
 ```kotlin
@@ -122,6 +122,7 @@ val userArb = object : Arbitrary<User> {
                )
             ).invoke(fail)
 }
+
 ```
 Here `shrinkMap` is used to implement shrinking. `shrinkMap` returns a shrinking function for a type that can be converted from `A` to `B` and back by using an existing instance of `Arbitrary<B>`. Since data classes in general can be expressed as tuples and `Tuple3` already has an arbitrary instance (with shrinking) we can take advantage of that.
 
@@ -140,7 +141,7 @@ User(name=, age=20, friends=ListK(list=[]))
 Our shrinking worked and we are left with a minimal example.
 
 Now there are several ways of simplifying all of this:
-* use `fromTup` which given a function from and to a TupleN returns an Arbitrary instance with shrinking
+* use [fromTup](https://github.com/1Jajen1/propCheck#fromtupto-a---tuplen-from-tuplen---a-arbitrarytuple2n) which given a function from and to a TupleN returns an Arbitrary instance with shrinking
 * use [arrow-generic](https://arrow-kt.io/docs/generic/product/) to auto generate from and to tuple functions
 * use [defArbitrary](https://github.com/1Jajen1/propCheck/blob/master/README.md#defarbitrarya-arbitrarya) which can for most `A`'s infer a Arbitrary instance. A full list can be seen [here](https://github.com/1Jajen1/propCheck/blob/master/README.md#types-with-default-implementations).
 
@@ -184,7 +185,7 @@ This example generates binary-trees based with a maximum depth based on the size
 ## A note regarding test data
 The quality of a property-based test is directly related to the quality of the data fed to it. There are some helpers to test and assure that the generated data holds some invariants.
 
-To inspect results use either [label](https://github.com/1Jajen1/propCheck#label), [cover](https://github.com/1Jajen1/propCheck#cover), [classify](https://github.com/1Jajen1/propCheck#classify) or [tabulate](https://github.com/1Jajen1/propCheck#tabulate).
+To inspect results use either [label](https://github.com/1Jajen1/propCheck#label), [collect](https://github.com/1Jajen1/propCheck#collect), [classify](https://github.com/1Jajen1/propCheck#classify) or [tabulate](https://github.com/1Jajen1/propCheck#tabulate).
 
 Here is an example on how to use [classify](https://github.com/1Jajen1/propCheck#classify):
 ```kotlin
@@ -823,9 +824,19 @@ Create a generator that returns its size parameter
 Generate random values between a range. `Random<A>` is just an interface that defines methods to generate random data of type `A`.
 Default instances for primitve types are included.
 
+The following example generates random integers between 0 and 100.
+```kotlin
+val intGen: Gen<Int> = Gen.choose(0 toT 100, Int.random())
+```
+
 #### `Gen.chooseAny(randA: Random<A>): Gen<A>`
 
 Generate random values from `A`s entire range.
+
+The following example generates completely random chars.
+```kotlin
+val charGen: Gen<Char> = Gen.chooseAny(Char.random())
+```
 
 #### `Gen.oneOf(vararg gens: Gen<A>): Gen<A>`
 
@@ -894,28 +905,32 @@ This function can lookup basic types (full list [here](https://github.com/1Jajen
 ```kotlin
 val stringArb: Arbitrary<String> = defArbitrary<String>()
 ```
-> Be carful with using this function, it will throw you try to get an unsupported type.
+> Be careful with using this function, it will throw you try to get an unsupported type.
 
 #### `shrinkList<A>(shrinkA: (A) -> Sequence<A>): (List<A>) -> Sequence<List<A>>`
 
 ShrinkList will shrink a list in a few different ways: By removing elements, by shrinking its content using the supplied function `shrinkA` and recursively on the results of the former methods.
-> This function is very useful if you can conert your datatype to a list and back.
+> This function is very useful if you can convert your datatype to a list and back easily.
 
 #### `shrinkMap`
 
 Shrinkmap takes a function from an `A` to a `B` and an `Arbitrary<B>` and returns a shrinking function `(A) -> Sequence<B>`.
-This is especially useful if your type `A` has an almost isomorphic type `B` that already has a shrinking instance defined.
-> fromTup is implemented using this
+This is especially useful if your type `A` has an almost isomorphic type `B` that already has a `Arbitrary` instance defined.
+> fromTup and many more shrinking functions are implemented using this
 
-> For arrow-optics users: There is an overload of shrinkMap which can take an ISO<A, B> instead of two functions instead.
+> For arrow-optics users: There is an overload of shrinkMap which can take an ISO<A, B> instead of two functions.
 
 #### `shrinkByte`, `shrinkInt`, `shrinkLong`
 
-Functions that proved shrinking functions for the types `Byte`, `Int` and `Long`
+Functions that provide shrinking functions for the types `Byte`, `Int` and `Long`
 
 #### `shrinkFloat`, `shrinkDouble`
 
-Functions that proved shrinking functions for the types `Float` and `Double`
+Functions that provide shrinking functions for the types `Float` and `Double`
+
+#### `shrinkChar`
+
+Function that shrinks `Char`s.
 
 ---
 
@@ -929,7 +944,7 @@ This is a list of types that have predefined instances for `Arbitrary` and thus 
 * `Int` -> `Int.arbitrary()` for the `Arbitrary<Int>` instance, (`arbitrarySizedInt`, `arbitrarySizedPositiveInt`, `arbitraryBoundedInt` for generators)
 * `Long` -> Same as above. Just substitute Int for Long
 * `Byte` -> Same as above. Just substitute Int for Byte
-* `Float` -> `Float.arbitrary()`, `arbitrarySizedFloat`
+* `Float` -> `Float.arbitrary()`, `arbitrarySizedFloat`, `arbitraryBoundedFloat`
 * `Double` -> Same as above. Just substitute Float for Double
 * `Char` -> `Char.arbitrary()`, `arbitraryASCIIChar`, `arbitraryUnicodeChar`
 * `String` -> `String.arbitrary()`, `arbitraryASCIIString`, `arbitraryUnicodeString`
@@ -943,7 +958,7 @@ This is a list of types that have predefined instances for `Arbitrary` and thus 
 * `Array<T>` -> `arrayArb()` // Cannot be infered by `defArbitrary` atm
 
 #### Collections
-The `K` variants are `arrow` wrappers. They are isomorphic to their non-k variants and can be used as such. That is to say: Every `ListK` is a `List`
+The `K` variants are `arrow` wrappers. They are isomorphic to their non-k variants and can be used as such. That is to say: Every `ListK` is a `List` and vice versa.
 * `List<A>` -> `ListK.arbitrary()`
 * `Set<A>` -> `SetK.arbitrary()`
 * `Map<A>` -> `MapK.arbitrary()`

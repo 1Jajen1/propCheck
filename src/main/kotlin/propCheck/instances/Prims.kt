@@ -59,22 +59,7 @@ interface CharArbitrary : Arbitrary<Char> {
         1 toT arbitraryUnicodeChar()
     )
 
-    override fun shrink(fail: Char): Sequence<Char> = (
-            sequenceOf(
-                'a', 'b', 'c'
-            ) + (if (fail.isUpperCase()) sequenceOf(fail.toLowerCase()) else emptySequence()) +
-                    sequenceOf('A', 'B', 'C') +
-                    sequenceOf('1', '2', '3') +
-                    sequenceOf(' ', '\n')
-            ).filter {
-        // TODO I don't really know if this is ported correctly
-        it.isLowerCase().not() < fail.isLowerCase().not() ||
-                it.isUpperCase().not() < fail.isUpperCase().not() ||
-                it.isDigit().not() < fail.isDigit().not() ||
-                (it == ' ').not() < (fail == ' ').not() ||
-                it.isWhitespace().not() < fail.isWhitespace().not() ||
-                it < fail
-    }
+    override fun shrink(fail: Char): Sequence<Char> = shrinkChar(fail)
 }
 
 fun Char.Companion.arbitrary(): Arbitrary<Char> = object :

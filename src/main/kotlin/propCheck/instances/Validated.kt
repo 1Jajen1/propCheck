@@ -4,6 +4,7 @@ import arrow.data.Validated
 import arrow.data.invalid
 import arrow.data.valid
 import arrow.extension
+import arrow.typeclasses.Show
 import propCheck.Arbitrary
 import propCheck.Gen
 
@@ -20,5 +21,15 @@ interface ValidatedArbitrary<E, A> : Arbitrary<Validated<E, A>> {
         AE().shrink(it).map { it.invalid() }
     }, {
         AA().shrink(it).map { it.valid() }
+    })
+}
+
+interface ValidatedShow<E, A> : Show<Validated<E, A>> {
+    fun SE(): Show<E>
+    fun SA(): Show<A>
+    override fun Validated<E, A>.show(): String = fold({
+        "Invalid(" + SE().run { it.show() } + ")"
+    }, {
+        "Valid(" + SA().run { it.show() } + ")"
     })
 }

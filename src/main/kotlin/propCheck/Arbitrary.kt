@@ -24,10 +24,11 @@ interface Arbitrary<A> {
     fun shrink(fail: A): Sequence<A> = emptySequence()
 
     companion object {
-        operator fun <A>invoke(g: Gen<A>, shrinkA: (A) -> Sequence<A> = { emptySequence<A>() }): Arbitrary<A> = object: Arbitrary<A> {
-            override fun arbitrary(): Gen<A> = g
-            override fun shrink(fail: A): Sequence<A> = shrinkA.invoke(fail)
-        }
+        operator fun <A> invoke(g: Gen<A>, shrinkA: (A) -> Sequence<A> = { emptySequence() }): Arbitrary<A> =
+            object : Arbitrary<A> {
+                override fun arbitrary(): Gen<A> = g
+                override fun shrink(fail: A): Sequence<A> = shrinkA.invoke(fail)
+            }
     }
 }
 
@@ -88,6 +89,9 @@ fun arbitraryBoundedInt(): Gen<Int> = Gen.chooseAny(Int.random())
 fun arbitraryBoundedLong(): Gen<Long> = Gen.chooseAny(Long.random())
 fun arbitraryBoundedByte(): Gen<Byte> = Gen.chooseAny(Byte.random())
 
+fun arbitraryBoundedFloat(): Gen<Float> = Gen.chooseAny(Float.random())
+fun arbitraryBoundedDouble(): Gen<Double> = Gen.chooseAny(Double.random())
+
 // ----------- String and char generators
 fun arbitraryASCIIChar(): Gen<Char> =
     Gen.choose(32.toChar() toT 127.toChar(), Char.random())
@@ -99,7 +103,7 @@ fun arbitraryUnicodeString(): Gen<String> = arbitraryUnicodeChar().listOf().map 
 fun arbitraryASCIIString(): Gen<String> = arbitraryASCIIChar().listOf().map { it.joinToString("") }
 
 // ---------------------------------- helpers to create shrink functions
-fun <A> shrinkNothing(): () -> List<A> = { emptyList() }
+fun <A> shrinkNothing(): (A) -> Sequence<A> = { emptySequence() }
 
 /**
  * implement a shrink function by mapping back and forth between a type that already has a shrink function defined
@@ -142,7 +146,7 @@ fun <A> shrinkList(f: (A) -> Sequence<A>): (List<A>) -> Sequence<List<A>> = { li
 
 // ---------------------------- Number shrinkers
 fun shrinkByte(fail: Byte): Sequence<Byte> = (
-        (if (fail < 0 && -fail > fail) sequenceOf(-fail) else emptySequence()) +
+        (if (fail < 0 && (-fail).toByte() > fail) sequenceOf(-fail) else emptySequence()) +
                 (sequenceOf(0) + iterate({ it / 2 }, fail.toInt()).drop(1)
                     .map { fail - it }.takeWhile {
                         when ((it >= 0) toT (fail >= 0)) {
@@ -215,6 +219,23 @@ fun shrinkDouble(fail: Double): Sequence<Double> = (
             }
                 )
         )
+
+fun shrinkChar(fail: Char): Sequence<Char> = (
+        sequenceOf(
+            'a', 'b', 'c'
+        ) + (if (fail.isUpperCase()) sequenceOf(fail.toLowerCase()) else emptySequence()) +
+                sequenceOf('A', 'B', 'C') +
+                sequenceOf('1', '2', '3') +
+                sequenceOf(' ', '\n')
+        ).filter {
+    // TODO I don't really know if this is ported correctly
+    it.isLowerCase().not() < fail.isLowerCase().not() ||
+            it.isUpperCase().not() < fail.isUpperCase().not() ||
+            it.isDigit().not() < fail.isDigit().not() ||
+            (it == ' ').not() < (fail == ' ').not() ||
+            it.isWhitespace().not() < fail.isWhitespace().not() ||
+            it < fail
+}
 
 // ---------------------------------- helpers to create Generators from arbitrary instances
 fun <A> vector(n: Int, arbA: Arbitrary<A>): Gen<List<A>> = arbA.arbitrary().vectorOf(n)
