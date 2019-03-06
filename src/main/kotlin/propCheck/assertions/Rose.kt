@@ -287,8 +287,7 @@ inline fun <reified A, B> shrinking(
         testable,
         shrink,
         pf,
-        arg,
-        setOf(arg)
+        arg
     ).promote(Rose.monad()).map { Prop(joinRose(it.fix().map { it.unProp })) })
 
 @PublishedApi
@@ -296,12 +295,11 @@ internal fun <A, B> props(
     testable: Testable<A>,
     shrink: (B) -> Sequence<B>,
     pf: (B) -> A,
-    b: B,
-    alreadyTested: Set<B>
+    b: B
 ): Rose<Gen<Prop>> = Rose.MkRose(
     testable.run { pf(b).property() }.unProperty,
-    shrink(b).filter { alreadyTested.contains(it).not() }.let {
-        it.mapIndexed { i, v -> props(testable, shrink, pf, v, setOf(b) + it.take(i).toSet() + alreadyTested) }
+    shrink(b).let {
+        it.mapIndexed { i, v -> props(testable, shrink, pf, v) }
     }
 )
 
