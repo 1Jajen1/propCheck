@@ -2,7 +2,6 @@ package propCheck.assertions
 
 import arrow.core.Tuple2
 import arrow.core.some
-import arrow.core.toT
 import arrow.effects.IO
 import arrow.effects.extensions.io.applicativeError.attempt
 import arrow.effects.extensions.io.monadThrow.monadThrow
@@ -62,11 +61,19 @@ class PropCheckSpec : StringSpec({
                         propCheck(Args(maxSuccess = 1)) { Boolean.testable().run { b.property() } }
                     }.attempt().map {
                         it.fold({
-                            propCheckIOWithError(Args(maxSuccess = 1)) { Boolean.testable().run { b.property() } }.attempt()
-                                .unsafeRunSync().fold({ err -> err.message == it.message }, { false })
+                            propCheckIOWithError(Args(maxSuccess = 1)) {
+                                Boolean.testable().run { b.property() }
+                            }.attempt()
+                                .unsafeRunSync().fold({ err ->
+                                    counterexample("${err.message} =!= ${it.message}", err.message == it.message)
+                                }, { counterexample("propCheck threw, but propCheckWithIOError did not", false) })
                         }, {
-                            propCheckIOWithError(Args(maxSuccess = 1)) { Boolean.testable().run { b.property() } }.attempt()
-                                .unsafeRunSync().fold({ false }, { true })
+                            propCheckIOWithError(Args(maxSuccess = 1)) {
+                                Boolean.testable().run { b.property() }
+                            }.attempt()
+                                .unsafeRunSync().fold({
+                                    counterexample("propCheck did not throw, but propCheckWithIOError did", false)
+                                }, { Boolean.testable().run { true.property() } })
                         })
                     }
                 )
@@ -76,8 +83,15 @@ class PropCheckSpec : StringSpec({
     "propCheckWithResult is the same as propCheckIO.unsageRunSync()" {
         propCheck {
             forAll { b: Boolean ->
-                propCheckWithResult(Args(maxSuccess = 1)) { Boolean.testable().run { b.property() } } ==
-                        propCheckIO(Args(maxSuccess = 1)) { Boolean.testable().run { b.property() } }.unsafeRunSync()
+                val a = propCheckWithResult(Args(maxSuccess = 1)) { Boolean.testable().run { b.property() } }
+                val c = propCheckIO(Args(maxSuccess = 1)) { Boolean.testable().run { b.property() } }.unsafeRunSync()
+                counterexample(
+                    "$a =!= $c", when (a) {
+                        is Result.Success -> c is Result.Success
+                        is Result.Failure -> c is Result.Failure
+                        else -> false // should not happen at all so fail if it does
+                    }
+                )
             }
         }
     }
