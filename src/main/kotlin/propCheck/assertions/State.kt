@@ -2,22 +2,25 @@ package propCheck.assertions
 
 import arrow.core.Option
 import arrow.core.Tuple2
-import arrow.core.Tuple3
+import arrow.core.some
 import arrow.core.toT
 import arrow.data.StateT
 import arrow.data.extensions.list.foldable.foldLeft
+import arrow.data.extensions.list.traverse.sequence
 import arrow.data.extensions.sequence.foldable.foldLeft
 import arrow.data.extensions.statet.monad.monad
 import arrow.data.fix
 import arrow.effects.IO
+import arrow.effects.extensions.io.applicative.applicative
 import arrow.effects.extensions.io.concurrent.concurrent
-import arrow.effects.extensions.io.dispatchers.dispatchers
 import arrow.effects.extensions.io.monad.monad
 import arrow.effects.fix
 import arrow.syntax.collections.firstOption
+import kotlinx.coroutines.Dispatchers
 import propCheck.*
 import propCheck.gen.applicative.applicative
 import propCheck.gen.monad.monad
+import kotlin.system.measureTimeMillis
 
 // precond
 // postcond
@@ -103,64 +106,60 @@ fun <S, A, R, SUT> commandsArby(
                 .fix()
         }
     ) { fail ->
-        shrinkList<A> { sequenceOf(it) }.invoke(fail).map {
+        shrinkList<A> { shrinker(it) }.invoke(fail).map {
             it.foldLeft(true toT sm.initialState) { (b, s), v ->
-                (b && sm.preCondition(s, v)) toT sm.transition(s, v)
+                sm.transition(s, v).let {
+                    (b && sm.preCondition(it, v) && sm.invariant(it)) toT it
+                }
             }.a toT it
         }.filter { it.a }.map { it.b }
     }
 
-fun <S, A, R, SUT> parArby(sm: StateMachine<S, A, R, SUT>) = commandsArby(
+fun <S, A, R, SUT> parArby(sm: StateMachine<S, A, R, SUT>, maxThreads: Int) = commandsArby(
     sm,
     sm.initialState
 ).let { preArb ->
     Arbitrary(
         Gen.monad().binding {
-            val prefix = preArb.arbitrary().scale { it / 10 }.bind()
+            val prefix = preArb.arbitrary().bind()
             val s = prefix.foldLeft(sm.initialState) { s, a -> sm.transition(s, a) }
-            // TODO rethink boundaries after I have improved the interleave function
-            val total =
-                Gen.choose(0 toT Gen.getSize().bind(), Int.random()).bind()
-            val lA = Gen.choose(0 toT total, Int.random()).bind()
             val pathArb = commandsArby(sm, s)
-            Tuple3(
+            val threads = Gen.choose(2 toT maxThreads, Int.random()).bind()
+            Tuple2(
                 prefix,
-                pathArb.arbitrary().resize(lA).bind(),
-                pathArb.arbitrary().resize(total - lA).bind()
+                (0..(threads - 1)).map {
+                    pathArb.arbitrary().resize(Gen.choose(0 toT Gen.getSize().bind(), Int.random()).bind() / threads)
+                        .bind()
+                }
             )
         }.fix()
-    ) { (pre, a, b) ->
+    ) { (pre, a) ->
         // TODO rewrite this and other folds using arrow-recursion once I implement histomorphisms there
-        preArb.shrink(pre).map {
+        (sequenceOf(Tuple2(Tuple2(true, sm.initialState), emptyList<A>())) + preArb.shrink(pre).map {
             it.foldLeft(true toT sm.initialState) { (b, s), v ->
                 sm.transition(s, v).let {
-                    (b && sm.preCondition(s, v) && sm.invariant(it)) toT it
+                    (b && sm.preCondition(it, v) && sm.invariant(it)) toT it
                 }
             } toT it
-        }.filter { it.a.a }.flatMap { (state, shrunkPre) ->
-            val (_, s) = state
-            sequenceOf(Tuple3(shrunkPre, a, b)) +
-                    preArb.shrink(a).map {
-                        it.foldLeft(true toT s) { (b, s), v ->
-                            sm.transition(s, v).let {
-                                (b && sm.preCondition(s, v) && sm.invariant(it)) toT it
+        }).filter { it.a.a }.flatMap { (state, shrunkPre) ->
+            val (_, preS) = state
+                    shrinkList<List<A>> { preArb.shrink(it) }
+                        .invoke(a).map {
+                            it.filter {
+                                it.foldLeft(true toT preS) { (b, s), v ->
+                                    sm.transition(s, v).let { nS ->
+                                        (b && sm.preCondition(nS, v) && sm.invariant(nS)) toT nS
+                                    }
+                                }.a
                             }
-                        }.a toT it
-                    }.filter { it.a }.map { Tuple3(shrunkPre, it.b, b) } +
-                    preArb.shrink(b).map {
-                        it.foldLeft(true toT s) { (b, s), v ->
-                            sm.transition(s, v).let {
-                                (b && sm.preCondition(s, v) && sm.invariant(it)) toT it
-                            }
-                        }.a toT it
-                    }.filter { it.a }.map { Tuple3(shrunkPre, a, it.b) }
+                        }.map { Tuple2(shrunkPre, it) }
         }
     }
 }
 
-fun <S, A, R, SUT> execPar(sm: StateMachine<S, A, R, SUT>): Property = forAllShrinkBlind(
-    parArby(sm)
-) { (prefix, pathA, pathB) ->
+fun <S, A, R, SUT> execPar(sm: StateMachine<S, A, R, SUT>, maxThreads: Int = 2): Property = forAllShrinkBlind(
+    parArby(sm, Math.max(maxThreads, 2))
+) { (prefix, paths) ->
     idempotentIOProperty(
         IO.monad().binding {
             val sut = sm.sut().bind()
@@ -173,37 +172,58 @@ fun <S, A, R, SUT> execPar(sm: StateMachine<S, A, R, SUT>): Property = forAllShr
             if (prefixRes.not())
                 counterexample("Prefix failed: ${prefixResult.joinToString { "${it.a} -> ${it.b}" }}", prefixRes)
             else {
-                val (listA, listB) = IO.concurrent().run {
-                    IO.dispatchers().default().parMapN(
-                        execSequence(pathA.asSequence(), sut, sm.executeAction),
-                        execSequence(pathB.asSequence(), sut, sm.executeAction)
-                    ) { a, b -> a toT b }.bind()
+                val pathResults = IO.concurrent().run {
+                    paths.map { list ->
+                        IO.unit.continueOn(Dispatchers.Default)
+                            .flatMap { execSequence(list.asSequence(), sut, sm.executeAction) }
+                    }.sequence(IO.applicative()).bind().fix()
                 }
                 counterexample(
                     "No possible interleaving found for: \n" +
                             (if (prefix.isNotEmpty()) "Prefix: " + prefixResult.joinToString { "${it.a} -> ${it.b}" } + "\n" else "") +
-                            "Path A: " + listA.joinToString { "${it.a} -> ${it.b}" } + "\n" +
-                            "Path B: " + listB.joinToString { "${it.a} -> ${it.b}" },
-                    recurGo(listOf(listA, listB), state, sm.invariant, sm.transition, sm.postCondition)
+                            pathResults.filter { it.firstOrNull() != null }.withIndex().joinToString("\n") { (i, v) ->
+                                "Path ${i + 1}: " + v.joinToString { "${it.a} -> ${it.b}" }
+                            },
+                    recurGo(pathResults, state, sm.invariant, sm.transition, sm.postCondition)
                 )
             }
         }.fix()
     )
 }
 
-fun <S, A, R>recurGo(list: List<Sequence<Tuple2<A, R>>>, state: S, invariant: Invariant<S>, transition: Transition<S, A>, postCondition: PostCondition<S, A, R>): Boolean = list.filter { it.firstOrNull() != null }.let {
+fun <S, A, R> recurGo(
+    list: List<Sequence<Tuple2<A, R>>>,
+    state: S,
+    invariant: Invariant<S>,
+    transition: Transition<S, A>,
+    postCondition: PostCondition<S, A, R>
+): Boolean = list.filter { it.firstOrNull() != null }.let {
     it.isEmpty() || it.mapIndexed { i, _ ->
-        go(it, state, i, invariant, transition, postCondition)
-    }.firstOption { it }.fold({ false }, { true })
+        if (go(it, state, i, invariant, transition, postCondition)) return@let true
+        else false
+    }.fold(false) { acc, b -> acc || b }
 }
 
-fun <S, A, R>go(list: List<Sequence<Tuple2<A, R>>>, state: S, pos: Int, invariant: Invariant<S>, transition: Transition<S, A>, postCondition: PostCondition<S, A, R>): Boolean = when {
+fun <S, A, R> go(
+    list: List<Sequence<Tuple2<A, R>>>,
+    state: S,
+    pos: Int,
+    invariant: Invariant<S>,
+    transition: Transition<S, A>,
+    postCondition: PostCondition<S, A, R>
+): Boolean = when {
     list[pos].firstOrNull() == null -> true
     else -> {
         val (a, r) = list[pos].first()
         val nS = transition(state, a)
         if ((invariant(nS) && postCondition(nS, a, r)).not()) false
-        else recurGo(list.mapIndexed { i, s -> if (i == pos) s.drop(1) else s }, nS, invariant, transition, postCondition)
+        else recurGo(
+            list.mapIndexed { i, s -> if (i == pos) s.drop(1) else s },
+            nS,
+            invariant,
+            transition,
+            postCondition
+        )
     }
 }
 
