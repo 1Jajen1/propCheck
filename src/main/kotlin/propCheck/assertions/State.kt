@@ -179,21 +179,35 @@ fun <S, A, R, SUT> execPar(sm: StateMachine<S, A, R, SUT>): Property = forAllShr
                         execSequence(pathB.asSequence(), sut, sm.executeAction)
                     ) { a, b -> a toT b }.bind()
                 }
-
                 counterexample(
                     "No possible interleaving found for: \n" +
                             (if (prefix.isNotEmpty()) "Prefix: " + prefixResult.joinToString { "${it.a} -> ${it.b}" } + "\n" else "") +
                             "Path A: " + listA.joinToString { "${it.a} -> ${it.b}" } + "\n" +
                             "Path B: " + listB.joinToString { "${it.a} -> ${it.b}" },
-                    interleave(listA, listB).map { v ->
-                        checkAllActions(v, state, sm.transition, sm.invariant, sm.postCondition)
-                    }.firstOption { it }.fold({ false }, { true })
+                    recurGo(listOf(listA, listB), state, sm.invariant, sm.transition, sm.postCondition)
                 )
             }
         }.fix()
     )
 }
 
+fun <S, A, R>recurGo(list: List<Sequence<Tuple2<A, R>>>, state: S, invariant: Invariant<S>, transition: Transition<S, A>, postCondition: PostCondition<S, A, R>): Boolean = list.filter { it.firstOrNull() != null }.let {
+    it.isEmpty() || it.mapIndexed { i, _ ->
+        go(it, state, i, invariant, transition, postCondition)
+    }.firstOption { it }.fold({ false }, { true })
+}
+
+fun <S, A, R>go(list: List<Sequence<Tuple2<A, R>>>, state: S, pos: Int, invariant: Invariant<S>, transition: Transition<S, A>, postCondition: PostCondition<S, A, R>): Boolean = when {
+    list[pos].firstOrNull() == null -> true
+    else -> {
+        val (a, r) = list[pos].first()
+        val nS = transition(state, a)
+        if ((invariant(nS) && postCondition(nS, a, r)).not()) false
+        else recurGo(list.mapIndexed { i, s -> if (i == pos) s.drop(1) else s }, nS, invariant, transition, postCondition)
+    }
+}
+
+// TODO remove because the recurGo function does the same in way less time
 fun <A> interleave(listA: Sequence<A>, listB: Sequence<A>, bool: Boolean = true): Sequence<Sequence<A>> = when {
     listA.firstOrNull() == null -> sequenceOf(listB)
     listB.firstOrNull() == null -> sequenceOf(listA)
