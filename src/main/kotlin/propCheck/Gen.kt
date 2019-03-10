@@ -142,7 +142,7 @@ class Gen<A>(val unGen: (Tuple2<Long, Int>) -> A) : GenOf<A> {
         fun <A> oneOf(vararg gens: Gen<A>): Gen<A> = if (gens.isEmpty())
             throw IllegalArgumentException("oneOf cannot work without generators")
         else Gen.monad().binding {
-            gens[choose(0 toT (gens.size - 1), Int.random()).bind()].bind()
+            gens[choose(0 toT gens.size, Int.random()).bind()].bind()
         }.fix()
 
         /**
