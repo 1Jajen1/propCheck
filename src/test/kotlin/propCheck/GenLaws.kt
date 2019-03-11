@@ -5,9 +5,7 @@ import arrow.core.toT
 import arrow.data.Nel
 import arrow.test.laws.MonadLaws
 import arrow.typeclasses.Eq
-import propCheck.assertions.Property
-import propCheck.assertions.forAll
-import propCheck.assertions.idempotentIOProperty
+import propCheck.assertions.*
 import propCheck.gen.monad.monad
 
 class GenSpec : LawSpec() {
@@ -170,6 +168,81 @@ class GenSpec : LawSpec() {
                 forAll { l: List<Int> ->
                     idempotentIOProperty(
                         Gen.shuffle(l).generate().map { it.containsAll(l) }
+                    )
+                }
+            }
+        }
+
+        // TODO I don't like the following 3 tests
+        "Gen.choose should equally choose in the range" {
+            propCheck {
+                forAll(
+                    Gen.choose(1 toT 3 + 1, Int.random())
+                ) {
+                    checkCoverage(
+                        coverTable(
+                            "Data",
+                            listOf(
+                                "1" toT 33.3,
+                                "2" toT 33.3,
+                                "3" toT 33.3
+                            ),
+                            tabulate(
+                                "Data",
+                                listOf("$it"),
+                                true
+                            )
+                        )
+                    )
+                }
+            }
+        }
+        "Gen.elements should equally choose between the elements" {
+            propCheck {
+                forAll(
+                    Gen.elements(1, 2, 3)
+                ) {
+                    checkCoverage(
+                        coverTable(
+                            "Data",
+                            listOf(
+                                "1" toT 33.3,
+                                "2" toT 33.3,
+                                "3" toT 33.3
+                            ),
+                            tabulate(
+                                "Data",
+                                listOf("$it"),
+                                true
+                            )
+                        )
+                    )
+                }
+            }
+        }
+        "Gen.oneOf should equally choose between the generators" {
+            propCheck {
+                forAll(
+                    Gen.oneOf(
+                        Gen.elements(1),
+                        Gen.elements(2),
+                        Gen.elements(3)
+                    )
+                ) {
+                    checkCoverage(
+                        coverTable(
+                            "Data",
+                            listOf(
+                                "1" toT 33.3,
+                                "2" toT 33.3,
+                                "3" toT 33.3
+                            ),
+                            tabulate(
+                                "Data",
+                                listOf("$it"),
+                                true
+                            )
+                        )
                     )
                 }
             }

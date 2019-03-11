@@ -659,7 +659,7 @@ fun labelsAndTables(state: State): Tuple2<List<String>, List<String>> {
     val tables = (state.tables.toList().map {
         showTable(it.second.combineAll(Int.monoid()), it.first.some(), it.second)
     } + (
-            allCoverage(state).filter { (optTable, label, tot, n, p) ->
+            allCoverage(state).filter { (_, _, tot, n, p) ->
                 insufficientlyCovered(
                     state.coverageConfidence.map { it.certainty },
                     tot, n, p
@@ -667,7 +667,7 @@ fun labelsAndTables(state: State): Tuple2<List<String>, List<String>> {
             }.map { (optTable, label, tot, n, p) ->
                 listOf(
                     optTable.fold({ "Only " }, { "Table \'$it\' had only " }) +
-                            n.toPercentage(tot) + "% " + label + ", but expected " + (p * 100).toPercentage(tot) + "%"
+                            n.toPercentage(tot) + "% " + label + ", but expected " + (p * 100) + "%"
                 )
             })
             ).filter { it.isNotEmpty() }.map { it.joinToString("\n") }
