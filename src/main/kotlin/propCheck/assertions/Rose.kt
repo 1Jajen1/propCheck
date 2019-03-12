@@ -2,10 +2,17 @@ package propCheck.assertions
 
 import arrow.Kind
 import arrow.core.*
+import arrow.core.extensions.eval.monad.monad
 import arrow.data.extensions.list.traverse.traverse
+import arrow.data.extensions.sequence.foldable.foldRight
+import arrow.data.extensions.sequence.foldable.traverse_
+import arrow.data.extensions.sequence.traverse.traverse
+import arrow.data.extensions.sequencek.foldable.foldRight
+import arrow.data.fix
 import arrow.effects.IO
 import arrow.effects.extensions.io.applicative.applicative
 import arrow.effects.extensions.io.applicativeError.handleError
+import arrow.effects.extensions.io.fx.fx
 import arrow.effects.extensions.io.monad.monad
 import arrow.effects.fix
 import arrow.extension
@@ -18,8 +25,10 @@ import propCheck.*
 import propCheck.assertions.property.testable.testable
 import propCheck.assertions.rose.monad.monad
 import propCheck.assertions.testresult.testable.testable
+import propCheck.gen.applicative.applicative
 import propCheck.gen.monad.flatMap
 import propCheck.gen.monad.monad
+import javax.management.Query.and
 
 /**
  * Callbacks. Can perform io based on state and results
@@ -654,7 +663,7 @@ inline fun <reified A, reified B : Any> forAllShrinkBlind(
 /**
  * test an io property (does not shrink)
  */
-inline fun <reified A> ioProperty(propIO: IO<A>, testable: Testable<A> = defTestable()): Property =
+inline fun <reified A> ioProperty(propIO: IO<A>): Property =
     idempotentIOProperty(
         propIO.map { noShrinking(it) }
     )
@@ -688,28 +697,33 @@ inline fun <reified A, reified B> choice(
 
 inline fun <reified A, reified B> and(
     a: A,
-    b: B,
+    b: Eval<B>,
     testableA: Testable<A> = defTestable(),
     testableB: Testable<B> = defTestable()
 ): Property =
-    conjoin(testableA.run { a.property() }, testableB.run { b.property() })
+    conjoin(
+        sequenceOf(
+            Eval.now(testableA.run { a.property() }),
+            testableB.run { b.map { it.property() } }
+        )
+    )
 
-inline fun <reified A> conjoin(vararg props: A, testableA: Testable<A> = defTestable()): Property =
+inline fun <reified A> conjoin(props: Sequence<Eval<A>>, testableA: Testable<A> = defTestable()): Property =
     again(
         Property(
             Gen.monad().binding {
-                val roses = props.map { testableA.run { it.property() }.unProperty.map { it.unProp }.bind() }
-                Prop(conj(roses, ::identity))
+                val roses = props.traverse(Gen.applicative()) { it.map { testableA.run { it.property() }.unProperty.map { it.unProp } }.promote(Eval.monad()) }.bind()
+                Prop(conj(roses.fix().map { it.fix() }, ::identity))
             }.fix()
         )
     )
 
 @PublishedApi
-internal fun conj(roses: List<Rose<TestResult>>, k: (TestResult) -> TestResult): Rose<TestResult> = when {
-    roses.isEmpty() -> Rose.MkRose(k(succeeded()), emptySequence())
+internal fun conj(roses: Sequence<Eval<Rose<TestResult>>>, k: (TestResult) -> TestResult): Rose<TestResult> = when {
+    roses.firstOrNull() == null -> Rose.MkRose(k(succeeded()), emptySequence())
     else -> Rose.IORose(
         IO.monad().binding {
-            val reduced = when (val it = reduceRose(roses.first()).bind()) {
+            val reduced = when (val it = reduceRose(roses.first().value()).bind()) {
                 is Rose.MkRose -> it
                 is Rose.IORose -> throw IllegalStateException("The impossible happened")
             }
@@ -754,35 +768,42 @@ internal fun addLabels(result: TestResult, r: TestResult): TestResult =
 
 inline fun <reified A, reified B> or(
     a: A,
-    b: B,
+    b: Eval<B>,
     testableA: Testable<A> = defTestable(),
     testableB: Testable<B> = defTestable()
 ): Property =
-    disjoin(testableA.run { a.property() }, testableB.run { b.property() })
+    disjoin(
+        sequenceOf(
+            Eval.now(testableA.run { a.property() }),
+            testableB.run { b.map { it.property() } }
+        )
+    )
 
-inline fun <reified A> disjoin(vararg props: A, testableA: Testable<A> = defTestable()): Property =
+inline fun <reified A> disjoin(props: Sequence<Eval<A>>, testableA: Testable<A> = defTestable()): Property =
     again(
         Property(
             Gen.monad().binding {
-                val roses = props.map { testableA.run { it.property() }.unProperty.map { it.unProp }.bind() }
+                val roses = props.traverse(Gen.applicative()) { it.map { testableA.run { it.property() }.unProperty.map { it.unProp } }.promote(Eval.monad()) }.bind()
                 Prop(
-                    roses.foldRight(Rose.just(failed(""))) { r, acc ->
-                        disj(acc, r)
-                    }
+                    roses.foldRight(Eval.now(Rose.just(failed("")))) { r, acc ->
+                        Eval.monad().binding {
+                            disj(r.fix().bind(), acc)
+                        }.fix()
+                    }.value()
                 )
             }.fix()
         )
     )
 
 @PublishedApi
-internal fun disj(p: Rose<TestResult>, q: Rose<TestResult>): Rose<TestResult> = Rose.monad().binding {
+internal fun disj(p: Rose<TestResult>, q: Eval<Rose<TestResult>>): Rose<TestResult> = Rose.monad().binding {
     val res1 = p.bind()
     if (res1.expected.not())
         failed("expectFailure may not occur inside a disjunction")
     else
         when (res1.ok) {
             false.some() -> {
-                val res2 = q.bind()
+                val res2 = q.value().bind()
                 if (res2.expected.not())
                     failed("expectFailure may not occur inside a disjunction")
                 else
