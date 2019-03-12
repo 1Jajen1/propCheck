@@ -14,6 +14,7 @@ It started out as a straight port of quickcheck and was adapted slightly to work
 * [Testing custom classes](https://github.com/1Jajen1/propCheck#testing-custom-classes)
 * [The `Gen<A>` datatype](https://github.com/1Jajen1/propCheck#the-gena-datatype)
 * [A note regarding test data](https://github.com/1Jajen1/propCheck#a-note-regarding-test-data)
+* [State-machine-testing and testing for race-conditons](https://github.com/1Jajen1/propCheck#state-machine-testing-and-testing-for-race-conditions)
 * [Running with a test runner](https://github.com/1Jajen1/propCheck#running-these-tests-with-a-test-runner)
 * [Use of arrow in and with propCheck](https://github.com/1Jajen1/propCheck#use-of-arrow-in-and-with-propcheck)
 * [Kotlintest generators vs propCheck](https://github.com/1Jajen1/propCheck#kotlintest-generators-vs-propcheck)
