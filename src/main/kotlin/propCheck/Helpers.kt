@@ -1,7 +1,5 @@
 package propCheck
 
-import io.kotlintest.properties.generateInfiniteSequence
-import io.kotlintest.properties.shrinking.Shrinker
 import propCheck.assertions.*
 
 // unsafe helpers for those who are not using arrow
@@ -18,16 +16,3 @@ fun propCheck(args: Args = Args(), f: () -> Property): Unit =
 
 fun propCheckWithResult(args: Args = Args(), f: () -> Property): Result =
     propCheckIO(args, f).unsafeRunSync()
-
-fun <A> Arbitrary<A>.toKotlinTestGen(): io.kotlintest.properties.Gen<A> = object : io.kotlintest.properties.Gen<A> {
-    override fun constants(): Iterable<A> = emptyList()
-
-    override fun random(): Sequence<A> = generateInfiniteSequence {
-        arbitrary().generate().unsafeRunSync()
-    }
-
-    override fun shrinker(): Shrinker<A>? = object : Shrinker<A> {
-        override fun shrink(failure: A): List<A> = this@toKotlinTestGen.shrink(failure)
-            .take(100).toList()
-    }
-}

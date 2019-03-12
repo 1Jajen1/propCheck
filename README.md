@@ -14,6 +14,7 @@ It started out as a straight port of quickcheck and was adapted slightly to work
 * [Testing custom classes](https://github.com/1Jajen1/propCheck#testing-custom-classes)
 * [The `Gen<A>` datatype](https://github.com/1Jajen1/propCheck#the-gena-datatype)
 * [A note regarding test data](https://github.com/1Jajen1/propCheck#a-note-regarding-test-data)
+* [State-machine-testing and testing for race-conditons](https://github.com/1Jajen1/propCheck#state-machine-testing-and-testing-for-race-conditions)
 * [Running with a test runner](https://github.com/1Jajen1/propCheck#running-these-tests-with-a-test-runner)
 * [Use of arrow in and with propCheck](https://github.com/1Jajen1/propCheck#use-of-arrow-in-and-with-propcheck)
 * [Kotlintest generators vs propCheck](https://github.com/1Jajen1/propCheck#kotlintest-generators-vs-propcheck)
@@ -228,6 +229,93 @@ Insufficient coverage
 ```
 > Here a coverage of 95% non-trivial lists is required, but only 89.99% could be reached.
 
+## State-machine-testing and testing for race-conditions
+
+State-machine-testing is the concept of verifying actions against a stateful system by running them against a simpler model.
+A very simple example is a ticket machine:
+```kotlin
+data class TicketMachine(var lastTicketNr: Int = 0) {
+    fun takeTicket(): Int = ++lastTicketNr
+    fun reset() {
+        lastTicketNr = 0
+    }
+}
+
+sealed class TicketAction {
+    object Take: TicketAction()
+    object Reset: TicketAction()
+    
+    override fun toString(): String = when (this) {
+        is Take -> "Take"
+        is Reset -> "Rest"
+    }
+}
+
+val actionGen = Gen.elements(TicketAction.Take, TicketAction.Reset)
+
+val stateMachine = StateMachine(
+    initialState = 0,
+    invariant = { state -> state >= 0 },
+    preCondition = { state: Int, action: TicketAction -> true },
+    cmdGen = { state -> actionGen.map { it.some() } },
+    sut = { IO { TicketMachine() } },
+    transition = { state, action ->
+        when (action) {
+            is TicketAction.Take -> state + 1
+            is TicketAction.Reset -> 0
+        }
+    },
+    executeAction = { action, sut ->
+        IO {
+            when (action) {
+                is TicketAction.Take -> sut.takeTicket()
+                is TicketAction.Reset -> { sut.reset(); 0 }
+            }
+        }
+    }
+)
+
+fun main() {
+    propCheck {
+        execSeq(stateMachine) { prevState, action, result ->
+            when (action) {
+                is TicketAction.Take -> prevState + 1 == result
+                is TicketAction.Reset -> true
+            }
+        }
+    }
+}
+// prints =>
++++ OK, passed 100 tests.
+```
+
+Now this ticket-machine is tested against sequential execution of all possible actions, but that is not really the point of a ticket machine. It is also supposed to work in parallel! However that may lead to some interesting situations, for example when 2 people taking tickets get the same number, that would be a race-condition, and since the above example has no synchronization it will eventually happen. But we can test for that:
+```kotlin
+// This is using the exact same code as above
+fun main() {
+    propCheck {
+        execPar(stateMachine) { prevState, action, result ->
+            when (action) {
+                is TicketAction.Take -> prevState + 1 == result
+                is TicketAction.Reset -> true
+            }
+        }
+    }
+}
+// prints something like this =>
+*** Failed! (after 14 tests and 1 shrink):
+Falsifiable
+No possible interleaving found for: 
+Path 1: Take -> 1, Rest -> 0, Take -> 2
+Path 2: Take -> 1, Take -> 1, Rest -> 0
+```
+
+As you can see take from two threads both received ticket number 1, which is not acceptable and propCheck was able to find that and shrink to a smaller example!
+
+### How does this work?!
+
+Behind the scenes propCheck runs randomly generated lists of commands in parallel against the system and records the results. Then after execution it tries to find a sequential path in which the model proves right for the results. In the above example there is just no order/interleaving to execute the commands that result in a correct state.
+
 ## Running these tests with a test runner
 
 propCheck is by itself stand-alone and does not provide test-runner capabilites like kotlintest. It however can and should be used together with a test-runner. By default `propCheck` will throw exceptions on failure and thus will cause the test case it is being run in to fail. (That can be diasbled by using methods like `propCheckWithResult` instead)
@@ -246,6 +334,8 @@ class TestSpec : StringSpec({
 })
 ```
 
+> There are plans of adding better support for test runners so that you can drop the propCheck {} wrapper.
+
 ## Use of arrow in and with propCheck
 
 First of all: If you are using [arrow-kt](https://arrow-kt.io/): Great! There are plenty of instances already defined for arrows data-types.
@@ -255,8 +345,6 @@ If not then don't worry. Most of the api can be used without ever touching upon 
 
 ## Kotlintest generators vs propCheck
 Kotlintest already includes some means of property based testing. However their data-types and reflection-lookups are severly limited. The reason I ported quickcheck over is because it is built upon lawful instances for its datatypes and features a much richer set of methods. This makes testing with propCheck much easier and much more powerful.
-
-> There is however a helper method to convert a `Arbitrary<A>` to a kotlintest `Gen<A>`. That approach is somewhat limited though, especially when it comes to shrinking.
 
 ## Feedback
 `propCheck` is still in its early days so if you notice bugs or think something can be improved please create issues or shoot me a pull request. All feedback is highly appreciated.
