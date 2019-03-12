@@ -4,15 +4,12 @@ import arrow.Kind
 import arrow.core.*
 import arrow.core.extensions.eval.monad.monad
 import arrow.data.extensions.list.traverse.traverse
-import arrow.data.extensions.sequence.foldable.foldRight
-import arrow.data.extensions.sequence.foldable.traverse_
 import arrow.data.extensions.sequence.traverse.traverse
 import arrow.data.extensions.sequencek.foldable.foldRight
 import arrow.data.fix
 import arrow.effects.IO
 import arrow.effects.extensions.io.applicative.applicative
 import arrow.effects.extensions.io.applicativeError.handleError
-import arrow.effects.extensions.io.fx.fx
 import arrow.effects.extensions.io.monad.monad
 import arrow.effects.fix
 import arrow.extension
@@ -28,7 +25,6 @@ import propCheck.assertions.testresult.testable.testable
 import propCheck.gen.applicative.applicative
 import propCheck.gen.monad.flatMap
 import propCheck.gen.monad.monad
-import javax.management.Query.and
 
 /**
  * Callbacks. Can perform io based on state and results
@@ -712,7 +708,11 @@ inline fun <reified A> conjoin(props: Sequence<Eval<A>>, testableA: Testable<A> 
     again(
         Property(
             Gen.monad().binding {
-                val roses = props.traverse(Gen.applicative()) { it.map { testableA.run { it.property() }.unProperty.map { it.unProp } }.promote(Eval.monad()) }.bind()
+                val roses = props.traverse(Gen.applicative()) {
+                    it.map {
+                        testableA.run { it.property() }.unProperty.map { it.unProp }
+                    }.promote(Eval.monad())
+                }.bind()
                 Prop(conj(roses.fix().map { it.fix() }, ::identity))
             }.fix()
         )
@@ -783,7 +783,11 @@ inline fun <reified A> disjoin(props: Sequence<Eval<A>>, testableA: Testable<A> 
     again(
         Property(
             Gen.monad().binding {
-                val roses = props.traverse(Gen.applicative()) { it.map { testableA.run { it.property() }.unProperty.map { it.unProp } }.promote(Eval.monad()) }.bind()
+                val roses = props.traverse(Gen.applicative()) {
+                    it.map {
+                        testableA.run { it.property() }.unProperty.map { it.unProp }
+                    }.promote(Eval.monad())
+                }.bind()
                 Prop(
                     roses.foldRight(Eval.now(Rose.just(failed("")))) { r, acc ->
                         Eval.monad().binding {
@@ -822,9 +826,12 @@ internal fun disj(p: Rose<TestResult>, q: Eval<Rose<TestResult>>): Rose<TestResu
                             tables = emptyList(),
                             requiredCoverage = emptyList(),
                             callbacks = res1.callbacks +
-                                    listOf(Callback.PostFinalFailure(CallbackKind.Counterexample) { st, _ ->
-                                        st.output.update { it + "\n" }.fix()
-                                    }) +
+                                    (if (res1.callbacks.size + res2.callbacks.size > 0) listOf(
+                                        Callback.PostFinalFailure(
+                                            CallbackKind.Counterexample
+                                        ) { st, _ ->
+                                            st.output.update { it + "\n" }.fix()
+                                        }) else emptyList()) +
                                     res2.callbacks,
                             testCase = res1.testCase + res2.testCase
                         )

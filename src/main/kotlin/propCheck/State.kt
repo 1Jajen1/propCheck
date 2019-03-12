@@ -5,19 +5,19 @@ import arrow.core.extensions.eval.monad.monad
 import arrow.data.StateT
 import arrow.data.extensions.list.foldable.foldLeft
 import arrow.data.extensions.list.foldable.foldRight
-import arrow.data.extensions.list.traverse.sequence
 import arrow.data.extensions.statet.monad.monad
 import arrow.data.fix
 import arrow.effects.IO
-import arrow.effects.extensions.io.applicative.applicative
-import arrow.effects.extensions.io.concurrent.concurrent
-import arrow.effects.extensions.io.dispatchers.dispatchers
 import arrow.effects.extensions.io.monad.monad
 import arrow.effects.fix
-import kotlinx.coroutines.Dispatchers
 import propCheck.assertions.*
 import propCheck.gen.applicative.applicative
 import propCheck.gen.monad.monad
+import java.util.concurrent.Callable
+import java.util.concurrent.Executors
+import java.util.concurrent.ThreadFactory
+
+
 
 typealias PreCondition<S, A> = (S, A) -> Boolean
 typealias PostCondition<S, A, R, PROP> = (S, A, R) -> PROP
@@ -34,7 +34,8 @@ data class StateMachine<S, A, R, SUT>(
     val sut: () -> IO<SUT>
 )
 
-fun <S, A, R, SUT> commandsArby(
+@PublishedApi
+internal fun <S, A, R, SUT> commandsArby(
     sm: StateMachine<S, A, R, SUT>,
     initialState: S,
     shrinker: (A) -> Sequence<A> = { emptySequence() }
@@ -53,7 +54,8 @@ fun <S, A, R, SUT> commandsArby(
         }.filter { it.a }.map { it.b }
     }
 
-fun <S, A> generateCmds(
+@PublishedApi
+internal fun <S, A> generateCmds(
     size: Int,
     cmdGen: (S) -> Gen<Option<A>>,
     preCondition: PreCondition<S, A>,
@@ -74,34 +76,56 @@ fun <S, A> generateCmds(
     }
 }.fix()
 
+@PublishedApi
+internal fun <A, R, SUT> executeActions(
+    actions: List<A>,
+    sut: SUT,
+    executeAction: (A, SUT) -> IO<R>
+): IO<List<Tuple2<A, R>>> =
+    actions.foldLeft(IO.just(emptyList())) { accIO, v ->
+        accIO.flatMap {
+            executeAction(v, sut).map { r ->
+                it + listOf(Tuple2(v, r))
+            }
+        }
+    }
+
+@PublishedApi
+internal fun <S, A, R, PROP> checkResults(
+    res: List<Tuple2<A, R>>,
+    state: S,
+    postCondition: PostCondition<S, A, R, PROP>,
+    invariant: Invariant<S>,
+    testable: Testable<PROP>,
+    transition: Transition<S, A>
+): Tuple2<Eval<Property>, S> =
+    res.foldLeft(
+        Eval.later { Boolean.testable().run { true.property() } } toT state
+    ) { (prop, s), (a, r) ->
+        Eval.later {
+            and(
+                and(
+                    Boolean.testable().run { invariant(s).property() },
+                    Eval.later { testable.run { postCondition(s, a, r).property() } }
+                ),
+                prop
+            )
+        } toT transition(s, a)
+    }
+
 inline fun <S, A, R, SUT, reified PROP> execSeq(
     sm: StateMachine<S, A, R, SUT>,
     testable: Testable<PROP> = defTestable(),
-    crossinline postCondition: PostCondition<S, A, R, PROP>
+    noinline postCondition: PostCondition<S, A, R, PROP>
 ): Property = forAllShrinkBlind(
     commandsArby(sm, sm.initialState)
 ) { cmds ->
     idempotentIOProperty(
         IO.monad().binding {
             val sut = sm.sut().bind()
-            val results = cmds.foldLeft(IO.just(emptyList<Tuple2<A, R>>())) { accIO, v ->
-                accIO.flatMap {
-                    sm.executeAction(v, sut).map { r ->
-                        it + listOf(Tuple2(v, r))
-                    }
-                }
-            }.bind()
+            val results = executeActions(cmds, sut, sm.executeAction).bind()
 
-            results.foldLeft(Eval.later {
-                Boolean.testable().run { true.property() }
-            } toT sm.initialState) { (b, s), (a, r) ->
-                Eval.later {
-                    and(
-                        testable.run { postCondition(s, a, r).property() },
-                        b
-                    )
-                } toT sm.transition(s, a)
-            }.a.value
+            checkResults(results, sm.initialState, postCondition, sm.invariant, testable, sm.transition).a.value()
         }.fix()
     )
 }
@@ -151,11 +175,18 @@ inline fun <S, A, R, SUT, reified PROP> execPar(
     noinline postCondition: PostCondition<S, A, R, PROP>
 ) = _execPar(sm, maxThreads, testable, postCondition)
 
+private val pool = Executors.newCachedThreadPool { r ->
+    Executors.defaultThreadFactory().newThread(r).apply {
+        isDaemon = true
+    }
+}
+
 /*
 Using this directly as an inline function fucked up the compiler
 TODO try again when I update kotlin
  */
-fun <S, A, R, SUT, PROP> _execPar(
+@PublishedApi
+internal fun <S, A, R, SUT, PROP> _execPar(
     sm: StateMachine<S, A, R, SUT>,
     maxThreads: Int = 2,
     testable: Testable<PROP>,
@@ -166,39 +197,26 @@ fun <S, A, R, SUT, PROP> _execPar(
     idempotentIOProperty(
         IO.monad().binding {
             val sut = sm.sut().bind()
-            val prefixResult = prefix.foldLeft(IO.just(emptyList<Tuple2<A, R>>())) { accIO, v ->
-                accIO.flatMap {
-                    sm.executeAction(v, sut).map { r ->
-                        it + listOf(Tuple2(v, r))
+            val prefixResult = executeActions(prefix, sut, sm.executeAction).bind()
+
+            val (prefixRes, state) = checkResults(
+                prefixResult,
+                sm.initialState,
+                postCondition,
+                sm.invariant,
+                testable,
+                sm.transition
+            )
+
+            // I don't really like this next bit, however I could not force IO to start in different threads
+            //  before and I really need them to execute in parallel
+            val pathResults = pool.invokeAll(
+                paths.map { list ->
+                    Callable {
+                        executeActions(list, sut, sm.executeAction).unsafeRunSync().asSequence()
                     }
                 }
-            }.bind()
-
-            val (state, prefixRes) = prefixResult.foldLeft<Tuple2<A, R>, Tuple2<S, Eval<Property>>>(
-                sm.initialState toT Eval.now(Boolean.testable().run { true.property() })
-            ) { (s, acc), v ->
-                sm.transition(s, v.a) toT Eval.later {
-                    and(
-                        testable.run { postCondition(s, v.a, v.b).property() },
-                        acc
-                    )
-                }
-            }
-
-            val pathResults = IO.concurrent().run {
-                paths.map { list ->
-                    IO.unit.continueOn(IO.dispatchers().default())
-                        .flatMap {
-                            list.foldLeft(IO.just(emptyList<Tuple2<A, R>>())) { accIO, v ->
-                                accIO.flatMap {
-                                    sm.executeAction(v, sut).map { r ->
-                                        it + listOf(Tuple2(v, r))
-                                    }
-                                }
-                            }
-                        }.map { it.asSequence() }
-                }.sequence(IO.applicative()).bind().fix()
-            }
+            ).map { it.get() }
 
             counterexample(
                 "No possible interleaving found for: \n" +
@@ -217,7 +235,7 @@ fun <S, A, R, SUT, PROP> _execPar(
     )
 }
 
-fun <S, A, R, PROP> recurGo(
+internal fun <S, A, R, PROP> recurGo(
     list: List<Sequence<Tuple2<A, R>>>,
     state: S,
     invariant: Invariant<S>,
@@ -242,7 +260,7 @@ fun <S, A, R, PROP> recurGo(
     )
 }
 
-fun <S, A, R, PROP> go(
+internal fun <S, A, R, PROP> go(
     list: List<Sequence<Tuple2<A, R>>>,
     state: S,
     pos: Int,
@@ -271,81 +289,5 @@ fun <S, A, R, PROP> go(
                 )
             }
         )
-    }
-}
-
-// -----------
-sealed class ACT {
-    object Inc : ACT()
-    object Dec : ACT()
-    object Get : ACT()
-
-    override fun toString(): String = when (this) {
-        is Inc -> "Inc"
-        is Dec -> "Dec"
-        is Get -> "Get"
-    }
-}
-
-data class Counter(var v: Int = 0) {
-    fun inc() = ++v
-    fun dec() = --v
-    fun get() = v
-}
-
-fun main() {
-    val sm = StateMachine(
-        initialState = 0,
-        executeAction = { a: ACT, s: Counter ->
-            IO {
-                when (a) {
-                    is ACT.Inc -> s.inc()
-                    is ACT.Dec -> s.dec()
-                    is ACT.Get -> s.get()
-                }
-            }
-        },
-        sut = { IO { Counter() } },
-        cmdGen = {
-            Gen.elements(
-                ACT.Inc,
-                ACT.Dec,
-                ACT.Get
-            ).map { it.some() }
-        },
-        preCondition = { s, a ->
-            when (a) {
-                is ACT.Dec -> s > 0
-                else -> true
-            }
-        },
-        invariant = { it >= 0 },
-        transition = { s, a ->
-            when (a) {
-                is ACT.Get -> s
-                is ACT.Dec -> s - 1
-                is ACT.Inc -> s + 1
-            }
-        }
-    )
-
-    propCheck {
-        execSeq(sm) { s, a, r ->
-            when (a) {
-                is ACT.Get -> s == r
-                is ACT.Inc -> s + 1 == r
-                is ACT.Dec -> s - 1 == r
-            }
-        }
-    }
-
-    propCheck {
-        execPar(sm, 4) { s, a, r ->
-            when (a) {
-                is ACT.Get -> s == r
-                is ACT.Inc -> s + 1 == r
-                is ACT.Dec -> s - 1 == r
-            }
-        }
     }
 }
