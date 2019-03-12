@@ -247,7 +247,7 @@ sealed class TicketAction {
     
     override fun toString(): String = when (this) {
         is Take -> "Take"
-        is Reset -> "Rest"
+        is Reset -> "Reset"
     }
 }
 
@@ -306,8 +306,8 @@ fun main() {
 *** Failed! (after 14 tests and 1 shrink):
 Falsifiable
 No possible interleaving found for: 
-Path 1: Take -> 1, Rest -> 0, Take -> 2
-Path 2: Take -> 1, Take -> 1, Rest -> 0
+Path 1: Take -> 1, Reset -> 0, Take -> 2
+Path 2: Take -> 1, Take -> 1, Reset -> 0
 ```
 
 As you can see take from two threads both received ticket number 1, which is not acceptable and propCheck was able to find that and shrink to a smaller example!
