@@ -169,7 +169,7 @@ class Gen<A>(val unGen: (Tuple2<Long, Int>) -> A) : GenOf<A> {
         fun <A> elements(vararg el: A): Gen<A> = if (el.isEmpty())
             throw IllegalArgumentException("elements cannot work without elements")
         else Gen.monad().binding {
-            el[choose(0 toT Math.max(el.size, Gen.getSize().bind()), Int.random()).bind() % el.size]
+            el[choose(0 toT el.size, Int.random()).bind()]
         }.fix()
 
         /**
