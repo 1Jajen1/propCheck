@@ -5,165 +5,146 @@ import arrow.core.some
 import arrow.effects.IO
 import arrow.effects.extensions.io.applicativeError.attempt
 import arrow.effects.extensions.io.monadThrow.monadThrow
-import io.kotlintest.specs.StringSpec
 import propCheck.arbitrary.Positive
 import propCheck.arbitrary.arbitraryBoundedLong
 import propCheck.arbitrary.shrinkLong
 
-class TestableSpec : StringSpec({
+class TestableSpec : PropertySpec({
     "Boolean should be lifted correctly" {
-        propCheck {
-            forAll { b: Boolean ->
-                if (b) b.property()
-                else expectFailure(b.property())
-            }
+        forAll { b: Boolean ->
+            if (b) b.property()
+            else expectFailure(b)
         }
     }
 })
 
-class PropCheckSpec : StringSpec({
+class PropCheckSpec : PropertySpec({
     "propCheckIO should execute the test correctly without throwing exceptions" {
-        propCheck {
-            forAll { b: Boolean ->
-                ioProperty(
-                    propCheckIO(Args(maxSuccess = 1)) {
-                        Boolean.testable().run { b.property() }
-                    }.attempt().map {
-                        it.fold({ false }, {
-                            when (it) {
-                                is Result.Success -> b
-                                is Result.Failure -> b.not()
-                                is Result.GivenUp -> false
-                                is Result.NoExpectedFailure -> false
-                            }
-                        })
-                    }
-                )
-            }
-        }
-    }
-    "propCheckIOWithError should execute the test correctly and throw an exception" {
-        propCheck {
-            forAll { b: Boolean ->
-                ioProperty(
-                    propCheckIOWithError(Args(maxSuccess = 1)) {
-                        Boolean.testable().run { b.property() }
-                    }.attempt().map {
-                        it.fold({ b.not() }, { b })
-                    }
-                )
-            }
-        }
-    }
-    "propCheck is the same as propCheckIOWithError.unsageRunSync()" {
-        propCheck {
-            forAll { b: Boolean ->
-                ioProperty(
-                    IO.monadThrow().bindingCatch {
-                        propCheck(Args(maxSuccess = 1)) { Boolean.testable().run { b.property() } }
-                    }.attempt().map {
-                        it.fold({
-                            propCheckIOWithError(Args(maxSuccess = 1)) {
-                                Boolean.testable().run { b.property() }
-                            }.attempt()
-                                .unsafeRunSync().fold(
-                                    { err ->
-                                        counterexample(
-                                            "${err.message} =!= ${it.message}",
-                                            (err.message == it.message).property()
-                                        )
-                                    },
-                                    {
-                                        counterexample(
-                                            "propCheck threw, but propCheckWithIOError did not",
-                                            false
-                                        )
-                                    })
-                        }, {
-                            propCheckIOWithError(Args(maxSuccess = 1)) {
-                                Boolean.testable().run { b.property() }
-                            }.attempt()
-                                .unsafeRunSync().fold({
-                                    counterexample(
-                                        "propCheck did not throw, but propCheckWithIOError did",
-                                        false.property()
-                                    )
-                                }, { Boolean.testable().run { true.property() } })
-                        })
-                    }
-                )
-            }
-        }
-    }
-    "propCheckWithResult is the same as propCheckIO.unsageRunSync()" {
-        propCheck {
-            forAll { b: Boolean ->
-                val a = propCheckWithResult(Args(maxSuccess = 1)) { Boolean.testable().run { b.property() } }
-                val c = propCheckIO(Args(maxSuccess = 1)) {
-                    Boolean.testable().run { b.property() }
-                }.unsafeRunSync()
-                counterexample(
-                    "$a =!= $c", when (a) {
-                        is Result.Success -> c is Result.Success
-                        is Result.Failure -> c is Result.Failure
-                        else -> false // should not happen at all so fail if it does
-                    }
-                )
-            }
-        }
-    }
-    "propCheckIO should give up on too many discards" {
-        propCheck {
+        forAll { b: Boolean ->
             ioProperty(
-                propCheckIO {
-                    discardIf(true, false.property())
+                propCheckIO(Args(maxSuccess = 1)) {
+                    Boolean.testable().run { b.property() }
                 }.attempt().map {
-                    it.fold({ false }, { res ->
-                        res is Result.GivenUp
+                    it.fold({ false }, {
+                        when (it) {
+                            is Result.Success -> b
+                            is Result.Failure -> b.not()
+                            is Result.GivenUp -> false
+                            is Result.NoExpectedFailure -> false
+                        }
                     })
                 }
             )
         }
     }
-    "propCheckIOWIthError should give up on too many discards and throw" {
-        propCheck {
+    "propCheckIOWithError should execute the test correctly and throw an exception" {
+        forAll { b: Boolean ->
             ioProperty(
-                propCheckIOWithError {
-                    discardIf(true, false)
+                propCheckIOWithError(Args(maxSuccess = 1)) {
+                    Boolean.testable().run { b.property() }
                 }.attempt().map {
-                    it.fold({ true }, { false })
+                    it.fold({ b.not() }, { b })
                 }
             )
         }
     }
+    "propCheck is the same as propCheckIOWithError.unsageRunSync()" {
+        forAll { b: Boolean ->
+            ioProperty(
+                IO.monadThrow().bindingCatch {
+                    propCheck(Args(maxSuccess = 1)) { Boolean.testable().run { b.property() } }
+                }.attempt().map {
+                    it.fold({
+                        propCheckIOWithError(Args(maxSuccess = 1)) {
+                            Boolean.testable().run { b.property() }
+                        }.attempt()
+                            .unsafeRunSync().fold(
+                                { err ->
+                                    counterexample(
+                                        "${err.message} =!= ${it.message}",
+                                        (err.message == it.message).property()
+                                    )
+                                },
+                                {
+                                    counterexample(
+                                        "propCheck threw, but propCheckWithIOError did not",
+                                        false
+                                    )
+                                })
+                    }, {
+                        propCheckIOWithError(Args(maxSuccess = 1)) {
+                            Boolean.testable().run { b.property() }
+                        }.attempt()
+                            .unsafeRunSync().fold({
+                                counterexample(
+                                    "propCheck did not throw, but propCheckWithIOError did",
+                                    false.property()
+                                )
+                            }, { Boolean.testable().run { true.property() } })
+                    })
+                }
+            )
+        }
+    }
+    "propCheckWithResult is the same as propCheckIO.unsageRunSync()" {
+        forAll { b: Boolean ->
+            val a = propCheckWithResult(Args(maxSuccess = 1)) { Boolean.testable().run { b.property() } }
+            val c = propCheckIO(Args(maxSuccess = 1)) {
+                Boolean.testable().run { b.property() }
+            }.unsafeRunSync()
+            counterexample(
+                "$a =!= $c", when (a) {
+                    is Result.Success -> c is Result.Success
+                    is Result.Failure -> c is Result.Failure
+                    else -> false // should not happen at all so fail if it does
+                }
+            )
+        }
+    }
+    "propCheckIO should give up on too many discards" {
+        ioProperty(
+            propCheckIO {
+                discardIf(true, false.property())
+            }.attempt().map {
+                it.fold({ false }, { res ->
+                    res is Result.GivenUp
+                })
+            }
+        )
+    }
+    "propCheckIOWIthError should give up on too many discards and throw" {
+        ioProperty(
+            propCheckIOWithError {
+                discardIf(true, false)
+            }.attempt().map {
+                it.fold({ true }, { false })
+            }
+        )
+    }
     "propCheckWIthIO should produce the same result with the same random seed" {
-        propCheck {
-            forAll { tup: Tuple2<Long, Int> ->
-                ioProperty(
+        forAll { tup: Tuple2<Long, Int> ->
+            ioProperty(
+                propCheckIO(Args(replay = tup.some())) {
+                    forAll { b: Boolean -> b.property() }
+                }.flatMap { res ->
                     propCheckIO(Args(replay = tup.some())) {
                         forAll { b: Boolean -> b.property() }
-                    }.flatMap { res ->
-                        propCheckIO(Args(replay = tup.some())) {
-                            forAll { b: Boolean -> b.property() }
-                        }.map { (res == it) }
-                    }
-                )
-            }
+                    }.map { (res == it) }
+                }
+            )
         }
     }
     "propCheckIO should respect the maxShrinks argument" {
-        propCheck {
-            forAll { (i): Positive<Byte> ->
-                ioProperty(
-                    propCheckIO(Args(maxShrinks = i.toInt())) {
-                        forAllShrink(arbitraryBoundedLong(), { shrinkLong(it) }, Boolean.testable()) { l: Long ->
-                            Math.abs(l) < 20000
-                        }
-                    }.map {
-                        (it is Result.Failure && it.numShrinks + it.numShrinkTries <= i).property()
+        forAll { (i): Positive<Byte> ->
+            ioProperty(
+                propCheckIO(Args(maxShrinks = i.toInt())) {
+                    forAllShrink(arbitraryBoundedLong(), { shrinkLong(it) }, Boolean.testable()) { l: Long ->
+                        Math.abs(l) < 20000
                     }
-                )
-            }
+                }.map {
+                    (it is Result.Failure && it.numShrinks + it.numShrinkTries <= i).property()
+                }
+            )
         }
     }
 })

@@ -1,12 +1,12 @@
 package propCheck
 
+import arrow.core.Eval
 import arrow.core.some
 import arrow.effects.ForIO
 import arrow.effects.IO
 import arrow.effects.Ref
 import arrow.effects.extensions.io.monadDefer.monadDefer
 import arrow.effects.fix
-import io.kotlintest.specs.StringSpec
 import propCheck.arbitrary.Gen
 
 // -----------
@@ -28,7 +28,7 @@ data class Counter(var v: Int = 0) {
     fun get() = v
 }
 
-class StateSpec : StringSpec({
+class StateSpec : PropertySpec({
     "State-machine-testing should work correctly for a simple counter model" {
         val sm = StateMachine(
             initialState = 0,
@@ -60,27 +60,27 @@ class StateSpec : StringSpec({
             }
         )
 
-        propCheck {
-            execSeq(sm) { s, a, r ->
-                when (a) {
-                    is ACT.Get -> s == r
-                    is ACT.Inc -> s + 1 == r
-                    is ACT.Dec -> s - 1 == r
-                }
-            }
-        }
 
-        propCheck {
-            expectFailure(
-                execPar(sm, 2) { s, a, r ->
+        expectFailure(
+            and(
+                execSeq(sm) { s, a, r ->
                     when (a) {
                         is ACT.Get -> s == r
                         is ACT.Inc -> s + 1 == r
                         is ACT.Dec -> s - 1 == r
                     }
+                },
+                Eval.later {
+                    execPar(sm, 2) { s, a, r ->
+                        when (a) {
+                            is ACT.Get -> s == r
+                            is ACT.Inc -> s + 1 == r
+                            is ACT.Dec -> s - 1 == r
+                        }
+                    }
                 }
             )
-        }
+        )
     }
 
     "State-machine-testing should work correctly for a arrow-ref" {
@@ -112,24 +112,23 @@ class StateSpec : StringSpec({
             }
         )
 
-        propCheck {
+        and(
             execSeq(sm) { s, a, r ->
                 when (a) {
                     is ACT.Get -> s == r
                     is ACT.Inc -> s + 1 == r
                     is ACT.Dec -> s - 1 == r
                 }
-            }
-        }
-
-        propCheck {
-            execPar(sm, 2) { s, a, r ->
-                when (a) {
-                    is ACT.Get -> s == r
-                    is ACT.Inc -> s + 1 == r
-                    is ACT.Dec -> s - 1 == r
+            },
+            Eval.later {
+                execPar(sm, 2) { s, a, r ->
+                    when (a) {
+                        is ACT.Get -> s == r
+                        is ACT.Inc -> s + 1 == r
+                        is ACT.Dec -> s - 1 == r
+                    }
                 }
             }
-        }
+        )
     }
 })
