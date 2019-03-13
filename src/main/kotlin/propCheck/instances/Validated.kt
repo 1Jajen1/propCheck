@@ -5,8 +5,8 @@ import arrow.data.invalid
 import arrow.data.valid
 import arrow.extension
 import arrow.typeclasses.Show
-import propCheck.Arbitrary
-import propCheck.Gen
+import propCheck.arbitrary.Arbitrary
+import propCheck.arbitrary.Gen
 
 @extension
 interface ValidatedArbitrary<E, A> : Arbitrary<Validated<E, A>> {

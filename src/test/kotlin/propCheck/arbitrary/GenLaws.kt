@@ -1,12 +1,13 @@
-package propCheck
+package propCheck.arbitrary
 
 import arrow.core.Tuple2
 import arrow.core.toT
 import arrow.data.Nel
 import arrow.test.laws.MonadLaws
 import arrow.typeclasses.Eq
-import propCheck.assertions.*
-import propCheck.gen.monad.monad
+import propCheck.*
+import propCheck.arbitrary.gen.monad.monad
+import propCheck.property.testable.testable
 
 class GenSpec : LawSpec() {
     init {
@@ -19,11 +20,20 @@ class GenSpec : LawSpec() {
             )
         )
 
+        "Gens with same seed and size should return the same values" {
+            propCheck {
+                forAll { (l, s): Pair<Long, NonNegative<Int>> ->
+                    (arbitrarySizedInt().unGen(l toT s.a) == arbitrarySizedInt().unGen(l toT s.a))
+                        .property()
+                }
+            }
+        }
+
         "Gen.resize should work" {
             propCheck {
                 forAll { (i): NonNegative<Int> ->
                     idempotentIOProperty(
-                        Gen.getSize().resize(i).generate().map { it == i }
+                        Gen.getSize().resize(i).generate().map { (it == i).property() }
                     )
                 }
             }
@@ -35,7 +45,7 @@ class GenSpec : LawSpec() {
                 forAll { (iP, jP): Tuple2<NonNegative<Int>, NonNegative<Int>> ->
                     val (i) = iP; val (j) = jP
                     idempotentIOProperty(
-                        Gen.getSize().scale { it + j }.resize(i).generate().map { it == i + j }
+                        Gen.getSize().scale { it + j }.resize(i).generate().map { (it == i + j).property() }
                     )
                 }
             }
@@ -85,7 +95,7 @@ class GenSpec : LawSpec() {
             propCheck {
                 forAll { (i): NonNegative<Int> ->
                     idempotentIOProperty(
-                        arbitrarySizedByte().listOf().resize(i).generate().map { it.size <= i }
+                        arbitrarySizedByte().listOf().resize(i).generate().map { (it.size <= i).property() }
                     )
                 }
             }
@@ -95,7 +105,7 @@ class GenSpec : LawSpec() {
             propCheck {
                 forAll { (i): Positive<Int> ->
                     idempotentIOProperty(
-                        arbitrarySizedByte().nelOf().resize(i).generate().map { it.size <= i }
+                        arbitrarySizedByte().nelOf().resize(i).generate().map { (it.size <= i).property() }
                     )
                 }
             }
@@ -105,7 +115,7 @@ class GenSpec : LawSpec() {
             propCheck {
                 forAll { (i): NonNegative<Int> ->
                     idempotentIOProperty(
-                        arbitrarySizedByte().vectorOf(i).generate().map { it.size == i }
+                        arbitrarySizedByte().vectorOf(i).generate().map { (it.size == i).property() }
                     )
                 }
             }
@@ -115,7 +125,7 @@ class GenSpec : LawSpec() {
             propCheck {
                 forAll { (i): NonNegative<Int> ->
                     idempotentIOProperty(
-                        Gen.sized { Gen.getSize().resize(it) }.resize(i).generate().map { it == i }
+                        Gen.sized { Gen.getSize().resize(it) }.resize(i).generate().map { (it == i).property() }
                     )
                 }
             }
@@ -125,7 +135,7 @@ class GenSpec : LawSpec() {
             propCheck {
                 forAll { (i): NonNegative<Int> ->
                     idempotentIOProperty(
-                        Gen.getSize().resize(i).generate().map { it == i }
+                        Gen.getSize().resize(i).generate().map { (it == i).property() }
                     )
                 }
             }
@@ -177,7 +187,8 @@ class GenSpec : LawSpec() {
         "Gen.choose should equally choose in the range" {
             propCheck {
                 forAll(
-                    Gen.choose(1 toT 3 + 1, Int.random())
+                    Gen.choose(1 toT 3 + 1, Int.random()),
+                    Property.testable()
                 ) {
                     checkCoverage(
                         coverTable(
@@ -200,7 +211,8 @@ class GenSpec : LawSpec() {
         "Gen.elements should equally choose between the elements" {
             propCheck {
                 forAll(
-                    Gen.elements(1, 2, 3)
+                    Gen.elements(1, 2, 3),
+                    Property.testable()
                 ) {
                     checkCoverage(
                         coverTable(
@@ -227,7 +239,8 @@ class GenSpec : LawSpec() {
                         Gen.elements(1),
                         Gen.elements(2),
                         Gen.elements(3)
-                    )
+                    ),
+                    Property.testable()
                 ) {
                     checkCoverage(
                         coverTable(

@@ -6,8 +6,8 @@ import arrow.core.some
 import arrow.core.toT
 import arrow.extension
 import arrow.typeclasses.Show
-import propCheck.Arbitrary
-import propCheck.Gen
+import propCheck.arbitrary.Arbitrary
+import propCheck.arbitrary.Gen
 
 @extension
 interface OptionArbitrary<A> : Arbitrary<Option<A>> {

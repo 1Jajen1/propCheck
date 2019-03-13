@@ -1,4 +1,4 @@
-package propCheck.assertions
+package propCheck
 
 import arrow.core.Tuple2
 import arrow.core.some
@@ -6,14 +6,16 @@ import arrow.effects.IO
 import arrow.effects.extensions.io.applicativeError.attempt
 import arrow.effects.extensions.io.monadThrow.monadThrow
 import io.kotlintest.specs.StringSpec
-import propCheck.*
+import propCheck.arbitrary.Positive
+import propCheck.arbitrary.arbitraryBoundedLong
+import propCheck.arbitrary.shrinkLong
 
 class TestableSpec : StringSpec({
     "Boolean should be lifted correctly" {
         propCheck {
             forAll { b: Boolean ->
-                if (b) Boolean.testable().run { b.property() }
-                else expectFailure(b)
+                if (b) b.property()
+                else expectFailure(b.property())
             }
         }
     }
@@ -64,15 +66,28 @@ class PropCheckSpec : StringSpec({
                             propCheckIOWithError(Args(maxSuccess = 1)) {
                                 Boolean.testable().run { b.property() }
                             }.attempt()
-                                .unsafeRunSync().fold({ err ->
-                                    counterexample("${err.message} =!= ${it.message}", err.message == it.message)
-                                }, { counterexample("propCheck threw, but propCheckWithIOError did not", false) })
+                                .unsafeRunSync().fold(
+                                    { err ->
+                                        counterexample(
+                                            "${err.message} =!= ${it.message}",
+                                            (err.message == it.message).property()
+                                        )
+                                    },
+                                    {
+                                        counterexample(
+                                            "propCheck threw, but propCheckWithIOError did not",
+                                            false
+                                        )
+                                    })
                         }, {
                             propCheckIOWithError(Args(maxSuccess = 1)) {
                                 Boolean.testable().run { b.property() }
                             }.attempt()
                                 .unsafeRunSync().fold({
-                                    counterexample("propCheck did not throw, but propCheckWithIOError did", false)
+                                    counterexample(
+                                        "propCheck did not throw, but propCheckWithIOError did",
+                                        false.property()
+                                    )
                                 }, { Boolean.testable().run { true.property() } })
                         })
                     }
@@ -84,7 +99,9 @@ class PropCheckSpec : StringSpec({
         propCheck {
             forAll { b: Boolean ->
                 val a = propCheckWithResult(Args(maxSuccess = 1)) { Boolean.testable().run { b.property() } }
-                val c = propCheckIO(Args(maxSuccess = 1)) { Boolean.testable().run { b.property() } }.unsafeRunSync()
+                val c = propCheckIO(Args(maxSuccess = 1)) {
+                    Boolean.testable().run { b.property() }
+                }.unsafeRunSync()
                 counterexample(
                     "$a =!= $c", when (a) {
                         is Result.Success -> c is Result.Success
@@ -99,7 +116,7 @@ class PropCheckSpec : StringSpec({
         propCheck {
             ioProperty(
                 propCheckIO {
-                    discardIf(true, false)
+                    discardIf(true, false.property())
                 }.attempt().map {
                     it.fold({ false }, { res ->
                         res is Result.GivenUp
@@ -124,11 +141,11 @@ class PropCheckSpec : StringSpec({
             forAll { tup: Tuple2<Long, Int> ->
                 ioProperty(
                     propCheckIO(Args(replay = tup.some())) {
-                        forAll { b: Boolean -> b }
+                        forAll { b: Boolean -> b.property() }
                     }.flatMap { res ->
                         propCheckIO(Args(replay = tup.some())) {
-                            forAll { b: Boolean -> b }
-                        }.map { res == it }
+                            forAll { b: Boolean -> b.property() }
+                        }.map { (res == it) }
                     }
                 )
             }
@@ -139,11 +156,11 @@ class PropCheckSpec : StringSpec({
             forAll { (i): Positive<Byte> ->
                 ioProperty(
                     propCheckIO(Args(maxShrinks = i.toInt())) {
-                        forAllShrink(arbitraryBoundedLong(), { shrinkLong(it) }) { l: Long ->
+                        forAllShrink(arbitraryBoundedLong(), { shrinkLong(it) }, Boolean.testable()) { l: Long ->
                             Math.abs(l) < 20000
                         }
                     }.map {
-                        (it is Result.Failure && it.numShrinks + it.numShrinkTries <= i)
+                        (it is Result.Failure && it.numShrinks + it.numShrinkTries <= i).property()
                     }
                 )
             }

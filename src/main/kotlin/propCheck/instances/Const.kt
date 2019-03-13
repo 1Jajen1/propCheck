@@ -3,8 +3,8 @@ package propCheck.instances
 import arrow.extension
 import arrow.typeclasses.Const
 import arrow.typeclasses.const
-import propCheck.Arbitrary
-import propCheck.Gen
+import propCheck.arbitrary.Arbitrary
+import propCheck.arbitrary.Gen
 
 @extension
 interface ConstArbitrary<A, T> : Arbitrary<Const<A, T>> {

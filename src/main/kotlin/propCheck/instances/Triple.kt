@@ -2,10 +2,10 @@ package propCheck.instances
 
 import arrow.core.Tuple3
 import arrow.typeclasses.Show
-import propCheck.Arbitrary
-import propCheck.Gen
+import propCheck.arbitrary.Arbitrary
+import propCheck.arbitrary.Gen
 import propCheck.instances.tuple3.arbitrary.arbitrary
-import propCheck.shrinkMap
+import propCheck.arbitrary.shrinkMap
 
 interface TripleArbitrary<A, B, C> : Arbitrary<Triple<A, B, C>> {
     fun AA(): Arbitrary<A>

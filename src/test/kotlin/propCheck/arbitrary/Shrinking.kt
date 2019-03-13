@@ -1,14 +1,13 @@
-package propCheck
+package propCheck.arbitrary
 
 import io.kotlintest.specs.StringSpec
-import propCheck.assertions.Args
-import propCheck.assertions.counterexample
-import propCheck.assertions.forAll
+import propCheck.*
+import propCheck.property.testable.testable
 
 class IntegralShrinkSpec : StringSpec({
     "shrinking ints should yield a sorted list of integers" {
         propCheck(Args(maxSuccess = 10000)) {
-            forAll(arbitraryBoundedInt()) { i: Int ->
+            forAll(arbitraryBoundedInt(), Property.testable()) { i: Int ->
                 shrinkInt(i).take(100).toList().let {
                     counterexample(
                         "$it",
@@ -20,7 +19,7 @@ class IntegralShrinkSpec : StringSpec({
     }
     "shrinking longs should yield a sorted list of longs" {
         propCheck(Args(maxSuccess = 10000)) {
-            forAll(arbitraryBoundedLong()) { i: Long ->
+            forAll(arbitraryBoundedLong(), Property.testable()) { i: Long ->
                 shrinkLong(i).take(100).toList().let {
                     counterexample(
                         "$it",
@@ -32,7 +31,7 @@ class IntegralShrinkSpec : StringSpec({
     }
     "shrinking bytes should yield a sorted list of byte" {
         propCheck(Args(maxSuccess = 10000)) {
-            forAll(arbitraryBoundedByte()) { i: Byte ->
+            forAll(arbitraryBoundedByte(), Property.testable()) { i: Byte ->
                 shrinkByte(i).take(100).toList().let {
                     counterexample(
                         "$it",

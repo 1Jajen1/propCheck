@@ -10,13 +10,11 @@ import arrow.data.fix
 import arrow.effects.IO
 import arrow.effects.extensions.io.monad.monad
 import arrow.effects.fix
-import propCheck.assertions.*
-import propCheck.gen.applicative.applicative
-import propCheck.gen.monad.monad
+import propCheck.arbitrary.*
+import propCheck.arbitrary.gen.applicative.applicative
+import propCheck.arbitrary.gen.monad.monad
 import java.util.concurrent.Callable
 import java.util.concurrent.Executors
-import java.util.concurrent.ThreadFactory
-
 
 
 typealias PreCondition<S, A> = (S, A) -> Boolean
@@ -117,7 +115,7 @@ inline fun <S, A, R, SUT, reified PROP> execSeq(
     sm: StateMachine<S, A, R, SUT>,
     testable: Testable<PROP> = defTestable(),
     noinline postCondition: PostCondition<S, A, R, PROP>
-): Property = forAllShrinkBlind(
+): Property = forAllBlind(
     commandsArby(sm, sm.initialState)
 ) { cmds ->
     idempotentIOProperty(
@@ -144,7 +142,12 @@ fun <S, A, R, SUT> parArby(sm: StateMachine<S, A, R, SUT>, maxThreads: Int) = co
             Tuple2(
                 prefix,
                 (0..(threads - 1)).map {
-                    pathArb.arbitrary().resize(Gen.choose(0 toT Gen.getSize().bind(), Int.random()).bind() / threads)
+                    pathArb.arbitrary().resize(
+                        Gen.choose(
+                            0 toT Gen.getSize().bind(),
+                            Int.random()
+                        ).bind() / threads
+                    )
                         .bind()
                 }
             )
@@ -191,7 +194,7 @@ internal fun <S, A, R, SUT, PROP> _execPar(
     maxThreads: Int = 2,
     testable: Testable<PROP>,
     postCondition: PostCondition<S, A, R, PROP>
-): Property = forAllShrinkBlind(
+): Property = forAllBlind(
     parArby(sm, Math.max(maxThreads, 2))
 ) { (prefix, paths) ->
     idempotentIOProperty(

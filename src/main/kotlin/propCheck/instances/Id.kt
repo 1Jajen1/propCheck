@@ -4,8 +4,8 @@ import arrow.core.Id
 import arrow.core.value
 import arrow.extension
 import arrow.typeclasses.Show
-import propCheck.Arbitrary
-import propCheck.Gen
+import propCheck.arbitrary.Arbitrary
+import propCheck.arbitrary.Gen
 
 @extension
 interface IdArbitrary<A> : Arbitrary<Id<A>> {

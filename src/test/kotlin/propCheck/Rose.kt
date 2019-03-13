@@ -1,10 +1,9 @@
-package propCheck.assertions
+package propCheck
 
 import arrow.Kind
 import arrow.test.laws.MonadLaws
 import arrow.typeclasses.Eq
-import propCheck.LawSpec
-import propCheck.assertions.rose.monad.monad
+import propCheck.rose.monad.monad
 
 class RoseSpec : LawSpec() {
     fun roseEq(): Eq<Kind<ForRose, Int>> = Eq { a, b ->

@@ -1,4 +1,4 @@
-package propCheck.assertions
+package propCheck
 
 import arrow.core.*
 import arrow.core.extensions.monoid
@@ -22,10 +22,10 @@ import arrow.effects.fix
 import arrow.extension
 import arrow.optics.optics
 import org.apache.commons.math3.special.Erf
-import propCheck.Gen
-import propCheck.assertions.testresult.testable.testable
-import propCheck.fix
-import propCheck.gen.monad.monad
+import propCheck.arbitrary.Gen
+import propCheck.arbitrary.fix
+import propCheck.arbitrary.gen.monad.monad
+import propCheck.testresult.testable.testable
 import kotlin.random.Random
 
 /**
@@ -156,12 +156,26 @@ interface BooleanTestable : Testable<Boolean> {
     }
 }
 
+fun Boolean.property(): Property = TestResult.testable().run {
+    liftBoolean(this@property).property()
+}
+
 fun Boolean.Companion.testable(): Testable<Boolean> = object : BooleanTestable {}
 
 @extension
 interface TestResultTestable : Testable<TestResult> {
     override fun TestResult.property(): Property =
-        Property(Gen.monad().just(Prop(protectResults(Rose.just(this)))).fix())
+        Property(
+            Gen.monad().just(
+                Prop(
+                    protectResults(
+                        Rose.just(
+                            this
+                        )
+                    )
+                )
+            ).fix()
+        )
 }
 
 @extension
@@ -411,7 +425,13 @@ fun runATest(state: State, prop: Property): IO<Result> = IO.monad().binding {
     /**
      * run a test and unfold the rose structure
      */
-    val (res0, ts) = when (val it = protectRose(reduceRose(f_or_cov.unProperty.unGen(rand1 toT size).unProp)).bind()) {
+    val (res0, ts) = when (val it = protectRose(
+        reduceRose(
+            f_or_cov.unProperty.unGen(
+                rand1 toT size
+            ).unProp
+        )
+    ).bind()) {
         is Rose.IORose -> throw IllegalStateException("Should not happend")
         is Rose.MkRose -> it.res toT it.shrunk
     }
@@ -538,7 +558,8 @@ internal fun _localMin(state: State, res: TestResult, ts: Sequence<Rose<TestResu
     when (ts.isEmpty()) {
         true -> localMinFound(state, res)
         else -> IO.monad().binding {
-            val (nRes0, nTs) = when (val it = protectRose(reduceRose(ts.first())).bind()) {
+            val (nRes0, nTs) = when (val it = protectRose(reduceRose(ts.first()))
+                .bind()) {
                 is Rose.IORose -> throw IllegalStateException("Should never happen")
                 is Rose.MkRose -> it.res toT it.shrunk
             }
@@ -783,7 +804,8 @@ fun addCoverageCheck(confidence: Confidence, state: State, prop: Property): Prop
             }.fold(false) { acc, v -> acc || v } -> {
                 val (labels, tables) = labelsAndTables(state)
                 listOf(labels, tables).filter { it.isNotEmpty() }.map { it.joinToString("") }
-                    .foldRight(TestResult.testable().run { failed("Insufficient coverage").property() }) { v, acc ->
+                    .foldRight(TestResult.testable().run { failed("Insufficient coverage")
+                        .property() }) { v, acc ->
                         counterexample(v, acc)
                     }
             }

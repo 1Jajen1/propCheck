@@ -7,7 +7,7 @@ import arrow.effects.Ref
 import arrow.effects.extensions.io.monadDefer.monadDefer
 import arrow.effects.fix
 import io.kotlintest.specs.StringSpec
-import propCheck.assertions.expectFailure
+import propCheck.arbitrary.Gen
 
 // -----------
 sealed class ACT {

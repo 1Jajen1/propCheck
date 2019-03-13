@@ -4,10 +4,10 @@ import arrow.data.ListK
 import arrow.data.k
 import arrow.extension
 import arrow.typeclasses.Show
-import propCheck.Arbitrary
-import propCheck.Gen
-import propCheck.shrinkList
-import propCheck.shrinkMap
+import propCheck.arbitrary.Arbitrary
+import propCheck.arbitrary.Gen
+import propCheck.arbitrary.shrinkList
+import propCheck.arbitrary.shrinkMap
 
 @extension
 interface ListKArbitrary<A> : Arbitrary<ListK<A>> {

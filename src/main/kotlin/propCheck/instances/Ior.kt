@@ -5,10 +5,10 @@ import arrow.data.leftIor
 import arrow.data.rightIor
 import arrow.extension
 import arrow.typeclasses.Show
-import propCheck.Arbitrary
-import propCheck.Gen
-import propCheck.fix
-import propCheck.gen.applicative.applicative
+import propCheck.arbitrary.Arbitrary
+import propCheck.arbitrary.Gen
+import propCheck.arbitrary.fix
+import propCheck.arbitrary.gen.applicative.applicative
 
 @extension
 interface IorArbitrary<L, R> : Arbitrary<Ior<L, R>> {

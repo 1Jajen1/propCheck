@@ -3,11 +3,12 @@ package propCheck
 import arrow.core.Option
 import arrow.core.Tuple13
 import arrow.core.none
-import propCheck.assertions.Callback
-import propCheck.assertions.Confidence
-import propCheck.assertions.TestResult
-import propCheck.assertions.TestResult.Companion.fromTuple
-import propCheck.assertions.TestResult.Companion.toTuple
+import propCheck.TestResult.Companion.fromTuple
+import propCheck.TestResult.Companion.toTuple
+import propCheck.arbitrary.Arbitrary
+import propCheck.arbitrary.Gen
+import propCheck.arbitrary.arbitraryASCIIString
+import propCheck.arbitrary.shrinkMap
 import propCheck.instances.arbitrary
 import propCheck.instances.fromTup
 import propCheck.instances.option.arbitrary.arbitrary

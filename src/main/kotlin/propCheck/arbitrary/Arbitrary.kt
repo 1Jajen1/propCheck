@@ -1,11 +1,11 @@
-package propCheck
+package propCheck.arbitrary
 
 import arrow.core.Tuple2
 import arrow.core.toT
 import arrow.optics.Iso
 import arrow.typeclasses.Order
-import propCheck.gen.functor.functor
-import propCheck.gen.monad.monad
+import propCheck.arbitrary.gen.functor.functor
+import propCheck.arbitrary.gen.monad.monad
 import propCheck.instances.arbitrary
 
 /**
@@ -89,8 +89,10 @@ fun arbitraryBoundedInt(): Gen<Int> = Gen.chooseAny(Int.random())
 fun arbitraryBoundedLong(): Gen<Long> = Gen.chooseAny(Long.random())
 fun arbitraryBoundedByte(): Gen<Byte> = Gen.chooseAny(Byte.random())
 
-fun arbitraryBoundedFloat(): Gen<Float> = Gen.chooseAny(Float.random())
-fun arbitraryBoundedDouble(): Gen<Double> = Gen.chooseAny(Double.random())
+fun arbitraryBoundedFloat(): Gen<Float> =
+    Gen.chooseAny(Float.random())
+fun arbitraryBoundedDouble(): Gen<Double> =
+    Gen.chooseAny(Double.random())
 
 // ----------- String and char generators
 fun arbitraryASCIIChar(): Gen<Char> =
