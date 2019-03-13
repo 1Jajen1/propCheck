@@ -1,4 +1,4 @@
-package propCheck
+package propCheck.arbitrary
 
 import arrow.core.Tuple2
 import arrow.core.extensions.eq
@@ -9,32 +9,32 @@ import arrow.data.extensions.listk.eq.eq
 import arrow.data.k
 import arrow.test.laws.FunctorLaws
 import arrow.typeclasses.Eq
-import propCheck.assertions.*
-import propCheck.blind.eq.eq
-import propCheck.blind.functor.functor
-import propCheck.blind.show.show
+import propCheck.*
+import propCheck.arbitrary.blind.eq.eq
+import propCheck.arbitrary.blind.functor.functor
+import propCheck.arbitrary.blind.show.show
 import propCheck.instances.arbitrary
-import propCheck.negative.arbitrary.arbitrary
-import propCheck.negative.eq.eq
-import propCheck.negative.functor.functor
-import propCheck.nonnegative.arbitrary.arbitrary
-import propCheck.nonnegative.eq.eq
-import propCheck.nonnegative.functor.functor
-import propCheck.nonpositive.arbitrary.arbitrary
-import propCheck.nonpositive.eq.eq
-import propCheck.nonpositive.functor.functor
-import propCheck.orderedlist.arbitrary.arbitrary
-import propCheck.orderedlist.eq.eq
-import propCheck.orderedlist.functor.functor
-import propCheck.positive.arbitrary.arbitrary
-import propCheck.positive.eq.eq
-import propCheck.positive.functor.functor
-import propCheck.shrink2.arbitrary.arbitrary
-import propCheck.shrink2.eq.eq
-import propCheck.shrink2.functor.functor
-import propCheck.shrinking.arbitrary.arbitrary
-import propCheck.shrinking.functor.functor
-import propCheck.smart.functor.functor
+import propCheck.arbitrary.negative.arbitrary.arbitrary
+import propCheck.arbitrary.negative.eq.eq
+import propCheck.arbitrary.negative.functor.functor
+import propCheck.arbitrary.nonnegative.arbitrary.arbitrary
+import propCheck.arbitrary.nonnegative.eq.eq
+import propCheck.arbitrary.nonnegative.functor.functor
+import propCheck.arbitrary.nonpositive.arbitrary.arbitrary
+import propCheck.arbitrary.nonpositive.eq.eq
+import propCheck.arbitrary.nonpositive.functor.functor
+import propCheck.arbitrary.orderedlist.arbitrary.arbitrary
+import propCheck.arbitrary.orderedlist.eq.eq
+import propCheck.arbitrary.orderedlist.functor.functor
+import propCheck.arbitrary.positive.arbitrary.arbitrary
+import propCheck.arbitrary.positive.eq.eq
+import propCheck.arbitrary.positive.functor.functor
+import propCheck.arbitrary.shrink2.arbitrary.arbitrary
+import propCheck.arbitrary.shrink2.eq.eq
+import propCheck.arbitrary.shrink2.functor.functor
+import propCheck.arbitrary.shrinking.arbitrary.arbitrary
+import propCheck.arbitrary.shrinking.functor.functor
+import propCheck.arbitrary.smart.functor.functor
 
 class BlindSpec : LawSpec() {
     init {
@@ -64,7 +64,7 @@ class FixedSpec : LawSpec() {
 
         "Fixed should never be shrunk" {
             propCheck {
-                forAllShrink { _: Fixed<Int> ->
+                forAll { _: Fixed<Int> ->
                     idempotentIOProperty(
                         propCheckIO { Boolean.testable().run { false.property() } }
                             .map {
@@ -152,7 +152,12 @@ class Shrink2Spec : LawSpec() {
 class ShrinkingSpec : LawSpec() {
     init {
         testLaws(
-            FunctorLaws.laws(Shrinking.functor(), { Shrinking(0, it) }, Eq { a, b ->
+            FunctorLaws.laws(Shrinking.functor(), {
+                Shrinking(
+                    0,
+                    it
+                )
+            }, Eq { a, b ->
                 val aF = a.fix(); val bF = b.fix()
                 aF.a == bF.a && aF.s == bF.s
             })

@@ -1,4 +1,4 @@
-package propCheck.assertions
+package propCheck
 
 import arrow.Kind
 import arrow.core.*
@@ -18,13 +18,15 @@ import arrow.typeclasses.Applicative
 import arrow.typeclasses.Functor
 import arrow.typeclasses.Monad
 import arrow.typeclasses.Show
-import propCheck.*
-import propCheck.assertions.property.testable.testable
-import propCheck.assertions.rose.monad.monad
-import propCheck.assertions.testresult.testable.testable
-import propCheck.gen.applicative.applicative
-import propCheck.gen.monad.flatMap
-import propCheck.gen.monad.monad
+import propCheck.arbitrary.Arbitrary
+import propCheck.arbitrary.Gen
+import propCheck.arbitrary.fix
+import propCheck.arbitrary.gen.applicative.applicative
+import propCheck.arbitrary.gen.monad.flatMap
+import propCheck.arbitrary.gen.monad.monad
+import propCheck.property.testable.testable
+import propCheck.rose.monad.monad
+import propCheck.testresult.testable.testable
 
 /**
  * Callbacks. Can perform io based on state and results
@@ -78,7 +80,21 @@ data class TestResult(
         }
 
         fun fromTuple(tup: Tuple13<Option<Boolean>, Boolean, String, Option<Throwable>, Boolean, Option<Int>, Option<Confidence>, List<String>, List<String>, List<Tuple2<String, String>>, List<Tuple3<Option<String>, String, Double>>, List<String>, List<Callback>>) =
-            TestResult(tup.a, tup.b, tup.c, tup.d, tup.e, tup.f, tup.g, tup.h, tup.i, tup.j, tup.k, tup.l, tup.m)
+            TestResult(
+                tup.a,
+                tup.b,
+                tup.c,
+                tup.d,
+                tup.e,
+                tup.f,
+                tup.g,
+                tup.h,
+                tup.i,
+                tup.j,
+                tup.k,
+                tup.l,
+                tup.m
+            )
     }
 }
 
@@ -144,9 +160,10 @@ interface RoseMonad : Monad<ForRose> {
 /**
  * wrap an IO with results safely
  */
-fun ioRose(rose: IO<Rose<TestResult>>): Rose<TestResult> = Rose.IORose(
-    protectRose(rose)
-)
+fun ioRose(rose: IO<Rose<TestResult>>): Rose<TestResult> =
+    Rose.IORose(
+        protectRose(rose)
+    )
 
 /**
  * catch exceptions in io code and fail the test if necessary
@@ -181,14 +198,15 @@ fun protectResult(io: IO<TestResult>): IO<TestResult> = io.handleError {
 /**
  * wrap internal roses with ioRose and install error handlers
  */
-fun protectResults(rose: Rose<TestResult>): Rose<TestResult> = onRose(rose) { x, rs ->
-    Rose.IORose(
-        IO.monad().binding {
-            val y = protectResult(IO.just(x)).bind()
-            Rose.MkRose(y, rs.map(::protectResults))
-        }.fix()
-    )
-}
+fun protectResults(rose: Rose<TestResult>): Rose<TestResult> =
+    onRose(rose) { x, rs ->
+        Rose.IORose(
+            IO.monad().binding {
+                val y = protectResult(IO.just(x)).bind()
+                Rose.MkRose(y, rs.map(::protectResults))
+            }.fix()
+        )
+    }
 
 /**
  * "Execute" a rose by reducing it as far as possible
@@ -249,159 +267,147 @@ fun liftBoolean(bool: Boolean): TestResult = if (bool) succeeded() else failed(
     reason = "Falsifiable"
 )
 
-inline fun <reified A> defTestable(): Testable<A> = when (A::class.qualifiedName) {
-    Property::class.qualifiedName -> Property.testable()
-    TestResult::class.qualifiedName -> TestResult.testable()
-    Boolean::class.qualifiedName -> Boolean.testable()
-    else -> throw IllegalStateException("Could not find testable for ${A::class.qualifiedName}")
-} as Testable<A>
-
 /**
  * Map over the test result of a property and protect the results with error handlers
  */
-inline fun <reified A> mapResult(
-    noinline f: (TestResult) -> TestResult,
-    a: A
-): Property =
-    mapRoseResult({ protectResults(it.map(f)) }, a)
+fun mapResult(
+    a: Property,
+    f: (TestResult) -> TestResult
+): Property = mapRoseResult(a) { protectResults(it.map(f)) }
 
 /**
  * Map over the test result of a property. f must be total
  */
-inline fun <reified A> mapTotalResult(
-    noinline f: (TestResult) -> TestResult,
-    a: A
-): Property =
-    mapRoseResult({ it.map(f) }, a)
+fun mapTotalResult(
+    a: Property,
+    f: (TestResult) -> TestResult
+): Property = mapRoseResult(a) { it.map(f) }
 
 /**
  * Map over a rose containing the TestResult, f must be total
  */
-inline fun <reified A> mapRoseResult(
-    noinline f: (Rose<TestResult>) -> Rose<TestResult>,
-    a: A
-): Property =
-    mapProp({ Prop(f(it.unProp)) }, a)
+fun mapRoseResult(
+    a: Property,
+    f: (Rose<TestResult>) -> Rose<TestResult>
+): Property = mapProp(a) { Prop(f(it.unProp)) }
 
 /**
  * map over a Prop (wrapper around rose). f must be total
  */
-inline fun <reified A> mapProp(noinline f: (Prop) -> Prop, a: A, testable: Testable<A> = defTestable()): Property =
-    Property(testable.run { a.property() }.unProperty.map(f))
+fun mapProp(a: Property, f: (Prop) -> Prop): Property =
+    Property(a.unProperty.map(f))
 
 /**
  * Map over the size of a generator used with the property. Calling Gen.scale(f)
  */
-inline fun <reified A> mapSize(noinline f: (Int) -> Int, a: A, testable: Testable<A> = defTestable()): Property =
-    Property(testable.run { a.property() }.unProperty.scale(f))
+fun mapSize(a: Property, f: (Int) -> Int): Property =
+    Property(a.unProperty.scale(f))
 
 /**
  * enable shrinking in a property
  */
-inline fun <reified A, B> shrinking(
-    testable: Testable<A> = defTestable(),
-    noinline shrink: (B) -> Sequence<B>,
+fun <B> shrinking(
+    shrink: (B) -> Sequence<B>,
     arg: B,
-    noinline pf: (B) -> A
+    pf: (B) -> Property
 ): Property = Property(
     props(
-        testable,
         shrink,
         pf,
         arg
     ).promote(Rose.monad()).map { Prop(joinRose(it.fix().map { it.unProp })) })
 
-@PublishedApi
-internal fun <A, B> props(
-    testable: Testable<A>,
+internal fun <B> props(
     shrink: (B) -> Sequence<B>,
-    pf: (B) -> A,
+    pf: (B) -> Property,
     b: B
 ): Rose<Gen<Prop>> = Rose.MkRose(
-    testable.run { pf(b).property() }.unProperty,
+    pf(b).unProperty,
     shrink(b).let {
-        it.mapIndexed { i, v -> props(testable, shrink, pf, v) }
+        it.mapIndexed { i, v -> props(shrink, pf, v) }
     }
 )
 
 /**
  * disable shrinking in a property by just supplying empty sequences
  */
-inline fun <reified A> noShrinking(a: A): Property =
-    mapRoseResult({
+fun noShrinking(a: Property): Property =
+    mapRoseResult(a) {
         onRose(it) { res, _ -> Rose.MkRose(res, emptySequence()) }
-    }, a)
+    }
 
 /**
  * print out a counterexample on failure
  */
-inline fun <reified A> counterexample(s: String, a: A): Property =
-    mapTotalResult({ res ->
+fun counterexample(s: String, a: Property): Property =
+    mapTotalResult(
+        callback(Callback.PostFinalFailure(CallbackKind.Counterexample) { st, _ ->
+            st.output.update {
+                it + s + "\n"
+            }.fix()
+        }, a)
+    ) { res ->
         TestResult.testCase.modify(res) { listOf(s) + it }
-    }, callback(Callback.PostFinalFailure(CallbackKind.Counterexample) { st, _ ->
-        st.output.update {
-            it + s + "\n"
-        }.fix()
-    }, a))
+    }
 
 /**
  * expect the property to fail
  */
-inline fun <reified A> expectFailure(a: A): Property =
-    mapTotalResult({ res ->
+fun expectFailure(a: Property): Property =
+    mapTotalResult(a) { res ->
         TestResult.expected.set(res, false)
-    }, a)
+    }
 
 /**
  * Abort after one execution
  */
-inline fun <reified A> once(a: A): Property =
-    mapTotalResult({ res ->
+fun once(a: Property): Property =
+    mapTotalResult(a) { res ->
         TestResult.abort.set(res, true)
-    }, a)
+    }
 
 /**
  * Continue to execute test if needed
  */
-inline fun <reified A> again(a: A): Property =
-    mapTotalResult({ res ->
+fun again(a: Property): Property =
+    mapTotalResult(a) { res ->
         TestResult.abort.set(res, false)
-    }, a)
+    }
 
 /**
  * Change the maximum tested amount
  */
-inline fun <reified A> withMaxSuccess(maxSuccess: Int, a: A): Property =
-    mapTotalResult({ res ->
+fun withMaxSuccess(maxSuccess: Int, a: Property): Property =
+    mapTotalResult(a) { res ->
         TestResult.optionNumOfTests.set(res, maxSuccess)
-    }, a)
+    }
 
 /**
  * enable coverage checks
  * Without tests will not fail (only print warnings) when coverage is not satisfied. Using this will make tests fail
  */
-inline fun <reified A> checkCoverage(
-    a: A,
+fun checkCoverage(
+    a: Property,
     confidence: Confidence = Confidence()
 ): Property =
-    mapTotalResult({ res ->
+    mapTotalResult(a) { res ->
         TestResult.optionCheckCoverage.set(res, confidence)
-    }, a)
+    }
 
 /**
  * Append a label to a test case
  */
-inline fun <reified A> label(label: String, a: A): Property =
-    mapTotalResult({ res ->
+fun label(label: String, a: Property): Property =
+    mapTotalResult(a) { res ->
         TestResult.labels.modify(res) { listOf(label) + it }
-    }, a)
+    }
 
 /**
  * implicitly label all cases
  */
-inline fun <reified A, B> collect(
+fun <B> collect(
     b: B,
-    a: A,
+    a: Property,
     showB: Show<B> = Show.any()
 ): Property =
     label(showB.run { b.show() }, a)
@@ -409,79 +415,81 @@ inline fun <reified A, B> collect(
 /**
  * classify tests based on some boolean value
  */
-inline fun <reified A> classify(bool: Boolean, label: String, a: A, testable: Testable<A> = defTestable()): Property =
-    if (!bool) testable.run { a.property() }
-    else mapTotalResult({ res ->
+fun classify(bool: Boolean, label: String, a: Property): Property =
+    if (!bool) a
+    else mapTotalResult(a) { res ->
         TestResult.classes.modify(res) { listOf(label) + it }
-    }, a)
+    }
 
 /**
  * add required coverage based on a boolean prop for a specific label
  */
-inline fun <reified A> cover(
+fun cover(
     p: Double,
     bool: Boolean,
     label: String,
-    a: A
+    a: Property
 ): Property =
-    mapTotalResult({ res ->
+    mapTotalResult(
+        classify(bool, label, a)
+    ) { res ->
         TestResult.requiredCoverage.modify(res) { listOf(Tuple3(none<String>(), label, p / 100)) + it }
-    }, classify(bool, label, a))
+    }
 
 /**
  * tabulate data
  */
-inline fun <reified A> tabulate(
+fun tabulate(
     key: String,
     values: List<String>,
-    a: A
+    a: Property
 ): Property =
-    mapTotalResult({ res ->
+    mapTotalResult(a) { res ->
         TestResult.tables.modify(res) { values.map { key toT it } + it }
-    }, a)
+    }
 
 /**
  * add required coverage based on tables
  */
-inline fun <reified A> coverTable(
+fun coverTable(
     key: String,
     values: List<Tuple2<String, Double>>,
-    a: A
+    a: Property
 ): Property =
-    mapTotalResult({ res ->
+    mapTotalResult(a) { res ->
         TestResult.requiredCoverage.modify(res) { values.map { Tuple3(key.some(), it.a, it.b / 100) } + it }
-    }, a)
+    }
 
 /**
  * append a callback to the property
  */
-inline fun <reified A> callback(cb: Callback, a: A): Property =
-    mapTotalResult({ res ->
+fun callback(cb: Callback, a: Property): Property =
+    mapTotalResult(a) { res ->
         TestResult.callbacks.modify(res) { it + listOf(cb) }
-    }, a)
+    }
 
 /**
  * execute some code when a test fails
  */
-inline fun <reified A> whenFail(noinline f: () -> Unit, a: A): Property =
-    whenFailIO(IO { f() }, a)
+fun whenFail(a: Property, f: () -> Unit): Property =
+    whenFailIO(a, IO { f() })
 
 /**
  * execute some io code when a test fails
  */
-inline fun <reified A> whenFailIO(f: IO<Unit>, a: A): Property =
+fun whenFailIO(a: Property, f: IO<Unit>): Property =
     callback(Callback.PostFinalFailure(CallbackKind.NoCounterexample) { _, _ -> f }, a)
 
 /**
  * execute some code on every failure (not just the last one)
  */
-inline fun <reified A> whenFailEvery(noinline f: () -> Unit, a: A): Property =
-    whenFailEveryIO(IO { f() }, a)
+fun whenFailEvery(a: Property, f: () -> Unit): Property =
+    whenFailEveryIO(a, IO { f() })
 
 /**
  * execute some io code on every failure (not just the last one)
  */
-inline fun <reified A> whenFailEveryIO(f: IO<Unit>, a: A): Property =
+fun whenFailEveryIO(a: Property, f: IO<Unit>): Property =
     callback(Callback.PostTest(CallbackKind.NoCounterexample) { _, res ->
         if (res.ok == false.some()) f
         else IO.unit
@@ -490,10 +498,10 @@ inline fun <reified A> whenFailEveryIO(f: IO<Unit>, a: A): Property =
 /**
  * append a lot more output
  */
-inline fun <reified A> verbose(a: A): Property =
-    mapResult({ res ->
+fun verbose(a: Property): Property =
+    mapResult(a) { res ->
         TestResult.callbacks.modify(res) { listOf(newCb(it)) + it }
-    }, a)
+    }
 
 internal fun status(res: TestResult): String = when (res.ok) {
     true.some() -> "Passed"
@@ -502,36 +510,11 @@ internal fun status(res: TestResult): String = when (res.ok) {
     else -> throw IllegalStateException("Not possible")
 }
 
-@PublishedApi
-internal fun newCb(cbs: List<Callback>): Callback = Callback.PostTest(CallbackKind.Counterexample) { st, res ->
-    IO.monad().binding {
-        st.output.update {
-            it + status(res) + ": " + res.testCase.joinToString() + "\n"
-        }.bind()
-        cbs.filter { it is Callback.PostFinalFailure && it.kind == CallbackKind.Counterexample }
-            .traverse(IO.applicative()) {
-                (it as Callback.PostFinalFailure).fn(st, res)
-            }.bind()
-        st.output.update {
-            it + "\n"
-        }.bind()
-    }.fix()
-}
-
-/**
- * append shrinking output as well
- */
-inline fun <reified A> verboseShrinking(a: A): Property =
-    mapResult({ res ->
-        TestResult.callbacks.modify(res) { listOf(newCb2(it)) + it }
-    }, a)
-
-@PublishedApi
-internal fun newCb2(cbs: List<Callback>): Callback = Callback.PostTest(CallbackKind.Counterexample) { st, res ->
-    if (res.ok == false.some())
+internal fun newCb(cbs: List<Callback>): Callback =
+    Callback.PostTest(CallbackKind.Counterexample) { st, res ->
         IO.monad().binding {
             st.output.update {
-                it + "Failed: " + res.testCase.joinToString() + "\n"
+                it + status(res) + ": " + res.testCase.joinToString() + "\n"
             }.bind()
             cbs.filter { it is Callback.PostFinalFailure && it.kind == CallbackKind.Counterexample }
                 .traverse(IO.applicative()) {
@@ -541,125 +524,137 @@ internal fun newCb2(cbs: List<Callback>): Callback = Callback.PostTest(CallbackK
                 it + "\n"
             }.bind()
         }.fix()
-    else IO.unit
-}
+    }
+
+/**
+ * append shrinking output as well
+ */
+fun verboseShrinking(a: Property): Property =
+    mapResult(a) { res ->
+        TestResult.callbacks.modify(res) { listOf(newCb2(it)) + it }
+    }
+
+internal fun newCb2(cbs: List<Callback>): Callback =
+    Callback.PostTest(CallbackKind.Counterexample) { st, res ->
+        if (res.ok == false.some())
+            IO.monad().binding {
+                st.output.update {
+                    it + "Failed: " + res.testCase.joinToString() + "\n"
+                }.bind()
+                cbs.filter { it is Callback.PostFinalFailure && it.kind == CallbackKind.Counterexample }
+                    .traverse(IO.applicative()) {
+                        (it as Callback.PostFinalFailure).fn(st, res)
+                    }.bind()
+                st.output.update {
+                    it + "\n"
+                }.bind()
+            }.fix()
+        else IO.unit
+    }
 
 /**
  * discared data based on boolean
  */
-inline fun <reified A> discardIf(bool: Boolean, a: A, testable: Testable<A> = defTestable()): Property =
-    if (!bool) testable.run { a.property() }
+fun discardIf(bool: Boolean, a: Property): Property =
+    if (!bool) a
     else TestResult.testable().run { rejected().property() }
 
 /**
  * run a test with a given generator and without shrinking
  */
-inline fun <reified A, B> forAll(
+fun <A, B> forAll(
     genB: Gen<B>,
-    testable: Testable<A> = defTestable(),
+    testA: Testable<A>,
     showB: Show<B> = Show.any(),
-    noinline prop: (B) -> A
+    prop: (B) -> A
 ): Property =
-    forAllShrink(genB, { emptySequence() }, showB, testable, prop)
+    forAllShrink(genB, { emptySequence() }, testA, showB, prop)
 
 /**
  * run a test without printing a counterexample on failure
  */
-inline fun <reified A, B> forAllBlind(
+fun <A, B> forAllBlind(
     genB: Gen<B>,
-    testable: Testable<A> = defTestable(),
-    noinline prop: (B) -> A
+    testA: Testable<A>,
+    prop: (B) -> A
 ): Property =
-    forAllShrinkBlind(genB, { emptySequence() }, testable, prop)
+    forAllShrinkBlind(genB, { emptySequence() }, testA, prop)
 
 /**
  * run a test with shrinking
  */
-inline fun <reified A, B> forAllShrink(
+fun <A, B> forAllShrink(
     genB: Gen<B>,
-    noinline shrinkerB: (B) -> Sequence<B>,
+    shrinkerB: (B) -> Sequence<B>,
+    testA: Testable<A>,
     showB: Show<B> = Show.any(),
-    testable: Testable<A> = defTestable(),
-    noinline prop: (B) -> A
+    prop: (B) -> A
 ): Property =
-    forAllShrinkShow(genB, shrinkerB, { showB.run { it.show() } }, prop)
+    forAllShrinkShow(genB, shrinkerB, { showB.run { it.show() } }, testA, prop)
 
 /**
  * run a test with shrinking and a specific show function
  */
-inline fun <reified A, B> forAllShrinkShow(
+fun <A, B> forAllShrinkShow(
     genB: Gen<B>,
-    noinline shrinkerB: (B) -> Sequence<B>,
-    noinline showerB: (B) -> String,
-    noinline prop: (B) -> A
+    shrinkerB: (B) -> Sequence<B>,
+    showerB: (B) -> String,
+    testA: Testable<A>,
+    prop: (B) -> A
 ): Property =
-    forAllShrinkBlind(genB, shrinkerB) { x: B ->
-        counterexample(showerB(x), prop(x))
+    forAllShrinkBlind(genB, shrinkerB, Property.testable()) { x: B ->
+        counterexample(showerB(x), testA.run { prop(x).property() })
     }
 
 /**
  * run a test with shrinking but without showing a counterexample
  */
-inline fun <reified A, B> forAllShrinkBlind(
+fun <A, B> forAllShrinkBlind(
     genB: Gen<B>,
-    noinline shrinkerB: (B) -> Sequence<B>,
-    testable: Testable<A> = defTestable(),
-    noinline prop: (B) -> A
+    shrinkerB: (B) -> Sequence<B>,
+    testA: Testable<A>,
+    prop: (B) -> A
 ): Property =
     again(
         Property(
             Gen.monad().binding {
-                shrinking(testable, shrinkerB, genB.bind(), prop).unProperty.bind()
+                shrinking(shrinkerB, genB.bind(), testA.run { prop.andThen { it.property() } }).unProperty.bind()
             }.fix()
         )
     )
+
+inline fun <reified A>defTestable(): Testable<A> = when (A::class.qualifiedName) {
+    Boolean::class.qualifiedName -> Boolean.testable()
+    TestResult::class.qualifiedName -> TestResult.testable()
+    Property::class.qualifiedName -> Property.testable()
+    else -> throw IllegalArgumentException("Could not find default testable for ${A::class.qualifiedName}. This can only happen in forAll and forAllBlind, make sure to only return either Boolean, TestResult or Property there!")
+} as Testable<A>
 
 /**
  * Helper that looks up instances based on generics
  */
 inline fun <reified A, reified B : Any> forAll(
     arbB: Arbitrary<B> = defArbitrary(),
-    testable: Testable<A> = defTestable(),
     showB: Show<B> = defShow(),
+    testA: Testable<A> = defTestable(),
     noinline prop: (B) -> A
 ): Property =
-    forAll(arbB.arbitrary(), testable, showB, prop)
+    forAllShrink(arbB.arbitrary(), { arbB.shrink(it) }, testA, showB, prop)
 
 /**
  * Helper that looks up instances based on generics
  */
 inline fun <reified A, reified B : Any> forAllBlind(
     arbB: Arbitrary<B> = defArbitrary(),
-    testable: Testable<A> = defTestable(),
+    testA: Testable<A> = defTestable(),
     noinline prop: (B) -> A
 ): Property =
-    forAllBlind(arbB.arbitrary(), testable, prop)
-
-/**
- * Helper that looks up instances based on generics
- */
-inline fun <reified A, reified B : Any> forAllShrink(
-    arbB: Arbitrary<B> = defArbitrary(),
-    testable: Testable<A> = defTestable(),
-    showB: Show<B> = defShow(),
-    noinline prop: (B) -> A
-): Property =
-    forAllShrink(arbB.arbitrary(), { arbB.shrink(it) }, showB, testable, prop)
-
-/**
- * Helper that looks up instances based on generics
- */
-inline fun <reified A, reified B : Any> forAllShrinkBlind(
-    arbB: Arbitrary<B> = defArbitrary(),
-    testable: Testable<A> = defTestable(),
-    noinline prop: (B) -> A
-): Property =
-    forAllShrinkBlind(arbB.arbitrary(), { arbB.shrink(it) }, testable, prop)
+    forAllShrinkBlind(arbB.arbitrary(), { arbB.shrink(it) }, testA, prop)
 
 /**
  * test an io property (does not shrink)
  */
-inline fun <reified A> ioProperty(propIO: IO<A>): Property =
+fun ioProperty(propIO: IO<Property>): Property =
     idempotentIOProperty(
         propIO.map { noShrinking(it) }
     )
@@ -667,50 +662,46 @@ inline fun <reified A> ioProperty(propIO: IO<A>): Property =
 /**
  * test an io property with shrinking
  */
-inline fun <reified A> idempotentIOProperty(propIO: IO<A>, testable: Testable<A> = defTestable()): Property =
+fun idempotentIOProperty(propIO: IO<Property>): Property =
     Property(
         propIO.map {
-            testable.run { it.property() }.unProperty
+            it.unProperty
         }.promote(IO.monad()).map { Prop(ioRose(it.fix().map { it.unProp })) }
     )
 
-inline fun <reified A, reified B> choice(
-    a: A,
-    b: B,
-    testableA: Testable<A> = defTestable(),
-    testableB: Testable<B> = defTestable()
+fun choice(
+    a: Property,
+    b: Property
 ): Property =
     again(
         Property(
             Gen.elements(false, true).flatMap { bool ->
                 counterexample(
                     if (bool) "Left" else "Right",
-                    if (bool) testableA.run { a.property() } else testableB.run { b.property() }
+                    if (bool) a else b
                 ).unProperty
             }
         )
     )
 
-inline fun <reified A, reified B> and(
-    a: A,
-    b: Eval<B>,
-    testableA: Testable<A> = defTestable(),
-    testableB: Testable<B> = defTestable()
+fun and(
+    a: Property,
+    b: Eval<Property>
 ): Property =
     conjoin(
         sequenceOf(
-            Eval.now(testableA.run { a.property() }),
-            testableB.run { b.map { it.property() } }
+            Eval.now(a),
+            b
         )
     )
 
-inline fun <reified A> conjoin(props: Sequence<Eval<A>>, testableA: Testable<A> = defTestable()): Property =
+fun conjoin(props: Sequence<Eval<Property>>): Property =
     again(
         Property(
             Gen.monad().binding {
                 val roses = props.traverse(Gen.applicative()) {
                     it.map {
-                        testableA.run { it.property() }.unProperty.map { it.unProp }
+                        it.unProperty.map { it.unProp }
                     }.promote(Eval.monad())
                 }.bind()
                 Prop(conj(roses.fix().map { it.fix() }, ::identity))
@@ -718,7 +709,6 @@ inline fun <reified A> conjoin(props: Sequence<Eval<A>>, testableA: Testable<A> 
         )
     )
 
-@PublishedApi
 internal fun conj(roses: Sequence<Eval<Rose<TestResult>>>, k: (TestResult) -> TestResult): Rose<TestResult> = when {
     roses.firstOrNull() == null -> Rose.MkRose(k(succeeded()), emptySequence())
     else -> Rose.IORose(
@@ -737,12 +727,22 @@ internal fun conj(roses: Sequence<Eval<Rose<TestResult>>>, k: (TestResult) -> Te
                     false.some() -> reduced
                     None -> IO.monad().binding {
                         val reduced2 = when (val it =
-                            reduceRose(conj(roses.drop(1)) { addCallbacksAndCoverage(reduced.res, k(it)) }).bind()) {
+                            reduceRose(conj(roses.drop(1)) {
+                                addCallbacksAndCoverage(
+                                    reduced.res,
+                                    k(it)
+                                )
+                            }).bind()) {
                             is Rose.MkRose -> it
                             is Rose.IORose -> throw IllegalStateException("The impossible happened")
                         }
                         when (reduced2.res.ok) {
-                            true.some() -> Rose.MkRose(TestResult.optionOk.set(reduced2.res, none()), emptySequence())
+                            true.some() -> Rose.MkRose(
+                                TestResult.optionOk.set(
+                                    reduced2.res,
+                                    none()
+                                ), emptySequence()
+                            )
                             false.some() -> reduced2
                             None -> reduced2
                             else -> throw IllegalStateException("The impossible happened")
@@ -766,26 +766,24 @@ internal fun addLabels(result: TestResult, r: TestResult): TestResult =
         ) { result.classes + it }
     ) { result.labels + it }
 
-inline fun <reified A, reified B> or(
-    a: A,
-    b: Eval<B>,
-    testableA: Testable<A> = defTestable(),
-    testableB: Testable<B> = defTestable()
+fun or(
+    a: Property,
+    b: Eval<Property>
 ): Property =
     disjoin(
         sequenceOf(
-            Eval.now(testableA.run { a.property() }),
-            testableB.run { b.map { it.property() } }
+            Eval.now(a),
+            b
         )
     )
 
-inline fun <reified A> disjoin(props: Sequence<Eval<A>>, testableA: Testable<A> = defTestable()): Property =
+fun disjoin(props: Sequence<Eval<Property>>): Property =
     again(
         Property(
             Gen.monad().binding {
                 val roses = props.traverse(Gen.applicative()) {
                     it.map {
-                        testableA.run { it.property() }.unProperty.map { it.unProp }
+                        it.unProperty.map { it.unProp }
                     }.promote(Eval.monad())
                 }.bind()
                 Prop(
@@ -799,7 +797,6 @@ inline fun <reified A> disjoin(props: Sequence<Eval<A>>, testableA: Testable<A> 
         )
     )
 
-@PublishedApi
 internal fun disj(p: Rose<TestResult>, q: Eval<Rose<TestResult>>): Rose<TestResult> = Rose.monad().binding {
     val res1 = p.bind()
     if (res1.expected.not())

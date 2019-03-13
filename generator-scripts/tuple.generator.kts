@@ -16,7 +16,7 @@ val fileContent = StringBuilder()
 
 val imports = "import propCheck.*\n" +
         "import arrow.core.*\n" +
-        "import propCheck.gen.monad.monad\n" +
+        "import propCheck.arbitrary.gen.monad.monad\n" +
         (2..maxTuple).map { "import propCheck.instances.tuple${it}.arbitrary.arbitrary" }.joinToString("\n") +
         "\nimport arrow.extension"
 

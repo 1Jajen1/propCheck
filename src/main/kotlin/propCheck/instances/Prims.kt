@@ -3,8 +3,8 @@ package propCheck.instances
 import arrow.core.toT
 import arrow.data.ListK
 import arrow.data.k
-import propCheck.*
-import propCheck.gen.monad.monad
+import propCheck.arbitrary.*
+import propCheck.arbitrary.gen.monad.monad
 import propCheck.instances.listk.arbitrary.arbitrary
 
 interface IntArbitrary : Arbitrary<Int> {
@@ -169,7 +169,8 @@ val booleanArrayArb = object : Arbitrary<BooleanArray> {
     }, ListK.arbitrary(Boolean.arbitrary())).invoke(fail)
 }
 
-fun <A> arrayArb(aA: Arbitrary<A>): Arbitrary<Array<A>> = object : Arbitrary<Array<A>> {
+fun <A> arrayArb(aA: Arbitrary<A>): Arbitrary<Array<A>> = object :
+    Arbitrary<Array<A>> {
     override fun arbitrary(): Gen<Array<A>> = ListK.arbitrary(aA).arbitrary().map { l ->
         Array<Any?>(l.size) { l[it] } as Array<A>
     }

@@ -1,11 +1,11 @@
-package propCheck.assertions
+package propCheck
 
 import arrow.Kind
 import arrow.core.toT
 import arrow.typeclasses.Monad
-import propCheck.Gen
-import propCheck.fix
-import propCheck.gen.monad.monad
+import propCheck.arbitrary.Gen
+import propCheck.arbitrary.fix
+import propCheck.arbitrary.gen.monad.monad
 
 fun <F, A> Kind<F, Gen<A>>.promote(M: Monad<F>): Gen<Kind<F, A>> = Gen.monad().binding {
     val eval = delay<A>().bind()

@@ -4,9 +4,9 @@ import arrow.data.SetK
 import arrow.data.k
 import arrow.extension
 import arrow.typeclasses.Show
-import propCheck.Arbitrary
-import propCheck.Gen
-import propCheck.shrinkList
+import propCheck.arbitrary.Arbitrary
+import propCheck.arbitrary.Gen
+import propCheck.arbitrary.shrinkList
 
 @extension
 interface SetKArbitrary<A> : Arbitrary<SetK<A>> {

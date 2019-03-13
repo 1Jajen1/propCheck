@@ -4,9 +4,9 @@ import arrow.data.Nel
 import arrow.data.NonEmptyList
 import arrow.extension
 import arrow.typeclasses.Show
-import propCheck.Arbitrary
-import propCheck.Gen
-import propCheck.shrinkList
+import propCheck.arbitrary.Arbitrary
+import propCheck.arbitrary.Gen
+import propCheck.arbitrary.shrinkList
 
 @extension
 interface NonEmptyListArbitrary<A> : Arbitrary<NonEmptyList<A>> {

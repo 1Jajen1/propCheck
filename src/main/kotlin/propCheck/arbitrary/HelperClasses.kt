@@ -1,4 +1,4 @@
-package propCheck
+package propCheck.arbitrary
 
 import arrow.Kind
 import arrow.core.Tuple2
@@ -14,7 +14,7 @@ import arrow.typeclasses.Eq
 import arrow.typeclasses.Functor
 import arrow.typeclasses.Order
 import arrow.typeclasses.Show
-import propCheck.blind.show.show
+import propCheck.arbitrary.blind.show.show
 import propCheck.instances.arbitrary
 import propCheck.instances.listk.arbitrary.arbitrary
 
@@ -70,8 +70,16 @@ interface BlindShow<A> : Show<Blind<A>> {
 @extension
 interface BlindArbitrary<A> : Arbitrary<Blind<A>> {
     fun AA(): Arbitrary<A>
-    override fun arbitrary(): Gen<Blind<A>> = AA().arbitrary().map { Blind(it) }
-    override fun shrink(fail: Blind<A>): Sequence<Blind<A>> = AA().shrink(fail.a).map { Blind(it) }
+    override fun arbitrary(): Gen<Blind<A>> = AA().arbitrary().map {
+        Blind(
+            it
+        )
+    }
+    override fun shrink(fail: Blind<A>): Sequence<Blind<A>> = AA().shrink(fail.a).map {
+        Blind(
+            it
+        )
+    }
 }
 
 // --------------- Fixed
@@ -125,7 +133,11 @@ interface FixedShow<A> : Show<Fixed<A>> {
 @extension
 interface FixedArbitrary<A> : Arbitrary<Fixed<A>> {
     fun AA(): Arbitrary<A>
-    override fun arbitrary(): Gen<Fixed<A>> = AA().arbitrary().map { Fixed(it) }
+    override fun arbitrary(): Gen<Fixed<A>> = AA().arbitrary().map {
+        Fixed(
+            it
+        )
+    }
 }
 
 // ----------------------- Ordered list
@@ -216,7 +228,12 @@ interface SmartShow<A> : Show<Smart<A>> {
 @extension
 interface SmartArbitrary<A> : Arbitrary<Smart<A>> {
     fun AA(): Arbitrary<A>
-    override fun arbitrary(): Gen<Smart<A>> = AA().arbitrary().map { Smart(0, it) }
+    override fun arbitrary(): Gen<Smart<A>> = AA().arbitrary().map {
+        Smart(
+            0,
+            it
+        )
+    }
     override fun shrink(fail: Smart<A>): Sequence<Smart<A>> = AA().shrink(fail.a).mapIndexed { index, a ->
         Smart(index, a)
     }.let {
@@ -282,7 +299,11 @@ interface Shrink2Show<A> : Show<Shrink2<A>> {
 @extension
 interface Shrink2Arbitrary<A> : Arbitrary<Shrink2<A>> {
     fun AA(): Arbitrary<A>
-    override fun arbitrary(): Gen<Shrink2<A>> = AA().arbitrary().map { Shrink2(it) }
+    override fun arbitrary(): Gen<Shrink2<A>> = AA().arbitrary().map {
+        Shrink2(
+            it
+        )
+    }
     override fun shrink(fail: Shrink2<A>): Sequence<Shrink2<A>> = AA().shrink(fail.a).let {
         it + it.flatMap { AA().shrink(it) }
     }.map { Shrink2(it) }
@@ -324,7 +345,12 @@ interface ShrinkingShow<S, A> : Show<Shrinking<S, A>> {
 interface ShrinkingArbitrary<S, A> : Arbitrary<Shrinking<S, A>> {
     fun AA(): Arbitrary<A>
     fun SS(): ShrinkState<S, A>
-    override fun arbitrary(): Gen<Shrinking<S, A>> = AA().arbitrary().map { Shrinking(SS().shrinkInit(it), it) }
+    override fun arbitrary(): Gen<Shrinking<S, A>> = AA().arbitrary().map {
+        Shrinking(
+            SS().shrinkInit(it),
+            it
+        )
+    }
     override fun shrink(fail: Shrinking<S, A>): Sequence<Shrinking<S, A>> = SS().shrinkState(fail.a, fail.s)
         .map { Shrinking(it.b, it.a) }
 }
@@ -375,7 +401,11 @@ interface PositiveShow<A> : Show<Positive<A>> {
 @extension
 interface PositiveArbitrary<A : Number> : Arbitrary<Positive<A>> {
     fun AA(): Arbitrary<A>
-    override fun arbitrary(): Gen<Positive<A>> = AA().arbitrary().suchThat { it.toDouble() > 0 }.map { Positive(it) }
+    override fun arbitrary(): Gen<Positive<A>> = AA().arbitrary().suchThat { it.toDouble() > 0 }.map {
+        Positive(
+            it
+        )
+    }
 
     override fun shrink(fail: Positive<A>): Sequence<Positive<A>> = AA().shrink(fail.a).filter { it.toDouble() > 0 }
         .map { Positive(it) }
@@ -471,7 +501,11 @@ interface NegativeShow<A> : Show<Negative<A>> {
 @extension
 interface NegativeArbitrary<A : Number> : Arbitrary<Negative<A>> {
     fun AA(): Arbitrary<A>
-    override fun arbitrary(): Gen<Negative<A>> = AA().arbitrary().suchThat { it.toDouble() < 0 }.map { Negative(it) }
+    override fun arbitrary(): Gen<Negative<A>> = AA().arbitrary().suchThat { it.toDouble() < 0 }.map {
+        Negative(
+            it
+        )
+    }
 
     override fun shrink(fail: Negative<A>): Sequence<Negative<A>> = AA().shrink(fail.a).filter { it.toDouble() < 0 }
         .map { Negative(it) }
@@ -552,7 +586,11 @@ interface ASCIIStringShow : Show<ASCIIString> {
 
 @extension
 interface ASCIIStringArbitrary : Arbitrary<ASCIIString> {
-    override fun arbitrary(): Gen<ASCIIString> = String.arbitrary().arbitrary().map { ASCIIString(it) }
+    override fun arbitrary(): Gen<ASCIIString> = String.arbitrary().arbitrary().map {
+        ASCIIString(
+            it
+        )
+    }
     override fun shrink(fail: ASCIIString): Sequence<ASCIIString> = String.arbitrary().shrink(fail.a).map {
         ASCIIString(it)
     }
@@ -584,7 +622,11 @@ interface UnicodeStringShow : Show<UnicodeString> {
 
 @extension
 interface UnicodeStringArbitrary : Arbitrary<UnicodeString> {
-    override fun arbitrary(): Gen<UnicodeString> = arbitraryUnicodeString().map { UnicodeString(it) }
+    override fun arbitrary(): Gen<UnicodeString> = arbitraryUnicodeString().map {
+        UnicodeString(
+            it
+        )
+    }
     override fun shrink(fail: UnicodeString): Sequence<UnicodeString> = String.arbitrary().shrink(fail.a).map {
         UnicodeString(it)
     }

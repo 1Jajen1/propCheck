@@ -6,10 +6,10 @@ import arrow.data.MapK
 import arrow.data.mapOf
 import arrow.extension
 import arrow.typeclasses.Show
-import propCheck.Arbitrary
-import propCheck.Gen
+import propCheck.arbitrary.Arbitrary
+import propCheck.arbitrary.Gen
 import propCheck.instances.tuple2.arbitrary.arbitrary
-import propCheck.shrinkList
+import propCheck.arbitrary.shrinkList
 
 @extension
 interface MapKArbitrary<K, V> : Arbitrary<MapK<K, V>> {

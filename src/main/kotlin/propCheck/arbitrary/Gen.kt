@@ -1,4 +1,4 @@
-package propCheck
+package propCheck.arbitrary
 
 import arrow.Kind
 import arrow.core.*
@@ -13,10 +13,8 @@ import arrow.effects.fix
 import arrow.extension
 import arrow.free.bindingStackSafe
 import arrow.free.run
-import arrow.typeclasses.Applicative
-import arrow.typeclasses.Functor
-import arrow.typeclasses.Monad
-import propCheck.gen.monad.monad
+import arrow.typeclasses.*
+import propCheck.arbitrary.gen.monad.monad
 
 // @higherkind boilerplate
 class ForGen private constructor() {
@@ -68,13 +66,14 @@ class Gen<A>(val unGen: (Tuple2<Long, Int>) -> A) : GenOf<A> {
      */
     fun suchThatOption(pred: (A) -> Boolean): Gen<Option<A>> =
         sized {
-            fun attempt(m: Int, n: Int): Gen<Option<A>> = Gen.monad().bindingStackSafe {
-                if (m > n) none()
-                else {
-                    val res = resize(m).bind()
-                    if (pred(res)) res.some() else attempt(m + 1, n).bind()
-                }
-            }.run(Gen.monad()).fix()
+            fun attempt(m: Int, n: Int): Gen<Option<A>> =
+                Gen.monad().bindingStackSafe {
+                    if (m > n) none()
+                    else {
+                        val res = resize(m).bind()
+                        if (pred(res)) res.some() else attempt(m + 1, n).bind()
+                    }
+                }.run(Gen.monad()).fix()
             attempt(it, it * 2)
         }
 

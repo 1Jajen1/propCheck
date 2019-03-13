@@ -1,4 +1,4 @@
-package propCheck
+package propCheck.arbitrary
 
 import arrow.core.Tuple2
 import arrow.core.toT

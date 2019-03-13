@@ -6,7 +6,7 @@ package propCheck.instances
 
 import propCheck.*
 import arrow.core.*
-import propCheck.gen.monad.monad
+import propCheck.arbitrary.gen.monad.monad
 import propCheck.instances.tuple2.arbitrary.arbitrary
 import propCheck.instances.tuple3.arbitrary.arbitrary
 import propCheck.instances.tuple4.arbitrary.arbitrary
@@ -29,6 +29,10 @@ import propCheck.instances.tuple20.arbitrary.arbitrary
 import propCheck.instances.tuple21.arbitrary.arbitrary
 import propCheck.instances.tuple22.arbitrary.arbitrary
 import arrow.extension
+import propCheck.arbitrary.Arbitrary
+import propCheck.arbitrary.Gen
+import propCheck.arbitrary.fix
+import propCheck.arbitrary.shrinkMap
 
 @extension
 interface Tuple2Arbitrary<A, B> : Arbitrary<Tuple2<A, B>> {
@@ -235,7 +239,8 @@ inline fun <reified A: Any, reified B: Any, reified C: Any, reified D: Any, reif
 }
 
 @extension
-interface Tuple9Arbitrary<A, B, C, D, E, F, G, H, I> : Arbitrary<Tuple9<A, B, C, D, E, F, G, H, I>> {
+interface Tuple9Arbitrary<A, B, C, D, E, F, G, H, I> :
+    Arbitrary<Tuple9<A, B, C, D, E, F, G, H, I>> {
     fun AA(): Arbitrary<A>
     fun AB(): Arbitrary<B>
     fun AC(): Arbitrary<C>
@@ -276,7 +281,8 @@ inline fun <reified A: Any, reified B: Any, reified C: Any, reified D: Any, reif
 }
 
 @extension
-interface Tuple10Arbitrary<A, B, C, D, E, F, G, H, I, J> : Arbitrary<Tuple10<A, B, C, D, E, F, G, H, I, J>> {
+interface Tuple10Arbitrary<A, B, C, D, E, F, G, H, I, J> :
+    Arbitrary<Tuple10<A, B, C, D, E, F, G, H, I, J>> {
     fun AA(): Arbitrary<A>
     fun AB(): Arbitrary<B>
     fun AC(): Arbitrary<C>
@@ -320,7 +326,8 @@ inline fun <reified A: Any, reified B: Any, reified C: Any, reified D: Any, reif
 }
 
 @extension
-interface Tuple11Arbitrary<A, B, C, D, E, F, G, H, I, J, K> : Arbitrary<Tuple11<A, B, C, D, E, F, G, H, I, J, K>> {
+interface Tuple11Arbitrary<A, B, C, D, E, F, G, H, I, J, K> :
+    Arbitrary<Tuple11<A, B, C, D, E, F, G, H, I, J, K>> {
     fun AA(): Arbitrary<A>
     fun AB(): Arbitrary<B>
     fun AC(): Arbitrary<C>
@@ -367,7 +374,8 @@ inline fun <reified A: Any, reified B: Any, reified C: Any, reified D: Any, reif
 }
 
 @extension
-interface Tuple12Arbitrary<A, B, C, D, E, F, G, H, I, J, K, L> : Arbitrary<Tuple12<A, B, C, D, E, F, G, H, I, J, K, L>> {
+interface Tuple12Arbitrary<A, B, C, D, E, F, G, H, I, J, K, L> :
+    Arbitrary<Tuple12<A, B, C, D, E, F, G, H, I, J, K, L>> {
     fun AA(): Arbitrary<A>
     fun AB(): Arbitrary<B>
     fun AC(): Arbitrary<C>
@@ -417,7 +425,8 @@ inline fun <reified A: Any, reified B: Any, reified C: Any, reified D: Any, reif
 }
 
 @extension
-interface Tuple13Arbitrary<A, B, C, D, E, F, G, H, I, J, K, L, M> : Arbitrary<Tuple13<A, B, C, D, E, F, G, H, I, J, K, L, M>> {
+interface Tuple13Arbitrary<A, B, C, D, E, F, G, H, I, J, K, L, M> :
+    Arbitrary<Tuple13<A, B, C, D, E, F, G, H, I, J, K, L, M>> {
     fun AA(): Arbitrary<A>
     fun AB(): Arbitrary<B>
     fun AC(): Arbitrary<C>
@@ -470,7 +479,8 @@ inline fun <reified A: Any, reified B: Any, reified C: Any, reified D: Any, reif
 }
 
 @extension
-interface Tuple14Arbitrary<A, B, C, D, E, F, G, H, I, J, K, L, M, N> : Arbitrary<Tuple14<A, B, C, D, E, F, G, H, I, J, K, L, M, N>> {
+interface Tuple14Arbitrary<A, B, C, D, E, F, G, H, I, J, K, L, M, N> :
+    Arbitrary<Tuple14<A, B, C, D, E, F, G, H, I, J, K, L, M, N>> {
     fun AA(): Arbitrary<A>
     fun AB(): Arbitrary<B>
     fun AC(): Arbitrary<C>
@@ -526,7 +536,8 @@ inline fun <reified A: Any, reified B: Any, reified C: Any, reified D: Any, reif
 }
 
 @extension
-interface Tuple15Arbitrary<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O> : Arbitrary<Tuple15<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O>> {
+interface Tuple15Arbitrary<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O> :
+    Arbitrary<Tuple15<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O>> {
     fun AA(): Arbitrary<A>
     fun AB(): Arbitrary<B>
     fun AC(): Arbitrary<C>
@@ -585,7 +596,8 @@ inline fun <reified A: Any, reified B: Any, reified C: Any, reified D: Any, reif
 }
 
 @extension
-interface Tuple16Arbitrary<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P> : Arbitrary<Tuple16<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P>> {
+interface Tuple16Arbitrary<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P> :
+    Arbitrary<Tuple16<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P>> {
     fun AA(): Arbitrary<A>
     fun AB(): Arbitrary<B>
     fun AC(): Arbitrary<C>
@@ -647,7 +659,8 @@ inline fun <reified A: Any, reified B: Any, reified C: Any, reified D: Any, reif
 }
 
 @extension
-interface Tuple17Arbitrary<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q> : Arbitrary<Tuple17<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q>> {
+interface Tuple17Arbitrary<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q> :
+    Arbitrary<Tuple17<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q>> {
     fun AA(): Arbitrary<A>
     fun AB(): Arbitrary<B>
     fun AC(): Arbitrary<C>
@@ -712,7 +725,8 @@ inline fun <reified A: Any, reified B: Any, reified C: Any, reified D: Any, reif
 }
 
 @extension
-interface Tuple18Arbitrary<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R> : Arbitrary<Tuple18<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R>> {
+interface Tuple18Arbitrary<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R> :
+    Arbitrary<Tuple18<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R>> {
     fun AA(): Arbitrary<A>
     fun AB(): Arbitrary<B>
     fun AC(): Arbitrary<C>
@@ -780,7 +794,8 @@ inline fun <reified A: Any, reified B: Any, reified C: Any, reified D: Any, reif
 }
 
 @extension
-interface Tuple19Arbitrary<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S> : Arbitrary<Tuple19<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S>> {
+interface Tuple19Arbitrary<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S> :
+    Arbitrary<Tuple19<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S>> {
     fun AA(): Arbitrary<A>
     fun AB(): Arbitrary<B>
     fun AC(): Arbitrary<C>
@@ -851,7 +866,8 @@ inline fun <reified A: Any, reified B: Any, reified C: Any, reified D: Any, reif
 }
 
 @extension
-interface Tuple20Arbitrary<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T> : Arbitrary<Tuple20<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T>> {
+interface Tuple20Arbitrary<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T> :
+    Arbitrary<Tuple20<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T>> {
     fun AA(): Arbitrary<A>
     fun AB(): Arbitrary<B>
     fun AC(): Arbitrary<C>
@@ -925,7 +941,8 @@ inline fun <reified A: Any, reified B: Any, reified C: Any, reified D: Any, reif
 }
 
 @extension
-interface Tuple21Arbitrary<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U> : Arbitrary<Tuple21<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U>> {
+interface Tuple21Arbitrary<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U> :
+    Arbitrary<Tuple21<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U>> {
     fun AA(): Arbitrary<A>
     fun AB(): Arbitrary<B>
     fun AC(): Arbitrary<C>
@@ -1002,7 +1019,8 @@ inline fun <reified A: Any, reified B: Any, reified C: Any, reified D: Any, reif
 }
 
 @extension
-interface Tuple22Arbitrary<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V> : Arbitrary<Tuple22<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V>> {
+interface Tuple22Arbitrary<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V> :
+    Arbitrary<Tuple22<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V>> {
     fun AA(): Arbitrary<A>
     fun AB(): Arbitrary<B>
     fun AC(): Arbitrary<C>
