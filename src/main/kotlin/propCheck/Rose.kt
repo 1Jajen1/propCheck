@@ -14,10 +14,7 @@ import arrow.effects.extensions.io.monad.monad
 import arrow.effects.fix
 import arrow.extension
 import arrow.optics.optics
-import arrow.typeclasses.Applicative
-import arrow.typeclasses.Functor
-import arrow.typeclasses.Monad
-import arrow.typeclasses.Show
+import arrow.typeclasses.*
 import propCheck.arbitrary.Arbitrary
 import propCheck.arbitrary.Gen
 import propCheck.arbitrary.fix
@@ -841,3 +838,17 @@ internal fun disj(p: Rose<TestResult>, q: Eval<Rose<TestResult>>): Rose<TestResu
 
 internal fun addCoverage(r: TestResult, s: TestResult): TestResult =
     TestResult.requiredCoverage.modify(s) { r.requiredCoverage + it }
+
+fun <A>A.eqv(b: A, eqA: Eq<A> = Eq.any(), showA: Show<A> = Show.any()): Property =
+    counterexample(
+        "Expected: ${showA.run { this@eqv.show() }} to be equal to:\n" +
+                "        : ${showA.run { b.show() }}",
+        eqA.run { this@eqv.eqv(b) }
+    )
+
+fun <A>A.neqv(b: A, eqA: Eq<A> = Eq.any(), showA: Show<A> = Show.any()): Property =
+    counterexample(
+        "Expected: ${showA.run { this@neqv.show() }} to not be equal to:\n" +
+                "        : ${showA.run { b.show() }}",
+        eqA.run { this@neqv.neqv(b) }
+    )
