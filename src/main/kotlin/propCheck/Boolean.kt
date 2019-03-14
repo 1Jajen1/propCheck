@@ -37,7 +37,6 @@ fun whenFailEvery(a: Boolean, f: () -> Unit): Property = whenFailEvery(a.propert
 fun whenFailEveryIO(a: Boolean, f: IO<Unit>): Property = whenFailEveryIO(a.property(), f)
 fun verbose(a: Boolean): Property = verbose(a.property())
 fun verboseShrinking(a: Boolean): Property = verboseShrinking(a.property())
-fun discardIf(bool: Boolean, a: Boolean): Property = discardIf(bool, a.property())
 fun ioProperty(a: IO<Boolean>): Property = ioProperty(a.map { it.property() })
 fun idempotentIOProperty(a: IO<Boolean>): Property = idempotentIOProperty(a.map { it.property() })
 fun choice(a: Boolean, b: Boolean): Property = choice(a.property(), b.property())

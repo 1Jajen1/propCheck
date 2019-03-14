@@ -23,6 +23,7 @@ import arrow.extension
 import arrow.optics.optics
 import org.apache.commons.math3.special.Erf
 import propCheck.arbitrary.Gen
+import propCheck.arbitrary.RandSeed
 import propCheck.arbitrary.fix
 import propCheck.arbitrary.gen.monad.monad
 import propCheck.testresult.testable.testable
@@ -49,7 +50,7 @@ sealed class Result {
      * Will also trigger on coverage failures
      */
     data class Failure(
-        val usedSeed: Long, // random seed used
+        val usedSeed: RandSeed, // random seed used
         val usedSize: Int, // size parameter used
         val numTests: Int, // Number of successful tests
         val numDiscardedTests: Int, // Number of discarded tests
@@ -93,7 +94,7 @@ sealed class Result {
  * Arguments passed to the top-level function propCheck
  */
 data class Args(
-    val replay: Option<Tuple2<Long, Int>> = none(), // optional seed and size to replay a test
+    val replay: Option<Tuple2<RandSeed, Int>> = none(), // optional seed and size to replay a test
     val maxSuccess: Int = 100, // Maximum number of attempts (may be ignored when checkCoverage is used)
     val maxDiscardRatio: Int = 10, // Maximum ratio at which tests may be discarded
     val maxSize: Int = 100, // Maximum size parameter passed to generators
@@ -122,7 +123,7 @@ data class State(
     val numSuccessShrinks: Int,
     val numTryShrinks: Int,
     val numTotTryShrinks: Int,
-    val randomSeed: Long,
+    val randomSeed: RandSeed,
     val requiredCoverage: MapK<Tuple2<Option<String>, String>, Double>
 ) {
     companion object
@@ -262,7 +263,7 @@ internal fun failureMessage(result: Result): String = when (result) {
  */
 fun <A> withState(args: Args, f: (State) -> A): IO<A> = IO.monad().binding {
     val randSeed = args.replay.fold({
-        IO { Random.nextLong() }
+        IO { RandSeed(Random.nextLong()) }
     }, { IO.just(it.a) }).bind()
 
     fun roundTo(n: Int, m: Int): Int = (n / m) * m
@@ -404,10 +405,7 @@ fun giveUpTesting(state: State): IO<Result> = IO.monad().binding {
  * Execute a test
  */
 fun runATest(state: State, prop: Property): IO<Result> = IO.monad().binding {
-    /**
-     * Poor mans split (Dunno if this is fine, it will be replayable so maybe)
-     */
-    val (rand1, rand2) = Random(state.randomSeed).let { it.nextLong() toT it.nextLong() }
+    val (rand1, rand2) = state.randomSeed.split()
 
     /**
      * add a coverage check if needed

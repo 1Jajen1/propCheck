@@ -15,7 +15,7 @@ class GenSpec : LawSpec() {
             MonadLaws.laws(
                 Gen.monad(),
                 Eq { a, b ->
-                    a.fix().unGen(0L toT 10) == b.fix().unGen(0L toT 10)
+                    a.fix().unGen(RandSeed(0L) toT 10) == b.fix().unGen(RandSeed(0L) toT 10)
                 }
             )
         )
@@ -23,7 +23,7 @@ class GenSpec : LawSpec() {
         "Gens with same seed and size should return the same values" {
             propCheck {
                 forAll { (l, s): Pair<Long, NonNegative<Int>> ->
-                    (arbitrarySizedInt().unGen(l toT s.a) == arbitrarySizedInt().unGen(l toT s.a))
+                    (arbitrarySizedInt().unGen(RandSeed(l) toT s.a) == arbitrarySizedInt().unGen(RandSeed(l) toT s.a))
                         .property()
                 }
             }

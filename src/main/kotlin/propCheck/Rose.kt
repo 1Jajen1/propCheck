@@ -552,8 +552,8 @@ internal fun newCb2(cbs: List<Callback>): Callback =
 /**
  * discared data based on boolean
  */
-fun discardIf(bool: Boolean, a: Property): Property =
-    if (!bool) a
+fun discardIf(bool: Boolean, a: Eval<Property>): Property =
+    if (!bool) a.value()
     else TestResult.testable().run { rejected().property() }
 
 /**

@@ -30,7 +30,7 @@ inline fun <A> GenOf<A>.fix(): Gen<A> =
 /**
  * Datatype that modesl creation of a value based on a seed and a size parameter
  */
-class Gen<A>(val unGen: (Tuple2<Long, Int>) -> A) : GenOf<A> {
+class Gen<A>(val unGen: (Tuple2<RandSeed, Int>) -> A) : GenOf<A> {
 
     fun <B> map(f: (A) -> B): Gen<B> = genMap(f)
     internal fun <B> genMap(f: (A) -> B): Gen<B> = Gen { f(fix().unGen(it)) }
@@ -189,7 +189,7 @@ class Gen<A>(val unGen: (Tuple2<Long, Int>) -> A) : GenOf<A> {
 
     // ------------------ Helpers to inspect data, unsafe (non io) wrappers exist in Helpers.kt
     fun generate(): IO<A> = IO {
-        unGen(kotlin.random.Random.nextLong() toT 30)
+        unGen(RandSeed(kotlin.random.Random.nextLong()) toT 30)
     }
 
     fun sample(): IO<List<A>> = (1..20 step 2)
@@ -243,9 +243,10 @@ interface GenApplicative : Applicative<ForGen> {
 interface GenMonad : Monad<ForGen> {
     override fun <A, B> Kind<ForGen, A>.flatMap(f: (A) -> Kind<ForGen, B>): Kind<ForGen, B> =
         Gen { (r, n) ->
+            val (a, b) = r.split()
             f(
-                fix().unGen(r toT n)
-            ).fix().unGen(kotlin.random.Random(r).nextLong() toT n)
+                fix().unGen(a toT n)
+            ).fix().unGen(b toT n)
         }
 
     override fun <A> just(a: A): Kind<ForGen, A> =

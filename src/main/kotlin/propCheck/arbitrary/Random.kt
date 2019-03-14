@@ -7,109 +7,98 @@ import arrow.core.toT
  * Random typeclass similar to haskell and instances for primitive types
  */
 interface Random<A> {
-    fun randomR(range: Tuple2<A, A>, seed: Long): Tuple2<A, Long>
-    fun random(seed: Long): Tuple2<A, Long>
+    fun randomR(range: Tuple2<A, A>, seed: RandSeed): Tuple2<A, RandSeed>
+    fun random(seed: RandSeed): Tuple2<A, RandSeed>
 }
 
 interface IntRandom : Random<Int> {
-    override fun randomR(range: Tuple2<Int, Int>, seed: Long): Tuple2<Int, Long> =
-        kotlin.random.Random(seed).let {
-            if (range.a == range.b) range.a toT seed
-            else it.nextInt(range.a, range.b) toT it.nextLong()
-        }
+    override fun randomR(range: Tuple2<Int, Int>, seed: RandSeed): Tuple2<Int, RandSeed> =
+        if (range.a == range.b) range.a toT seed
+        else seed.nextInt(range.a, range.b)
 
-    override fun random(seed: Long): Tuple2<Int, Long> =
-        kotlin.random.Random(seed).let {
-            it.nextInt() toT it.nextLong()
-        }
+    override fun random(seed: RandSeed): Tuple2<Int, RandSeed> =
+        seed.nextInt()
 }
 
 fun Int.Companion.random(): Random<Int> = object : IntRandom {}
 
 interface LongRandom : Random<Long> {
-    override fun randomR(range: Tuple2<Long, Long>, seed: Long): Tuple2<Long, Long> =
-        kotlin.random.Random(seed).let {
-            if (range.a == range.b) range.a toT seed
-            else it.nextLong(range.a, range.b) toT it.nextLong()
-        }
+    override fun randomR(range: Tuple2<Long, Long>, seed: RandSeed): Tuple2<Long, RandSeed> =
+        if (range.a == range.b) range.a toT seed
+        else seed.nextLong(range.a, range.b)
 
-    override fun random(seed: Long): Tuple2<Long, Long> =
-        kotlin.random.Random(seed).let {
-            it.nextLong() toT it.nextLong()
-        }
+    override fun random(seed: RandSeed): Tuple2<Long, RandSeed> =
+        seed.nextLong()
 }
 
 fun Long.Companion.random(): Random<Long> = object : LongRandom {}
 
 interface FloatRandom : Random<Float> {
-    override fun randomR(range: Tuple2<Float, Float>, seed: Long): Tuple2<Float, Long> =
-        kotlin.random.Random(seed).let {
-            if (range.a == range.b) return range.a toT seed
-            val diff = range.b - range.a
-            (it.nextFloat() * diff + range.a) toT it.nextLong()
+    override fun randomR(range: Tuple2<Float, Float>, seed: RandSeed): Tuple2<Float, RandSeed> =
+        if (range.a == range.b) range.a toT seed
+        else seed.nextDouble().let { (a, s) ->
+            (a * (range.b.toDouble() - range.a.toDouble()) + range.a.toDouble()).toFloat() toT s
         }
 
-    override fun random(seed: Long): Tuple2<Float, Long> =
-        kotlin.random.Random(seed).let {
-            it.nextFloat() toT it.nextLong()
+    override fun random(seed: RandSeed): Tuple2<Float, RandSeed> =
+        seed.nextDouble(Float.MIN_VALUE.toDouble(), Float.MAX_VALUE.toDouble()).let { (a, s) ->
+            a.toFloat() toT s
         }
 }
 
 fun Float.Companion.random(): Random<Float> = object : FloatRandom {}
 
 interface DoubleRandom : Random<Double> {
-    override fun randomR(range: Tuple2<Double, Double>, seed: Long): Tuple2<Double, Long> =
-        kotlin.random.Random(seed).let {
-            if (range.a == range.b) range.a toT seed
-            else it.nextDouble(range.a, range.b) toT it.nextLong()
-        }
+    override fun randomR(range: Tuple2<Double, Double>, seed: RandSeed): Tuple2<Double, RandSeed> =
+        if (range.a == range.b) range.a toT seed
+        else seed.nextDouble(range.a, range.b)
 
-    override fun random(seed: Long): Tuple2<Double, Long> =
-        kotlin.random.Random(seed).let {
-            it.nextDouble() toT it.nextLong()
-        }
+    override fun random(seed: RandSeed): Tuple2<Double, RandSeed> =
+        seed.nextDouble()
 }
 
 fun Double.Companion.random(): Random<Double> = object : DoubleRandom {}
 
 interface ByteRandom : Random<Byte> {
-    override fun random(seed: Long): Tuple2<Byte, Long> = kotlin.random.Random(seed).let {
-        it.nextBits(Byte.SIZE_BITS).toByte() toT it.nextLong()
-    }
+    override fun random(seed: RandSeed): Tuple2<Byte, RandSeed> =
+        seed.nextInt(Byte.MIN_VALUE.toInt(), Byte.MAX_VALUE.toInt()).let { (a, s) ->
+            a.toByte() toT s
+        }
 
-    override fun randomR(range: Tuple2<Byte, Byte>, seed: Long): Tuple2<Byte, Long> = kotlin.random.Random(seed).let {
+    override fun randomR(range: Tuple2<Byte, Byte>, seed: RandSeed): Tuple2<Byte, RandSeed> =
         if (range.a == range.b) range.a toT seed
-        else it.nextInt(range.a.toInt(), range.b.toInt()).toByte() toT it.nextLong()
-    }
+        else seed.nextInt(range.a.toInt(), range.b.toInt()).let { (a, s) ->
+            a.toByte() toT s
+        }
 }
 
 fun Byte.Companion.random(): Random<Byte> = object : ByteRandom {}
 
 interface BooleanRandom : Random<Boolean> {
-    override fun randomR(range: Tuple2<Boolean, Boolean>, seed: Long): Tuple2<Boolean, Long> =
-        kotlin.random.Random(seed).let {
-            it.nextBoolean() toT it.nextLong()
-        }
+    override fun randomR(range: Tuple2<Boolean, Boolean>, seed: RandSeed): Tuple2<Boolean, RandSeed> =
+            seed.nextInt(0, 1).let { (a, s) ->
+                (a == 0) toT s
+            }
 
-    override fun random(seed: Long): Tuple2<Boolean, Long> =
-        kotlin.random.Random(seed).let {
-            it.nextBoolean() toT it.nextLong()
+    override fun random(seed: RandSeed): Tuple2<Boolean, RandSeed> =
+        seed.nextInt(0, 2).let { (a, s) ->
+            (a == 0) toT s
         }
 }
 
 fun Boolean.Companion.random(): Random<Boolean> = object : BooleanRandom {}
 
 interface CharRandom : Random<Char> {
-    override fun randomR(range: Tuple2<Char, Char>, seed: Long): Tuple2<Char, Long> =
-        kotlin.random.Random(seed).let {
+    override fun randomR(range: Tuple2<Char, Char>, seed: RandSeed): Tuple2<Char, RandSeed> =
             if (range.a == range.b) range.a toT seed
-            else it.nextInt(range.a.toInt(), range.b.toInt()).toChar() toT it.nextLong()
-        }
+            else seed.nextInt(range.a.toInt(), range.b.toInt()).let { (a, s) ->
+                a.toChar() toT s
+            }
 
-    override fun random(seed: Long): Tuple2<Char, Long> =
-        kotlin.random.Random(seed).let {
-            it.nextInt(Char.MIN_VALUE.toInt(), Char.MAX_VALUE.toInt()).toChar() toT it.nextLong()
-        }
+    override fun random(seed: RandSeed): Tuple2<Char, RandSeed> =
+            seed.nextInt(Char.MIN_VALUE.toInt(), Char.MAX_VALUE.toInt()).let { (a, s) ->
+                a.toChar() toT s
+            }
 }
 
 fun Char.Companion.random(): Random<Char> = object : CharRandom {}

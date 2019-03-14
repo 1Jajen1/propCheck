@@ -1,13 +1,13 @@
 package propCheck
 
+import arrow.core.Eval
 import arrow.core.Tuple2
 import arrow.core.some
+import arrow.core.toT
 import arrow.effects.IO
 import arrow.effects.extensions.io.applicativeError.attempt
 import arrow.effects.extensions.io.monadThrow.monadThrow
-import propCheck.arbitrary.Positive
-import propCheck.arbitrary.arbitraryBoundedLong
-import propCheck.arbitrary.shrinkLong
+import propCheck.arbitrary.*
 
 class TestableSpec : PropertySpec({
     "Boolean should be lifted correctly" {
@@ -104,7 +104,7 @@ class PropCheckSpec : PropertySpec({
     "propCheckIO should give up on too many discards" {
         ioProperty(
             propCheckIO {
-                discardIf(true, false.property())
+                discardIf(true, Eval.now(false.property()))
             }.attempt().map {
                 it.fold({ false }, { res ->
                     res is Result.GivenUp
@@ -115,21 +115,23 @@ class PropCheckSpec : PropertySpec({
     "propCheckIOWIthError should give up on too many discards and throw" {
         ioProperty(
             propCheckIOWithError {
-                discardIf(true, false)
+                discardIf(true, Eval.now(false.property()))
             }.attempt().map {
                 it.fold({ true }, { false })
             }
         )
     }
     "propCheckWIthIO should produce the same result with the same random seed" {
-        forAll { tup: Tuple2<Long, Int> ->
+        forAll { (tup): Fixed<Tuple2<Long, Int>> ->
+            val (l, s) = tup
+            val seed = RandSeed(l)
             ioProperty(
-                propCheckIO(Args(replay = tup.some())) {
-                    forAll { b: Boolean -> b.property() }
+                propCheckIO(Args(replay = (seed toT s).some())) {
+                    forAll { b: Boolean -> b }
                 }.flatMap { res ->
-                    propCheckIO(Args(replay = tup.some())) {
-                        forAll { b: Boolean -> b.property() }
-                    }.map { (res == it) }
+                    propCheckIO(Args(replay = (seed toT s).some())) {
+                        forAll { b: Boolean -> b }
+                    }.map { it.eqv(res) }
                 }
             )
         }
