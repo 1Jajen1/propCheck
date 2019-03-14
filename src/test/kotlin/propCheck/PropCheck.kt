@@ -52,19 +52,14 @@ class PropCheckSpec : PropertySpec({
         forAll { b: Boolean ->
             ioProperty(
                 IO.monadThrow().bindingCatch {
-                    propCheck(Args(maxSuccess = 1)) { Boolean.testable().run { b.property() } }
+                    propCheck(Args(replay = (RandSeed(0L) toT 0).some(), maxSuccess = 1)) { Boolean.testable().run { b.property() } }
                 }.attempt().map {
                     it.fold({
-                        propCheckIOWithError(Args(maxSuccess = 1)) {
+                        propCheckIOWithError(Args(replay = (RandSeed(0L) toT 0).some(), maxSuccess = 1)) {
                             Boolean.testable().run { b.property() }
                         }.attempt()
                             .unsafeRunSync().fold(
-                                { err ->
-                                    counterexample(
-                                        "${err.message} =!= ${it.message}",
-                                        (err.message == it.message).property()
-                                    )
-                                },
+                                { err -> it.message.eqv(err.message) },
                                 {
                                     counterexample(
                                         "propCheck threw, but propCheckWithIOError did not",
@@ -72,7 +67,7 @@ class PropCheckSpec : PropertySpec({
                                     )
                                 })
                     }, {
-                        propCheckIOWithError(Args(maxSuccess = 1)) {
+                        propCheckIOWithError(Args(replay = (RandSeed(0L) toT 0).some(), maxSuccess = 1)) {
                             Boolean.testable().run { b.property() }
                         }.attempt()
                             .unsafeRunSync().fold({
