@@ -235,6 +235,9 @@ internal fun createAssertionError(res: Result): AssertionError = AssertionError(
     initCause(null)
 }
 
+internal fun usedSeed(seed: RandSeed, size: Int): String =
+    "\nused seed ${seed.seed}" + (if (seed.gamma != RandSeed.GOLDEN_GAMMA) " with gamma: " + seed.gamma else "") + " and with size $size"
+
 internal fun failureMessage(result: Result): String = when (result) {
     is Result.Failure -> "Failed: " + result.reason +
             (if (result.failingTestCase.isNotEmpty())
@@ -246,7 +249,7 @@ internal fun failureMessage(result: Result): String = when (result) {
             else "") +
             (if (result.numShrinks > 0)
                 " shrunk " + result.numShrinks.number("time")
-            else "")
+            else "") + usedSeed(result.usedSeed, result.usedSize)
     is Result.GivenUp -> "Gave up " + "after " + result.numTests.number("test") +
             (if (result.numDiscardedTests > 0)
                 " discarded " + result.numDiscardedTests
@@ -500,7 +503,7 @@ fun runATest(state: State, prop: Property): IO<Result> = IO.monad().binding {
                     )
                 else
                     Result.Failure(
-                        usedSeed = state.randomSeed,
+                        usedSeed = newState.randomSeed,
                         output = output,
                         numDiscardedTests = newState.numDiscardedTests,
                         numTests = newState.numSuccessTests + 1,
