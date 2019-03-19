@@ -19,9 +19,9 @@ interface MapKArbitrary<K, V> : Arbitrary<MapK<K, V>> {
     override fun arbitrary(): Gen<MapK<K, V>> = Tuple2.arbitrary(AK(), AV()).arbitrary().listOf()
         .map { l -> mapOf(*l.toTypedArray()) }
 
-    override fun shrink(fail: MapK<K, V>): Sequence<MapK<K, V>> = shrinkList<Tuple2<K, V>> {
+    override fun shrink(fail: MapK<K, V>): Sequence<MapK<K, V>> = shrinkList(fail.toList().map { (a, b) -> a toT b }) {
         Tuple2.arbitrary(AK(), AV()).shrink(it)
-    }.invoke(fail.toList().map { (a, b) -> a toT b }).map { mapOf(*it.toTypedArray()) }
+    }.map { mapOf(*it.toTypedArray()) }
 }
 
 interface MapKShow<K, V> : Show<MapK<K, V>> {

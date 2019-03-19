@@ -25,8 +25,7 @@ interface ListKArbitrary<A> : Arbitrary<ListK<A>> {
 interface ListArbitrary<A> : Arbitrary<List<A>> {
     fun AA(): Arbitrary<A>
     override fun arbitrary(): Gen<List<A>> = AA().arbitrary().listOf()
-    override fun shrink(fail: List<A>): Sequence<List<A>> = shrinkList<A> { AA().shrink(it) }
-        .invoke(fail)
+    override fun shrink(fail: List<A>): Sequence<List<A>> = shrinkList(fail) { AA().shrink(it) }
 }
 
 interface ListKShow<A> : Show<ListK<A>> {

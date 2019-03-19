@@ -12,7 +12,7 @@ import propCheck.arbitrary.shrinkList
 interface NonEmptyListArbitrary<A> : Arbitrary<NonEmptyList<A>> {
     fun AA(): Arbitrary<A>
     override fun arbitrary(): Gen<Nel<A>> = AA().arbitrary().listOf().suchThatMap { Nel.fromList(it) }
-    override fun shrink(fail: Nel<A>): Sequence<Nel<A>> = shrinkList<A> { AA().shrink(it) }.invoke(fail.all)
+    override fun shrink(fail: Nel<A>): Sequence<Nel<A>> = shrinkList(fail.all) { AA().shrink(it) }
         .filter { it.isNotEmpty() }.map { Nel.fromListUnsafe(it) }
 }
 

@@ -8,7 +8,7 @@ class IntegralShrinkSpec : PropertySpec({
         forAll(arbitraryBoundedInt(), Property.testable()) { i: Int ->
             shrinkInt(i).take(100).toList().let {
                 counterexample(
-                    "$it",
+                    { "$it" },
                     it.sorted() == it || it.sorted().reversed() == it
                 )
             }
@@ -18,7 +18,7 @@ class IntegralShrinkSpec : PropertySpec({
         forAll(arbitraryBoundedLong(), Property.testable()) { i: Long ->
             shrinkLong(i).take(100).toList().let {
                 counterexample(
-                    "$it",
+                    { "$it" },
                     it.sorted() == it || it.sorted().reversed() == it
                 )
             }
@@ -28,7 +28,7 @@ class IntegralShrinkSpec : PropertySpec({
         forAll(arbitraryBoundedByte(), Property.testable()) { i: Byte ->
             shrinkByte(i).take(100).toList().let {
                 counterexample(
-                    "$it",
+                    { "$it" },
                     it.sorted() == it || it.sorted().reversed() == it
                 )
             }
@@ -39,9 +39,9 @@ class IntegralShrinkSpec : PropertySpec({
 class ShrinkListSpec : PropertySpec({
     "shrinkList should generate an ordered sequence of smaller lists"(Args(maxSuccess = 1000)) {
         forAll { l: List<Int> ->
-            shrinkList<Int> { shrinkInt(it) }.invoke(l).take(100).toList().let {
+            shrinkList(l) { shrinkInt(it) }.take(100).toList().let {
                 counterexample(
-                    "$it",
+                    { "$it" },
                     it.zipWithNext().fold(true) { acc, (l, r) ->
                         acc && (l.size <= r.size)
                     }

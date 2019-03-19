@@ -807,7 +807,7 @@ fun addCoverageCheck(confidence: Confidence, state: State, prop: Property): Prop
                 listOf(labels, tables).filter { it.isNotEmpty() }.map { it.joinToString("") }
                     .foldRight(TestResult.testable().run { failed("Insufficient coverage")
                         .property() }) { v, acc ->
-                        counterexample(v, acc)
+                        counterexample({ v }, acc)
                     }
             }
             else -> prop

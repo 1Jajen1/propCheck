@@ -105,8 +105,6 @@ fun arbitraryUnicodeString(): Gen<String> = arbitraryUnicodeChar().listOf().map 
 fun arbitraryASCIIString(): Gen<String> = arbitraryASCIIChar().listOf().map { it.joinToString("") }
 
 // ---------------------------------- helpers to create shrink functions
-fun <A> shrinkNothing(): (A) -> Sequence<A> = { emptySequence() }
-
 /**
  * implement a shrink function by mapping back and forth between a type that already has a shrink function defined
  */
@@ -124,7 +122,7 @@ fun <A, B> shrinkMap(iso: Iso<A, B>, arbB: Arbitrary<B>): (A) -> Sequence<A> = {
 /**
  * shrink a list (by shrinking recursively, shrinking its content and shrinking the list size itself)
  */
-fun <A> shrinkList(f: (A) -> Sequence<A>): (List<A>) -> Sequence<List<A>> = { list ->
+fun <A> shrinkList(list: List<A>, f: (A) -> Sequence<A>): Sequence<List<A>> {
     fun <F> removes(k: Int, n: Int, l: List<F>): Sequence<List<F>> =
         if (k > n) emptySequence()
         else if (l.isEmpty()) sequenceOf(emptyList())
@@ -142,7 +140,7 @@ fun <A> shrinkList(f: (A) -> Sequence<A>): (List<A>) -> Sequence<List<A>> = { li
                 shrinkOne(l.drop(1)).map { listOf(l[0]) + it }
     }
 
-    if (list.isEmpty()) emptySequence()
+    return if (list.isEmpty()) emptySequence()
     else shrinkListIt(list) + shrinkOne(list)
 }
 

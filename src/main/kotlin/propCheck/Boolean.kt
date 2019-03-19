@@ -2,8 +2,8 @@ package propCheck
 
 import arrow.core.Eval
 import arrow.core.Tuple2
-import arrow.core.andThen
 import arrow.effects.IO
+import arrow.syntax.function.andThen
 import arrow.typeclasses.Show
 
 fun mapResult(a: Boolean, f: (TestResult) -> TestResult): Property =
@@ -15,9 +15,9 @@ fun mapRoseResult(a: Boolean, f: (Rose<TestResult>) -> Rose<TestResult>): Proper
 fun mapProp(a: Boolean, f: (Prop) -> Prop): Property = mapProp(a.property(), f)
 fun mapSize(a: Boolean, f: (Int) -> Int): Property = mapSize(a.property(), f)
 fun <B>shrinking(shrink: (B) -> Sequence<B>, arg: B, pf: (B) -> Boolean): Property =
-    shrinking(shrink, arg, pf.andThen { it.property() })
+    shrinking(shrink, arg, pf.andThen { b: Boolean -> b.property() })
 fun noShrinking(a: Boolean): Property = noShrinking(a.property())
-fun counterexample(s: String, a: Boolean): Property = counterexample(s, a.property())
+fun counterexample(s: () -> String, a: Boolean): Property = counterexample(s, a.property())
 fun expectFailure(a: Boolean): Property = expectFailure(a.property())
 fun once(a: Boolean): Property = once(a.property())
 fun again(a: Boolean): Property = again(a.property())
@@ -42,6 +42,10 @@ fun idempotentIOProperty(a: IO<Boolean>): Property = idempotentIOProperty(a.map 
 fun choice(a: Boolean, b: Boolean): Property = choice(a.property(), b.property())
 fun choice(a: Property, b: Boolean): Property = choice(a, b.property())
 fun choice(a: Boolean, b: Property): Property = choice(a.property(), b)
+fun and(a: Boolean, b: () -> Boolean): Property = and(a.property(), b.andThen { it.property() })
+fun and(a: Property, b: () -> Boolean): Property = and(a, b.andThen { it.property() })
+fun or(a: Boolean, b: () -> Boolean): Property = or(a.property(), b.andThen { it.property() })
+fun or(a: Property, b: () -> Boolean): Property = or(a, b.andThen { it.property() })
 fun and(a: Boolean, b: Eval<Boolean>): Property = and(a.property(), b.map { it.property() })
 fun and(a: Property, b: Eval<Boolean>): Property = and(a, b.map { it.property() })
 fun or(a: Boolean, b: Eval<Boolean>): Property = or(a.property(), b.map { it.property() })

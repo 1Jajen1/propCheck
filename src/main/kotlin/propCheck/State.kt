@@ -45,7 +45,7 @@ internal fun <S, A, R, SUT> commandsArby(
                 .fix()
         }
     ) { fail ->
-        shrinkList<A> { shrinker(it) }.invoke(fail).map {
+        shrinkList(fail) { shrinker(it) }.map {
             it.foldLeft(true toT sm.initialState) { (b, s), v ->
                 (b && sm.preCondition(s, v) && sm.invariant(s)) toT sm.transition(s, v)
             }.a toT it
@@ -159,14 +159,13 @@ fun <S, A, R, SUT> parArby(sm: StateMachine<S, A, R, SUT>, maxThreads: Int) = co
             } toT it
         }).filter { it.a.a }.flatMap { (state, shrunkPre) ->
             val (_, preS) = state
-            shrinkList<List<A>> { preArb.shrink(it) }
-                .invoke(a).map {
-                    it.filter {
-                        it.foldLeft(true toT preS) { (b, s), v ->
-                            (b && sm.preCondition(s, v) && sm.invariant(s)) toT sm.transition(s, v)
-                        }.a
-                    }
-                }.map { Tuple2(shrunkPre, it) }
+            shrinkList(a) { preArb.shrink(it) }.map {
+                it.filter {
+                    it.foldLeft(true toT preS) { (b, s), v ->
+                        (b && sm.preCondition(s, v) && sm.invariant(s)) toT sm.transition(s, v)
+                    }.a
+                }
+            }.map { Tuple2(shrunkPre, it) }
         }
     }
 }
@@ -222,11 +221,13 @@ internal fun <S, A, R, SUT, PROP> _execPar(
             ).map { it.get() }
 
             counterexample(
-                "No possible interleaving found for: \n" +
-                        (if (prefix.isNotEmpty()) "Prefix: " + prefixResult.joinToString { "${it.a} -> ${it.b}" } + "\n" else "") +
-                        pathResults.filter { it.firstOrNull() != null }.withIndex().joinToString("\n") { (i, v) ->
-                            "Path ${i + 1}: " + v.joinToString { "${it.a} -> ${it.b}" }
-                        },
+                {
+                    "No possible interleaving found for: \n" +
+                            (if (prefix.isNotEmpty()) "Prefix: " + prefixResult.joinToString { "${it.a} -> ${it.b}" } + "\n" else "") +
+                            pathResults.filter { it.firstOrNull() != null }.withIndex().joinToString("\n") { (i, v) ->
+                                "Path ${i + 1}: " + v.joinToString { "${it.a} -> ${it.b}" }
+                            }
+                },
                 and(
                     prefixRes.value(),
                     Eval.later {

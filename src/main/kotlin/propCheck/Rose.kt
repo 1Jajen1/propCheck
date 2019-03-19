@@ -336,15 +336,15 @@ fun noShrinking(a: Property): Property =
 /**
  * print out a counterexample on failure
  */
-fun counterexample(s: String, a: Property): Property =
+fun counterexample(s: () -> String, a: Property): Property =
     mapTotalResult(
         callback(Callback.PostFinalFailure(CallbackKind.Counterexample) { st, _ ->
             st.output.update {
-                it + s + "\n"
+                it + s() + "\n"
             }.fix()
         }, a)
     ) { res ->
-        TestResult.testCase.modify(res) { listOf(s) + it }
+        TestResult.testCase.modify(res) { listOf(s()) + it }
     }
 
 /**
@@ -600,7 +600,7 @@ fun <A, B> forAllShrinkShow(
     prop: (B) -> A
 ): Property =
     forAllShrinkBlind(genB, shrinkerB, Property.testable()) { x: B ->
-        counterexample(showerB(x), testA.run { prop(x).property() })
+        counterexample({ showerB(x) }, testA.run { prop(x).property() })
     }
 
 /**
@@ -674,10 +674,21 @@ fun choice(
         Property(
             Gen.elements(false, true).flatMap { bool ->
                 counterexample(
-                    if (bool) "Left" else "Right",
+                    { if (bool) "Left" else "Right" },
                     if (bool) a else b
                 ).unProperty
             }
+        )
+    )
+
+fun and(
+    a: Property,
+    b: () -> Property
+): Property =
+    conjoin(
+        sequenceOf(
+            Eval.now(a),
+            Eval.later(b)
         )
     )
 
@@ -765,6 +776,17 @@ internal fun addLabels(result: TestResult, r: TestResult): TestResult =
 
 fun or(
     a: Property,
+    b: () -> Property
+): Property =
+    disjoin(
+        sequenceOf(
+            Eval.now(a),
+            Eval.later(b)
+        )
+    )
+
+fun or(
+    a: Property,
     b: Eval<Property>
 ): Property =
     disjoin(
@@ -841,14 +863,14 @@ internal fun addCoverage(r: TestResult, s: TestResult): TestResult =
 
 fun <A>A.eqv(b: A, eqA: Eq<A> = Eq.any(), showA: Show<A> = Show.any()): Property =
     counterexample(
-        "Expected: ${showA.run { this@eqv.show() }} to be equal to:\n" +
-                "        : ${showA.run { b.show() }}",
+        { "Expected: ${showA.run { this@eqv.show() }} to be equal to:\n" +
+                "        : ${showA.run { b.show() }}" },
         eqA.run { this@eqv.eqv(b) }
     )
 
 fun <A>A.neqv(b: A, eqA: Eq<A> = Eq.any(), showA: Show<A> = Show.any()): Property =
     counterexample(
-        "Expected: ${showA.run { this@neqv.show() }} to not be equal to:\n" +
-                "        : ${showA.run { b.show() }}",
+        { "Expected: ${showA.run { this@neqv.show() }} to not be equal to:\n" +
+                "        : ${showA.run { b.show() }}" },
         eqA.run { this@neqv.neqv(b) }
     )

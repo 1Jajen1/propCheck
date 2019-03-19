@@ -185,6 +185,11 @@ class Gen<A>(val unGen: (Tuple2<RandSeed, Int>) -> A) : GenOf<A> {
             val l = arbitraryBoundedInt().vectorOf(list.size).bind()
             list.zip(l).sortedBy { it.second }.map { it.first }
         }.fix()
+
+        /**
+         * Generate values from an enum
+         */
+        inline fun <reified A: Enum<A>> fromEnum(): Gen<A> = Gen.elements(*enumValues())
     }
 
     // ------------------ Helpers to inspect data, unsafe (non io) wrappers exist in Helpers.kt

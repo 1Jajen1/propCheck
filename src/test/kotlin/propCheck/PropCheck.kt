@@ -62,7 +62,7 @@ class PropCheckSpec : PropertySpec({
                                 { err -> it.message.eqv(err.message) },
                                 {
                                     counterexample(
-                                        "propCheck threw, but propCheckWithIOError did not",
+                                        { "propCheck threw, but propCheckWithIOError did not" },
                                         false
                                     )
                                 })
@@ -72,7 +72,7 @@ class PropCheckSpec : PropertySpec({
                         }.attempt()
                             .unsafeRunSync().fold({
                                 counterexample(
-                                    "propCheck did not throw, but propCheckWithIOError did",
+                                    { "propCheck did not throw, but propCheckWithIOError did" },
                                     false.property()
                                 )
                             }, { Boolean.testable().run { true.property() } })
@@ -88,7 +88,7 @@ class PropCheckSpec : PropertySpec({
                 Boolean.testable().run { b.property() }
             }.unsafeRunSync()
             counterexample(
-                "$a =!= $c", when (a) {
+                { "$a =!= $c" }, when (a) {
                     is Result.Success -> c is Result.Success
                     is Result.Failure -> c is Result.Failure
                     else -> false // should not happen at all so fail if it does
