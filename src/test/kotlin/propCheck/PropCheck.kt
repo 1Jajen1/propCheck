@@ -8,6 +8,7 @@ import arrow.effects.IO
 import arrow.effects.extensions.io.applicativeError.attempt
 import arrow.effects.extensions.io.monadThrow.monadThrow
 import propCheck.arbitrary.*
+import propCheck.instances.arbitrary
 
 class TestableSpec : PropertySpec({
     "Boolean should be lifted correctly" {
@@ -52,7 +53,9 @@ class PropCheckSpec : PropertySpec({
         forAll { b: Boolean ->
             ioProperty(
                 IO.monadThrow().bindingCatch {
-                    propCheck(Args(replay = (RandSeed(0L) toT 0).some(), maxSuccess = 1)) { Boolean.testable().run { b.property() } }
+                    propCheck(Args(replay = (RandSeed(0L) toT 0).some(), maxSuccess = 1)) {
+                        Boolean.testable().run { b.property() }
+                    }
                 }.attempt().map {
                     it.fold({
                         propCheckIOWithError(Args(replay = (RandSeed(0L) toT 0).some(), maxSuccess = 1)) {
@@ -143,6 +146,14 @@ class PropCheckSpec : PropertySpec({
                 }
             )
         }
+    }
+    // tests for a bug that was in version <= 0.9.3
+    "shrinking should not invoke the shrinker on the first pass" {
+        val arb = Arbitrary(arbitrarySizedInt()) { fail ->
+            throw Throwable("Should never happen")
+        }
+
+        forAll(arb) { true }
     }
 })
 

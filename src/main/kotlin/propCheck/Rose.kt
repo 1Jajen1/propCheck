@@ -320,9 +320,8 @@ internal fun <B> props(
     b: B
 ): Rose<Gen<Prop>> = Rose.MkRose(
     pf(b).unProperty,
-    shrink(b).let {
-        it.mapIndexed { i, v -> props(shrink, pf, v) }
-    }
+    // this is a bit ugly, is there a better way to shrink lazy?
+    sequenceOf(Unit).flatMap { shrink(b).map { v -> props(shrink, pf, v) } }
 )
 
 /**
