@@ -138,7 +138,7 @@ class Gen<A>(val unGen: (Tuple2<RandSeed, Int>) -> A) : GenOf<A> {
         /**
          * choose between any of the supplied generators
          */
-        fun <A> oneOf(vararg gens: Gen<A>): Gen<A> = if (gens.isEmpty())
+        fun <A> oneOf(vararg gens: Gen<out A>): Gen<A> = if (gens.isEmpty())
             throw IllegalArgumentException("oneOf cannot work without generators")
         else Gen.monad().binding {
             gens[choose(0 toT gens.size, Int.random()).bind()].bind()
@@ -147,13 +147,13 @@ class Gen<A>(val unGen: (Tuple2<RandSeed, Int>) -> A) : GenOf<A> {
         /**
          * choose between any of the supplied generators but add weights to them
          */
-        fun <A> frequency(vararg gens: Tuple2<Int, Gen<A>>): Gen<A> = if (gens.isEmpty())
+        fun <A> frequency(vararg gens: Tuple2<Int, Gen<out A>>): Gen<A> = if (gens.isEmpty())
             throw IllegalArgumentException("frequency cannot work without generators")
         else Gen.monad().binding {
             val sum = gens.map { it.a }.sum() + 1 // + 1 for inclusive range
             val c = choose(0 toT sum, Int.random()).bind()
 
-            fun pick(n: Int, l: List<Tuple2<Int, Gen<A>>>): Gen<A> {
+            fun pick(n: Int, l: List<Tuple2<Int, Gen<out A>>>): Gen<out A> {
                 val (k, g) = l[0]
                 return if (n <= k) g
                 else pick(n - k, l.drop(1))
