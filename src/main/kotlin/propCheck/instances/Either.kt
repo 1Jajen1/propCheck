@@ -13,7 +13,7 @@ interface EitherArbitrary<L, R> : Arbitrary<Either<L, R>> {
     fun AL(): Arbitrary<L>
     fun AR(): Arbitrary<R>
 
-    override fun arbitrary(): Gen<Either<L, R>> = Gen.oneOf<Either<L, R>>(
+    override fun arbitrary(): Gen<Either<L, R>> = Gen.oneOf(
         AL().arbitrary().map { it.left() },
         AR().arbitrary().map { it.right() }
     )

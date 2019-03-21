@@ -147,7 +147,7 @@ class RandSeed private constructor(
             return ((z1 xor z1.ushr(28)) * -0x34db2f5a3773ca4dL).ushr(32).toInt()
         }
 
-        fun mixGamma(z: Long): Long {
+        private fun mixGamma(z: Long): Long {
             val z1 = (z xor z.ushr(33)) * -0xae502812aa7333L // MurmurHash3 mix constants
             val z2 = (z1 xor z1.ushr(33)) * -0x3b314601e57a13adL
             val z3 = z2 xor z2.ushr(33) or 1L                  // force to be odd
@@ -156,7 +156,7 @@ class RandSeed private constructor(
         }
 
         // java.lang.Long.bitcount
-        fun bitCount(var0: Long): Int {
+        private fun bitCount(var0: Long): Int {
             var var0 = var0
             var0 -= var0.ushr(1) and 6148914691236517205L
             var0 = (var0 and 3689348814741910323L) + (var0.ushr(2) and 3689348814741910323L)

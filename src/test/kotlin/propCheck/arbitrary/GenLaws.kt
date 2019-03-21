@@ -1,5 +1,6 @@
 package propCheck.arbitrary
 
+import arrow.core.Option
 import arrow.core.Tuple2
 import arrow.core.toT
 import arrow.data.Nel
@@ -33,7 +34,7 @@ class GenSpec : LawSpec() {
             propCheck {
                 forAll { (i): NonNegative<Int> ->
                     idempotentIOProperty(
-                        Gen.getSize().resize(i).generate().map { (it == i).property() }
+                        Gen.getSize().resize(i).generate().map { it == i }
                     )
                 }
             }
@@ -45,18 +46,18 @@ class GenSpec : LawSpec() {
                 forAll { (iP, jP): Tuple2<NonNegative<Int>, NonNegative<Int>> ->
                     val (i) = iP; val (j) = jP
                     idempotentIOProperty(
-                        Gen.getSize().scale { it + j }.resize(i).generate().map { (it == i + j).property() }
+                        Gen.getSize().scale { it + j }.resize(i).generate().map { it == i + j }
                     )
                 }
             }
         }
 
-        /* TODO Fix stack safety of Gen so that these functions work under any circumstance
+        // TODO Fix stack safety of Gen so that these functions work under any circumstance
         "Gen.suchThat" {
             // TODO redo when generating functions is done
             propCheck {
-                forAllP<Int>().invoke { i ->
-                    idempotentIOProperty().invoke(
+                forAll { i: Int ->
+                    idempotentIOProperty(
                         Gen.getSize().suchThat { it > i }.generate().map { it > i }
                     )
                 }
@@ -66,8 +67,8 @@ class GenSpec : LawSpec() {
         "Gen.suchThatOption" {
             // TODO redo when generating functions is done
             propCheck {
-                forAllP<Int>().invoke { i ->
-                    idempotentIOProperty().invoke(
+                forAll { i: Int ->
+                    idempotentIOProperty(
                         Gen.getSize().suchThatOption { it > i }.generate().map {
                             it.fold({ true }, { it > i })
                         }
@@ -76,26 +77,11 @@ class GenSpec : LawSpec() {
             }
         }
 
-        "Gen.suchThatMap" {
-            // TODO redo when generating functions is done
-            propCheck {
-                forAllP<Tuple2<Positive<Int>, Option<Positive<Int>>>>().invoke { (iP, jOptP) ->
-                    val (i) = iP;
-                    idempotentIOProperty().invoke(
-                        Gen.getSize().suchThatMap { s -> jOptP.map { it.a + s } }.resize(i).generate().map { s ->
-                            jOptP.fold({ false }, { (it) -> it + i == s })
-                        }
-                    )
-                }
-            }
-        }
-        */
-
         "Gen.listOf should generate lists of size 0 to i" {
             propCheck {
                 forAll { (i): NonNegative<Int> ->
                     idempotentIOProperty(
-                        arbitrarySizedByte().listOf().resize(i).generate().map { (it.size <= i).property() }
+                        arbitrarySizedByte().listOf().resize(i).generate().map { it.size <= i }
                     )
                 }
             }
@@ -105,7 +91,7 @@ class GenSpec : LawSpec() {
             propCheck {
                 forAll { (i): Positive<Int> ->
                     idempotentIOProperty(
-                        arbitrarySizedByte().nelOf().resize(i).generate().map { (it.size <= i).property() }
+                        arbitrarySizedByte().nelOf().resize(i).generate().map { it.size <= i }
                     )
                 }
             }
@@ -115,7 +101,7 @@ class GenSpec : LawSpec() {
             propCheck {
                 forAll { (i): NonNegative<Int> ->
                     idempotentIOProperty(
-                        arbitrarySizedByte().vectorOf(i).generate().map { (it.size == i).property() }
+                        arbitrarySizedByte().vectorOf(i).generate().map { it.size == i }
                     )
                 }
             }
@@ -125,7 +111,7 @@ class GenSpec : LawSpec() {
             propCheck {
                 forAll { (i): NonNegative<Int> ->
                     idempotentIOProperty(
-                        Gen.sized { Gen.getSize().resize(it) }.resize(i).generate().map { (it == i).property() }
+                        Gen.sized { Gen.getSize().resize(it) }.resize(i).generate().map { it == i }
                     )
                 }
             }
@@ -135,7 +121,7 @@ class GenSpec : LawSpec() {
             propCheck {
                 forAll { (i): NonNegative<Int> ->
                     idempotentIOProperty(
-                        Gen.getSize().resize(i).generate().map { (it == i).property() }
+                        Gen.getSize().resize(i).generate().map { it == i }
                     )
                 }
             }

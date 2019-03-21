@@ -619,13 +619,6 @@ fun <A, B> forAllShrinkBlind(
         )
     )
 
-inline fun <reified A>defTestable(): Testable<A> = when (A::class.qualifiedName) {
-    Boolean::class.qualifiedName -> Boolean.testable()
-    TestResult::class.qualifiedName -> TestResult.testable()
-    Property::class.qualifiedName -> Property.testable()
-    else -> throw IllegalArgumentException("Could not find default testable for ${A::class.qualifiedName}. This can only happen in forAll and forAllBlind, make sure to only return either Boolean, TestResult or Property there!")
-} as Testable<A>
-
 /**
  * Helper that looks up instances based on generics
  */

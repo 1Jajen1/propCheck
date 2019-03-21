@@ -433,7 +433,7 @@ fun runATest(state: State, prop: Property): IO<Result> = IO.monad().binding {
             ).unProp
         )
     ).bind()) {
-        is Rose.IORose -> throw IllegalStateException("Should not happend")
+        is Rose.IORose -> throw IllegalStateException("Should not happen")
         is Rose.MkRose -> it.res toT it.shrunk
     }
 

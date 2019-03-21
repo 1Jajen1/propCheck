@@ -12,7 +12,7 @@ import propCheck.arbitrary.Gen
 interface ValidatedArbitrary<E, A> : Arbitrary<Validated<E, A>> {
     fun AE(): Arbitrary<E>
     fun AA(): Arbitrary<A>
-    override fun arbitrary(): Gen<Validated<E, A>> = Gen.oneOf<Validated<E, A>>(
+    override fun arbitrary(): Gen<Validated<E, A>> = Gen.oneOf(
         AE().arbitrary().map { it.invalid() },
         AA().arbitrary().map { it.valid() }
     )

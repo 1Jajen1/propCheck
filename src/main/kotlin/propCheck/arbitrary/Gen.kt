@@ -13,7 +13,9 @@ import arrow.effects.fix
 import arrow.extension
 import arrow.free.bindingStackSafe
 import arrow.free.run
-import arrow.typeclasses.*
+import arrow.typeclasses.Applicative
+import arrow.typeclasses.Functor
+import arrow.typeclasses.Monad
 import propCheck.arbitrary.gen.monad.monad
 
 // @higherkind boilerplate
@@ -52,13 +54,13 @@ class Gen<A>(val unGen: (Tuple2<RandSeed, Int>) -> A) : GenOf<A> {
      * FIXME This is as of now not stacksafe
      * generate values that pass a predicate, increase size on failure until a value was generated
      */
-    fun suchThat(pred: (A) -> Boolean): Gen<A> = Gen.monad().bindingStackSafe {
+    fun suchThat(pred: (A) -> Boolean): Gen<A> = Gen.monad().binding {
         suchThatOption(pred).bind().fold({
             sized { suchThat(pred).resize(it + 1) }.bind()
         }, {
             it
         })
-    }.run(Gen.monad()).fix()
+    }.fix()
 
     /**
      * FIXME This is as of now not stacksafe
@@ -189,7 +191,7 @@ class Gen<A>(val unGen: (Tuple2<RandSeed, Int>) -> A) : GenOf<A> {
         /**
          * Generate values from an enum
          */
-        inline fun <reified A: Enum<A>> fromEnum(): Gen<A> = Gen.elements(*enumValues())
+        inline fun <reified A : Enum<A>> fromEnum(): Gen<A> = Gen.elements(*enumValues())
     }
 
     // ------------------ Helpers to inspect data, unsafe (non io) wrappers exist in Helpers.kt

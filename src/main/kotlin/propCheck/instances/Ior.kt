@@ -14,7 +14,7 @@ import propCheck.arbitrary.gen.applicative.applicative
 interface IorArbitrary<L, R> : Arbitrary<Ior<L, R>> {
     fun AL(): Arbitrary<L>
     fun AR(): Arbitrary<R>
-    override fun arbitrary(): Gen<Ior<L, R>> = Gen.oneOf<Ior<L, R>>(
+    override fun arbitrary(): Gen<Ior<L, R>> = Gen.oneOf(
         AL().arbitrary().map { it.leftIor() },
         AR().arbitrary().map { it.rightIor() },
         Gen.applicative().map(AL().arbitrary(), AR().arbitrary()) { (l, r) ->

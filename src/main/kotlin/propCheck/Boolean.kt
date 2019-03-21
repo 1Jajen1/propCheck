@@ -6,6 +6,10 @@ import arrow.effects.IO
 import arrow.syntax.function.andThen
 import arrow.typeclasses.Show
 
+/**
+ * This file is really useful for having overloads without the need of reflection. Most ppl will only ever use
+ *  Property or Boolean as their Testable
+ */
 fun mapResult(a: Boolean, f: (TestResult) -> TestResult): Property =
     mapResult(a.property(), f)
 fun mapTotalResult(a: Boolean, f: (TestResult) -> TestResult): Property =

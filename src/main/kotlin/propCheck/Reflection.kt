@@ -59,6 +59,8 @@ import propCheck.arbitrary.smart.arbitrary.arbitrary
 import propCheck.arbitrary.smart.show.show
 import propCheck.arbitrary.unicodestring.arbitrary.arbitrary
 import propCheck.arbitrary.unicodestring.show.show
+import propCheck.property.testable.testable
+import propCheck.testresult.testable.testable
 import java.lang.reflect.ParameterizedType
 import java.lang.reflect.Type
 import java.lang.reflect.WildcardType
@@ -67,6 +69,14 @@ import java.lang.reflect.WildcardType
  * This file is super ugly codewise, it does however work and can recursively lookup instances even with generics
  * This makes having to define (at least the standart ones) arbitrary instances unnecessary
  */
+
+// ------------------ Testable
+inline fun <reified A>defTestable(): Testable<A> = when (A::class.qualifiedName) {
+    Boolean::class.qualifiedName -> Boolean.testable()
+    TestResult::class.qualifiedName -> TestResult.testable()
+    Property::class.qualifiedName -> Property.testable()
+    else -> throw IllegalArgumentException("Could not find default testable for ${A::class.qualifiedName}. This can only happen in forAll and forAllBlind, make sure to only return either Boolean, TestResult or Property there!")
+} as Testable<A>
 
 // ------------------ Show
 fun <A : Any> lookupShow(qualifiedName: String): Show<A> = when (qualifiedName) {

@@ -3,8 +3,6 @@ package propCheck.arbitrary
 import arrow.core.Tuple2
 import arrow.core.toT
 import arrow.optics.Iso
-import arrow.typeclasses.Order
-import propCheck.arbitrary.gen.functor.functor
 import propCheck.arbitrary.gen.monad.monad
 import propCheck.instances.arbitrary
 
@@ -91,6 +89,7 @@ fun arbitraryBoundedByte(): Gen<Byte> = Gen.chooseAny(Byte.random())
 
 fun arbitraryBoundedFloat(): Gen<Float> =
     Gen.chooseAny(Float.random())
+
 fun arbitraryBoundedDouble(): Gen<Double> =
     Gen.chooseAny(Double.random())
 
@@ -236,14 +235,5 @@ fun shrinkChar(fail: Char): Sequence<Char> = (
             it.isWhitespace().not() < fail.isWhitespace().not() ||
             it < fail
 }
-
-// ---------------------------------- helpers to create Generators from arbitrary instances
-fun <A> vector(n: Int, arbA: Arbitrary<A>): Gen<List<A>> = arbA.arbitrary().vectorOf(n)
-
-fun <A> orderedList(arbA: Arbitrary<A>, ordA: Order<A>): Gen<List<A>> =
-    Gen.functor().run {
-        arbA.arbitrary().listOf()
-            .map { it.sortedWith(Comparator { a, b -> ordA.run { a.compare(b) } }) }
-    }.fix()
 
 fun <T : Any> iterate(f: (T) -> T, start: T) = generateSequence(start) { f(it) }
