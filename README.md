@@ -135,7 +135,7 @@ Here `shrinkMap` is used to implement shrinking. `shrinkMap` returns a shrinking
 This is how a failed test would look with shrinking (just output, no exceptions)
 ```kotlin
 propCheck {
-    forAllShrink(userArb) { user ->
+    forAll(userArb) { user ->
         user.age < 20 // Fail for users older than 20
     }
 }
