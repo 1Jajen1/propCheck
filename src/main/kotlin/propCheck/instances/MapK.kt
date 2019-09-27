@@ -1,15 +1,15 @@
 package propCheck.instances
 
+import arrow.core.MapK
 import arrow.core.Tuple2
+import arrow.core.mapOf
 import arrow.core.toT
-import arrow.data.MapK
-import arrow.data.mapOf
 import arrow.extension
 import arrow.typeclasses.Show
 import propCheck.arbitrary.Arbitrary
 import propCheck.arbitrary.Gen
-import propCheck.instances.tuple2.arbitrary.arbitrary
 import propCheck.arbitrary.shrinkList
+import propCheck.instances.tuple2.arbitrary.arbitrary
 
 @extension
 interface MapKArbitrary<K, V> : Arbitrary<MapK<K, V>> {

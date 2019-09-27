@@ -1,8 +1,8 @@
 package propCheck.instances
 
-import arrow.data.Ior
-import arrow.data.leftIor
-import arrow.data.rightIor
+import arrow.core.Ior
+import arrow.core.leftIor
+import arrow.core.rightIor
 import arrow.extension
 import arrow.typeclasses.Show
 import propCheck.arbitrary.Arbitrary

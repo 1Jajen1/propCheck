@@ -1,8 +1,8 @@
 package propCheck.instances
 
+import arrow.core.ListK
+import arrow.core.k
 import arrow.core.toT
-import arrow.data.ListK
-import arrow.data.k
 import propCheck.arbitrary.*
 import propCheck.arbitrary.gen.monad.monad
 import propCheck.instances.listk.arbitrary.arbitrary
@@ -82,7 +82,7 @@ fun String.Companion.arbitrary(): Arbitrary<String> = object :
 val intArrayArb = object : Arbitrary<IntArray> {
     val intArb = Int.arbitrary()
     override fun arbitrary(): Gen<IntArray> = Gen.sized {
-        Gen.monad().binding {
+        Gen.monad().fx.monad {
             IntArray(it) { intArb.arbitrary().bind() }
         }.fix()
     }
@@ -97,7 +97,7 @@ val intArrayArb = object : Arbitrary<IntArray> {
 val longArrayArb = object : Arbitrary<LongArray> {
     val longArb = Long.arbitrary()
     override fun arbitrary(): Gen<LongArray> = Gen.sized {
-        Gen.monad().binding {
+        Gen.monad().fx.monad {
             LongArray(it) { longArb.arbitrary().bind() }
         }.fix()
     }
@@ -112,7 +112,7 @@ val longArrayArb = object : Arbitrary<LongArray> {
 val floatArrayArb = object : Arbitrary<FloatArray> {
     val floatArb = Float.arbitrary()
     override fun arbitrary(): Gen<FloatArray> = Gen.sized {
-        Gen.monad().binding {
+        Gen.monad().fx.monad {
             FloatArray(it) { floatArb.arbitrary().bind() }
         }.fix()
     }
@@ -127,7 +127,7 @@ val floatArrayArb = object : Arbitrary<FloatArray> {
 val doubleArrayArb = object : Arbitrary<DoubleArray> {
     val doubleArb = Double.arbitrary()
     override fun arbitrary(): Gen<DoubleArray> = Gen.sized {
-        Gen.monad().binding {
+        Gen.monad().fx.monad {
             DoubleArray(it) { doubleArb.arbitrary().bind() }
         }.fix()
     }
@@ -142,7 +142,7 @@ val doubleArrayArb = object : Arbitrary<DoubleArray> {
 val byteArrayArb = object : Arbitrary<ByteArray> {
     val byteArb = Byte.arbitrary()
     override fun arbitrary(): Gen<ByteArray> = Gen.sized {
-        Gen.monad().binding {
+        Gen.monad().fx.monad {
             ByteArray(it) { byteArb.arbitrary().bind() }
         }.fix()
     }
@@ -157,7 +157,7 @@ val byteArrayArb = object : Arbitrary<ByteArray> {
 val booleanArrayArb = object : Arbitrary<BooleanArray> {
     val booleanArb = Boolean.arbitrary()
     override fun arbitrary(): Gen<BooleanArray> = Gen.sized {
-        Gen.monad().binding {
+        Gen.monad().fx.monad {
             BooleanArray(it) { booleanArb.arbitrary().bind() }
         }.fix()
     }

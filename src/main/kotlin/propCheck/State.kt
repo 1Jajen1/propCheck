@@ -1,15 +1,16 @@
 package propCheck
 
-import arrow.core.*
-import arrow.core.extensions.eval.monad.monad
-import arrow.data.StateT
-import arrow.data.extensions.list.foldable.foldLeft
-import arrow.data.extensions.list.foldable.foldRight
-import arrow.data.extensions.statet.monad.monad
-import arrow.data.fix
-import arrow.effects.IO
-import arrow.effects.extensions.io.monad.monad
-import arrow.effects.fix
+import arrow.core.Eval
+import arrow.core.Option
+import arrow.core.Tuple2
+import arrow.core.extensions.fx
+import arrow.core.extensions.list.foldable.foldLeft
+import arrow.core.extensions.list.foldable.foldRight
+import arrow.core.toT
+import arrow.fx.IO
+import arrow.fx.extensions.fx
+import arrow.mtl.StateT
+import arrow.mtl.extensions.fx
 import propCheck.arbitrary.*
 import propCheck.arbitrary.gen.applicative.applicative
 import propCheck.arbitrary.gen.monad.monad
@@ -59,7 +60,7 @@ internal fun <S, A> generateCmds(
     preCondition: PreCondition<S, A>,
     transition: Transition<S, A>,
     invariant: Invariant<S>
-): StateT<ForGen, S, List<A>> = StateT.monad<ForGen, S>(Gen.monad()).binding {
+): StateT<ForGen, S, List<A>> = StateT.fx(Gen.monad()) {
     if (size == 0) emptyList()
     else {
         val currState: S = StateT.get<ForGen, S>(Gen.applicative()).bind()
@@ -72,7 +73,7 @@ internal fun <S, A> generateCmds(
             listOf(it) + generateCmds(size - 1, cmdGen, preCondition, transition, invariant).bind()
         })
     }
-}.fix()
+}
 
 @PublishedApi
 internal fun <A, R, SUT> executeActions(
@@ -119,12 +120,12 @@ inline fun <S, A, R, SUT, reified PROP> execSeq(
     commandsArby(sm, sm.initialState)
 ) { cmds ->
     idempotentIOProperty(
-        IO.monad().binding {
+        IO.fx {
             val sut = sm.sut().bind()
             val results = executeActions(cmds, sut, sm.executeAction).bind()
 
             checkResults(results, sm.initialState, postCondition, sm.invariant, testable, sm.transition).a.value()
-        }.fix()
+        }
     )
 }
 
@@ -134,7 +135,7 @@ fun <S, A, R, SUT> parArby(sm: StateMachine<S, A, R, SUT>, maxThreads: Int) = co
     sm.initialState
 ).let { preArb ->
     Arbitrary(
-        Gen.monad().binding {
+        Gen.monad().fx.monad {
             val prefix = preArb.arbitrary().bind()
             val s = prefix.foldLeft(sm.initialState) { s, a -> sm.transition(s, a) }
             val pathArb = commandsArby(sm, s)
@@ -197,7 +198,7 @@ internal fun <S, A, R, SUT, PROP> _execPar(
     parArby(sm, Math.max(maxThreads, 2))
 ) { (prefix, paths) ->
     idempotentIOProperty(
-        IO.monad().binding {
+        IO.fx {
             val sut = sm.sut().bind()
             val prefixResult = executeActions(prefix, sut, sm.executeAction).bind()
 
@@ -235,7 +236,7 @@ internal fun <S, A, R, SUT, PROP> _execPar(
                     }
                 )
             )
-        }.fix()
+        }
     )
 }
 
@@ -253,12 +254,12 @@ internal fun <S, A, R, PROP> recurGo(
             it.mapIndexed { i, _ ->
                 Eval.later { go(it, state, i, invariant, transition, testable, postCondition) }
             }.foldRight(Eval.now(Boolean.testable().run { false.property() })) { v, acc ->
-                Eval.monad().binding {
+                Eval.fx {
                     or(
                         v.bind(),
                         acc
                     )
-                }.fix()
+                }
             }.value()
         }
     )

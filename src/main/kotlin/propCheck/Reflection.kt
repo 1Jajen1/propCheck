@@ -2,10 +2,9 @@ package propCheck
 
 import arrow.core.*
 import arrow.core.extensions.show
-import arrow.data.*
-import arrow.effects.IO
-import arrow.effects.extensions.io.applicativeError.handleError
-import arrow.effects.extensions.io.monadThrow.monadThrow
+import arrow.fx.IO
+import arrow.fx.extensions.io.applicativeError.handleError
+import arrow.fx.extensions.io.monadThrow.monadThrow
 import arrow.typeclasses.Show
 import propCheck.arbitrary.*
 import propCheck.arbitrary.asciistring.arbitrary.arbitrary
@@ -14,6 +13,20 @@ import propCheck.arbitrary.blind.arbitrary.arbitrary
 import propCheck.arbitrary.blind.show.show
 import propCheck.arbitrary.fixed.arbitrary.arbitrary
 import propCheck.arbitrary.fixed.show.show
+import propCheck.arbitrary.negative.arbitrary.arbitrary
+import propCheck.arbitrary.negative.show.show
+import propCheck.arbitrary.nonnegative.arbitrary.arbitrary
+import propCheck.arbitrary.nonnegative.show.show
+import propCheck.arbitrary.nonpositive.arbitrary.arbitrary
+import propCheck.arbitrary.nonpositive.show.show
+import propCheck.arbitrary.positive.arbitrary.arbitrary
+import propCheck.arbitrary.positive.show.show
+import propCheck.arbitrary.shrink2.arbitrary.arbitrary
+import propCheck.arbitrary.shrink2.show.show
+import propCheck.arbitrary.smart.arbitrary.arbitrary
+import propCheck.arbitrary.smart.show.show
+import propCheck.arbitrary.unicodestring.arbitrary.arbitrary
+import propCheck.arbitrary.unicodestring.show.show
 import propCheck.instances.*
 import propCheck.instances.either.arbitrary.arbitrary
 import propCheck.instances.id.arbitrary.arbitrary
@@ -45,20 +58,6 @@ import propCheck.instances.tuple7.arbitrary.arbitrary
 import propCheck.instances.tuple8.arbitrary.arbitrary
 import propCheck.instances.tuple9.arbitrary.arbitrary
 import propCheck.instances.validated.arbitrary.arbitrary
-import propCheck.arbitrary.negative.arbitrary.arbitrary
-import propCheck.arbitrary.negative.show.show
-import propCheck.arbitrary.nonnegative.arbitrary.arbitrary
-import propCheck.arbitrary.nonnegative.show.show
-import propCheck.arbitrary.nonpositive.arbitrary.arbitrary
-import propCheck.arbitrary.nonpositive.show.show
-import propCheck.arbitrary.positive.arbitrary.arbitrary
-import propCheck.arbitrary.positive.show.show
-import propCheck.arbitrary.shrink2.arbitrary.arbitrary
-import propCheck.arbitrary.shrink2.show.show
-import propCheck.arbitrary.smart.arbitrary.arbitrary
-import propCheck.arbitrary.smart.show.show
-import propCheck.arbitrary.unicodestring.arbitrary.arbitrary
-import propCheck.arbitrary.unicodestring.show.show
 import propCheck.property.testable.testable
 import propCheck.testresult.testable.testable
 import java.lang.reflect.ParameterizedType
@@ -123,7 +122,7 @@ fun <A : Any> lookupShow(qualifiedName: String): Show<A> = when (qualifiedName) 
     else -> Show.any()
 } as Show<A>
 
-inline fun <reified A : Any> defShow(): Show<A> = IO.monadThrow().bindingCatch {
+inline fun <reified A : Any> defShow(): Show<A> = IO.monadThrow().fx.monadThrow {
     Nel.fromList(getGenericTypes<A>()).fold({
         lookupShow<A>(A::class.qualifiedName!!)
     }, {

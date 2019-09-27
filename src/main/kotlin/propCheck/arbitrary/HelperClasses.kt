@@ -1,14 +1,14 @@
 package propCheck.arbitrary
 
 import arrow.Kind
+import arrow.core.ListK
 import arrow.core.Tuple2
 import arrow.core.extensions.eq
+import arrow.core.extensions.list.eq.eqv
+import arrow.core.extensions.listk.eq.eq
 import arrow.core.extensions.order
-import arrow.data.ListK
-import arrow.data.extensions.list.eq.eqv
-import arrow.data.extensions.listk.eq.eq
-import arrow.data.extensions.sequence.foldable.isEmpty
-import arrow.data.k
+import arrow.core.extensions.sequence.foldable.isEmpty
+import arrow.core.k
 import arrow.extension
 import arrow.typeclasses.Eq
 import arrow.typeclasses.Functor

@@ -53,7 +53,7 @@ fun arbitrarySizedPositiveLong(): Gen<Long> = Gen.sized {
 }
 
 fun arbitrarySizedFloat(): Gen<Float> = Gen.sized { n ->
-    Gen.monad().binding {
+    Gen.monad().fx.monad {
         val b = Gen.choose(1L toT 999999999L, Long.random()).bind()
         val a = Gen.choose((-n) * b toT n * b, Long.random()).bind()
         a.toFloat() / b.toFloat()
@@ -61,7 +61,7 @@ fun arbitrarySizedFloat(): Gen<Float> = Gen.sized { n ->
 }
 
 fun arbitrarySizedDouble(): Gen<Double> = Gen.sized { n ->
-    Gen.monad().binding {
+    Gen.monad().fx.monad {
         val b = Gen.choose(1L toT 999999999L, Long.random()).bind()
         val a = Gen.choose((-n) * b toT n * b, Long.random()).bind()
         a.toDouble() / b.toDouble()

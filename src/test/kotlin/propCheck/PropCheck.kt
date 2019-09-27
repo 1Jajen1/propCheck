@@ -4,11 +4,10 @@ import arrow.core.Eval
 import arrow.core.Tuple2
 import arrow.core.some
 import arrow.core.toT
-import arrow.effects.IO
-import arrow.effects.extensions.io.applicativeError.attempt
-import arrow.effects.extensions.io.monadThrow.monadThrow
+import arrow.fx.IO
+import arrow.fx.extensions.io.applicativeError.attempt
+import arrow.fx.extensions.io.monadThrow.monadThrow
 import propCheck.arbitrary.*
-import propCheck.instances.arbitrary
 
 class TestableSpec : PropertySpec({
     "Boolean should be lifted correctly" {
@@ -52,7 +51,7 @@ class PropCheckSpec : PropertySpec({
     "propCheck is the same as propCheckIOWithError.unsageRunSync()" {
         forAll { b: Boolean ->
             ioProperty(
-                IO.monadThrow().bindingCatch {
+                IO.monadThrow().fx.monadThrow {
                     propCheck(Args(replay = (RandSeed(0L) toT 0).some(), maxSuccess = 1)) {
                         Boolean.testable().run { b.property() }
                     }
