@@ -147,12 +147,13 @@ interface RoseMonad : Monad<ForRose> {
 
     override fun <A> just(a: A): Kind<ForRose, A> = Rose.just(a)
 
-    override fun <A, B> tailRecM(a: A, f: (A) -> Kind<ForRose, Either<A, B>>): Kind<ForRose, B> {
-        val r = f(a).fix()
-        return r.flatMap { either ->
-            either.fold({ tailRecM(it, f).fix() }, { Rose.just(it) })
+    override fun <A, B> tailRecM(a: A, f: (A) -> Kind<ForRose, Either<A, B>>): Kind<ForRose, B> =
+        f(a).flatMap {
+            when (it) {
+                is Either.Left -> tailRecM(it.a, f)
+                is Either.Right -> Rose.just(it.b)
+            }
         }
-    }
 }
 
 /**
