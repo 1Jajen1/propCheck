@@ -15,13 +15,13 @@ plugins {
 
 repositories {
     jcenter()
-    maven { url 'http://oss.jfrog.org/artifactory/oss-snapshot-local' }
+    maven { url 'https://oss.jfrog.org/artifactory/oss-snapshot-local' }
 }
 
 apply plugin: 'kotlin-kapt'
 
 group 'propCheck'
-version '0.9.3'
+version '0.9.4'
 
 def arrow_version = "0.10.0"
 dependencies {
@@ -37,8 +37,12 @@ dependencies {
     implementation "io.arrow-kt:arrow-syntax:$arrow_version" // helper functions like curried...
     implementation "io.arrow-kt:arrow-mtl:$arrow_version" // StateT, Reader, Writer...
 
-    testImplementation "io.kotlintest:kotlintest-runner-junit5:3.2.1"
-    testImplementation "io.arrow-kt:arrow-test:$arrow_version" // test helpers and laws
+    testImplementation("io.kotlintest:kotlintest-runner-junit5:3.4.2") {
+        exclude group: "io.arrow-kt"
+    }
+    testImplementation("io.arrow-kt:arrow-test:$arrow_version") { // test helpers and laws
+        exclude group: "io.kotlintest"
+    }
 }
 
 test {
@@ -91,7 +95,7 @@ publishing {
             }
             groupId 'propCheck'
             artifactId 'propCheck-kt'
-            version '0.9.3'
+            version '0.9.4'
             pom.withXml {
                 def root = asNode()
                 root.appendNode('description', 'Property based testing for kotlin')
@@ -114,7 +118,7 @@ bintray {
         licenses = ['BSD 3-Clause']
         vcsUrl = 'https://github.com/1Jajen1/propCheck'
         version {
-            name = '0.9.3'
+            name = '0.9.4'
             released  = new Date()
         }
     }
