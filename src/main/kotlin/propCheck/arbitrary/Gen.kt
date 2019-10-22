@@ -256,11 +256,10 @@ interface GenMonad : Monad<ForGen> {
         Gen { a }
 
     override fun <A, B> tailRecM(a: A, f: (A) -> Kind<ForGen, Either<A, B>>): Kind<ForGen, B> =
-        Gen { rn ->
-            f(a).fix().unGen(rn).fold({
-                tailRecM(it, f).fix().unGen(rn)
-            }, {
-                it
-            })
+        f(a).flatMap {
+            when (it) {
+                is Either.Left -> tailRecM(it.a, f)
+                is Either.Right -> Gen.monad().just(it.b)
+            }
         }
 }
