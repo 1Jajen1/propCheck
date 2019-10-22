@@ -1,14 +1,13 @@
 package propCheck.instances
 
-import arrow.core.Ior
-import arrow.core.leftIor
-import arrow.core.rightIor
+import arrow.core.*
 import arrow.extension
 import arrow.typeclasses.Show
-import propCheck.arbitrary.Arbitrary
-import propCheck.arbitrary.Gen
-import propCheck.arbitrary.fix
+import propCheck.arbitrary.*
 import propCheck.arbitrary.gen.applicative.applicative
+import propCheck.arbitrary.tuple2.func.func
+import propCheck.instances.option.func.func
+import java.lang.IllegalStateException
 
 @extension
 interface IorArbitrary<L, R> : Arbitrary<Ior<L, R>> {
@@ -42,4 +41,23 @@ interface IorShow<L, R> : Show<Ior<L, R>> {
     }, { l, r ->
         "Both(" + SL().run { l.show() } + "," + SR().run { r.show() } + ")"
     })
+}
+
+@extension
+interface IorFunc<L, R> : Func<Ior<L, R>> {
+    fun LF(): Func<L>
+    fun RF(): Func<R>
+
+    override fun <B> function(f: (Ior<L, R>) -> B): Fn<Ior<L, R>, B> =
+        funMap(Tuple2.func(Option.func(LF()), Option.func(RF())), {
+            it.fold({ it.some() toT none() }, { none<L>() toT it.some() }, { l, r -> l.some() toT r.some() })
+        }, { (l, r) ->
+            when (l) {
+                is Some -> if (r is Some) Ior.Both(l.t, r.t) else Ior.Left(l.t)
+                else -> when (r) {
+                    is Some -> Ior.Right(r.t)
+                    else -> throw IllegalStateException("Cannot and should not happen")
+                }
+            }
+        }, f)
 }

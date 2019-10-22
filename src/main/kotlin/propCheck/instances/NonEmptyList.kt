@@ -1,12 +1,11 @@
 package propCheck.instances
 
-import arrow.core.Nel
-import arrow.core.NonEmptyList
+import arrow.core.*
 import arrow.extension
 import arrow.typeclasses.Show
-import propCheck.arbitrary.Arbitrary
-import propCheck.arbitrary.Gen
-import propCheck.arbitrary.shrinkList
+import propCheck.arbitrary.*
+import propCheck.arbitrary.tuple2.func.func
+import propCheck.instances.listk.func.func
 
 @extension
 interface NonEmptyListArbitrary<A> : Arbitrary<NonEmptyList<A>> {
@@ -20,4 +19,16 @@ interface NonEmptyListShow<A> : Show<NonEmptyList<A>> {
     fun SA(): Show<A>
     override fun NonEmptyList<A>.show(): String =
             "NonEmptyList(" + all.joinToString { SA().run { it.show() } } + ")"
+}
+
+@extension
+interface NonEmptyListFunc<A> : Func<NonEmptyList<A>> {
+    fun AF(): Func<A>
+
+    override fun <B> function(f: (NonEmptyList<A>) -> B): Fn<NonEmptyList<A>, B> =
+        funMap(Tuple2.func(AF(), ListK.func(AF())), {
+            Tuple2(it.head, it.tail.k())
+        }, { (h, t) ->
+            NonEmptyList(h, t)
+        }, f)
 }

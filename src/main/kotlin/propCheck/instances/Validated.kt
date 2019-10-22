@@ -1,12 +1,13 @@
 package propCheck.instances
 
+import arrow.core.Either
 import arrow.core.Validated
 import arrow.core.invalid
 import arrow.core.valid
 import arrow.extension
 import arrow.typeclasses.Show
-import propCheck.arbitrary.Arbitrary
-import propCheck.arbitrary.Gen
+import propCheck.arbitrary.*
+import propCheck.instances.either.func.func
 
 @extension
 interface ValidatedArbitrary<E, A> : Arbitrary<Validated<E, A>> {
@@ -32,4 +33,17 @@ interface ValidatedShow<E, A> : Show<Validated<E, A>> {
     }, {
         "Valid(" + SA().run { it.show() } + ")"
     })
+}
+
+@extension
+interface ValidatedFunc<E, A> : Func<Validated<E, A>> {
+    fun EF(): Func<E>
+    fun AF(): Func<A>
+
+    override fun <B> function(f: (Validated<E, A>) -> B): Fn<Validated<E, A>, B> =
+        funMap(Either.func(EF(), AF()), {
+            it.toEither()
+        }, {
+            it.fold({ it.invalid() }, { it.valid() })
+        }, f)
 }

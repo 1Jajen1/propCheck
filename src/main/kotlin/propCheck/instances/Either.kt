@@ -5,8 +5,7 @@ import arrow.core.left
 import arrow.core.right
 import arrow.extension
 import arrow.typeclasses.Show
-import propCheck.arbitrary.Arbitrary
-import propCheck.arbitrary.Gen
+import propCheck.arbitrary.*
 
 @extension
 interface EitherArbitrary<L, R> : Arbitrary<Either<L, R>> {
@@ -32,4 +31,12 @@ interface EitherShow<L, R> : Show<Either<L, R>> {
         is Either.Left -> "Left(" + SL().run { a.show() } + ")"
         is Either.Right -> "Right(" + SR().run { b.show() } + ")"
     }
+}
+
+@extension
+interface EitherFunc<L, R> : Func<Either<L, R>> {
+    fun LF(): Func<L>
+    fun RF(): Func<R>
+
+    override fun <B> function(f: (Either<L, R>) -> B): Fn<Either<L, R>, B> = funEither(LF(), RF(), f)
 }

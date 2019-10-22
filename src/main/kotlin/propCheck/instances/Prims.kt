@@ -1,11 +1,14 @@
 package propCheck.instances
 
-import arrow.core.ListK
-import arrow.core.k
-import arrow.core.toT
+import arrow.core.*
 import propCheck.arbitrary.*
 import propCheck.arbitrary.gen.monad.monad
+import propCheck.arbitrary.tuple2.func.func
+import propCheck.instances.either.func.func
 import propCheck.instances.listk.arbitrary.arbitrary
+import propCheck.instances.listk.func.func
+import java.math.BigInteger
+import kotlin.math.absoluteValue
 
 interface IntArbitrary : Arbitrary<Int> {
     override fun arbitrary(): Gen<Int> = arbitrarySizedInt()
@@ -13,6 +16,13 @@ interface IntArbitrary : Arbitrary<Int> {
 }
 
 fun Int.Companion.arbitrary(): Arbitrary<Int> = object : IntArbitrary {}
+
+interface IntFunc : Func<Int> {
+    override fun <B> function(f: (Int) -> B): Fn<Int, B> =
+        funMap(Long.func(), { it.toLong() }, { it.toInt() }, f)
+}
+
+fun Int.Companion.func(): Func<Int> = object : IntFunc {}
 
 interface LongArbitrary : Arbitrary<Long> {
     override fun arbitrary(): Gen<Long> = arbitrarySizedLong()
@@ -22,6 +32,17 @@ interface LongArbitrary : Arbitrary<Long> {
 fun Long.Companion.arbitrary(): Arbitrary<Long> = object :
     LongArbitrary {}
 
+interface LongFunc : Func<Long> {
+    override fun <B> function(f: (Long) -> B): Fn<Long, B> =
+        funMap(ListK.func(Byte.func()), {
+            it.toBigInteger().toByteArray().toList().k()
+        }, {
+            BigInteger(it.toByteArray()).toLong()
+        }, f)
+}
+
+fun Long.Companion.func(): Func<Long> = object : LongFunc {}
+
 interface FloatArbitrary : Arbitrary<Float> {
     override fun arbitrary(): Gen<Float> = arbitrarySizedFloat()
     override fun shrink(fail: Float): Sequence<Float> = shrinkFloat(fail)
@@ -29,6 +50,17 @@ interface FloatArbitrary : Arbitrary<Float> {
 
 fun Float.Companion.arbitrary(): Arbitrary<Float> = object :
     FloatArbitrary {}
+
+interface FloatFunc : Func<Float> {
+    override fun <B> function(f: (Float) -> B): Fn<Float, B> =
+        funMap(Double.func(), {
+            it.toDouble()
+        }, {
+            it.toFloat()
+        }, f)
+}
+
+fun Float.Companion.func(): Func<Float> = object : FloatFunc {}
 
 interface DoubleArbitrary : Arbitrary<Double> {
     override fun arbitrary(): Gen<Double> = arbitrarySizedDouble()
@@ -38,6 +70,17 @@ interface DoubleArbitrary : Arbitrary<Double> {
 fun Double.Companion.arbitrary(): Arbitrary<Double> = object :
     DoubleArbitrary {}
 
+interface DoubleFunc : Func<Double> {
+    override fun <B> function(f: (Double) -> B): Fn<Double, B> =
+        funMap(Long.func(), {
+            it.toRawBits()
+        }, {
+            Double.fromBits(it)
+        }, f)
+}
+
+fun Double.Companion.func(): Func<Double> = object : DoubleFunc {}
+
 interface BooleanArbitrary : Arbitrary<Boolean> {
     override fun arbitrary(): Gen<Boolean> = Gen.elements(true, false)
     override fun shrink(fail: Boolean): Sequence<Boolean> = if (fail) sequenceOf(false) else emptySequence()
@@ -46,12 +89,29 @@ interface BooleanArbitrary : Arbitrary<Boolean> {
 fun Boolean.Companion.arbitrary(): Arbitrary<Boolean> = object :
     BooleanArbitrary {}
 
+interface BooleanFunc : Func<Boolean> {
+    override fun <B> function(f: (Boolean) -> B): Fn<Boolean, B> =
+        funMap(Either.func(unitFunc(), unitFunc()), {
+            if (it) Unit.left()
+            else Unit.right()
+        }, { it.isRight() }, f)
+}
+
+fun Boolean.Companion.func(): Func<Boolean> = object : BooleanFunc {}
+
 interface ByteArbitrary : Arbitrary<Byte> {
     override fun arbitrary(): Gen<Byte> = arbitrarySizedByte()
     override fun shrink(fail: Byte): Sequence<Byte> = shrinkByte(fail)
 }
 
 fun Byte.Companion.arbitrary(): Arbitrary<Byte> = object : ByteArbitrary {}
+
+interface ByteFunc : Func<Byte> {
+    override fun <B> function(f: (Byte) -> B): Fn<Byte, B> =
+        funList((Byte.MIN_VALUE..Byte.MAX_VALUE).map { it.toByte() }.toList(), f)
+}
+
+fun Byte.Companion.func(): Func<Byte> = object : ByteFunc {}
 
 interface CharArbitrary : Arbitrary<Char> {
     override fun arbitrary(): Gen<Char> = Gen.frequency(
@@ -65,6 +125,13 @@ interface CharArbitrary : Arbitrary<Char> {
 fun Char.Companion.arbitrary(): Arbitrary<Char> = object :
     CharArbitrary {}
 
+interface CharFunc : Func<Char> {
+    override fun <B> function(f: (Char) -> B): Fn<Char, B> =
+        funMap(Long.func(), { it.toLong() }, { it.toChar() }, f)
+}
+
+fun Char.Companion.func(): Func<Char> = object : CharFunc {}
+
 // not really a prim but included for simplicity
 interface StringArbitrary : Arbitrary<String> {
     override fun arbitrary(): Gen<String> = arbitraryASCIIString()
@@ -77,6 +144,13 @@ interface StringArbitrary : Arbitrary<String> {
 
 fun String.Companion.arbitrary(): Arbitrary<String> = object :
     StringArbitrary {}
+
+interface StringFunc : Func<String> {
+    override fun <B> function(f: (String) -> B): Fn<String, B> =
+        funMap(ListK.func(Char.func()), { it.toCharArray().toList().k() }, { it.joinToString("") }, f)
+}
+
+fun String.Companion.func(): Func<String> = object : StringFunc {}
 
 // ---------- arrays
 val intArrayArb = object : Arbitrary<IntArray> {

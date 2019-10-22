@@ -1,13 +1,10 @@
 package propCheck.instances
 
-import arrow.core.Option
-import arrow.core.none
-import arrow.core.some
-import arrow.core.toT
+import arrow.core.*
 import arrow.extension
 import arrow.typeclasses.Show
-import propCheck.arbitrary.Arbitrary
-import propCheck.arbitrary.Gen
+import propCheck.arbitrary.*
+import propCheck.instances.either.func.func
 
 @extension
 interface OptionArbitrary<A> : Arbitrary<Option<A>> {
@@ -31,4 +28,16 @@ interface OptionShow<A> : Show<Option<A>> {
     }, {
         "Some(" + SA().run { it.show() } + ")"
     })
+}
+
+@extension
+interface OptionFunc<A> : Func<Option<A>> {
+    fun AF(): Func<A>
+
+    override fun <B> function(f: (Option<A>) -> B): Fn<Option<A>, B> =
+        funMap(Either.func(unitFunc(), AF()), {
+            it.fold({ Unit.left() }, { it.right() })
+        }, {
+            it.fold({ none() }, ::Some)
+        }, f)
 }

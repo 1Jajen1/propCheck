@@ -2,14 +2,10 @@ package propCheck.arbitrary
 
 import arrow.Kind
 import arrow.core.*
-import arrow.core.extensions.eq
-import arrow.core.extensions.mapk.traverse.flatTraverse
-import arrow.core.extensions.show
 import arrow.extension
 import arrow.typeclasses.Eq
 import arrow.typeclasses.Functor
 import arrow.typeclasses.Show
-import propCheck.arbitrary.fn.show.show
 
 // @higherkind boilerplate
 class ForFn private constructor() { companion object }
@@ -30,7 +26,7 @@ sealed class Fn<A, B> : FnOf<A, B> {
 
     class PairFn<A, B, C>(val fn: Fn<A, Fn<B, C>>): Fn<Tuple2<A, B>, C>()
 
-    class TableFn<A, B>(val eqA: Eq<A>, val m: Map<A, B>): Fn<A, B>()
+    class TableFn<A, B>(val m: Map<A, B>): Fn<A, B>()
 
     class MapFn<A, B, C>(val f: (A) -> B, val cF: (B) -> A, val g: Fn<B, C>): Fn<A, C>()
 
@@ -46,7 +42,7 @@ interface FnFunctor<C> : Functor<FnPartialOf<C>> {
         is Fn.NilFn -> Fn.NilFn()
         is Fn.EitherFn<*, *, A> -> Fn.EitherFn((t.l as Fn<C, A>).map(f).fix(), (t.r as Fn<C, A>).map(f).fix()) as Fn<C, B>
         is Fn.PairFn<*, *, A> -> Fn.PairFn((t.fn as Fn<C, Fn<C, A>>).map { it.map(f).fix() }.fix()) as Fn<C, B>
-        is Fn.TableFn -> Fn.TableFn(t.eqA, t.m.mapValues { f(it.value) })
+        is Fn.TableFn -> Fn.TableFn(t.m.mapValues { f(it.value) })
         is Fn.MapFn<*, *, A> -> Fn.MapFn(t.f as (Any?) -> C, t.cF as (C) -> Any?, (t.g as Fn<C, A>).map(f).fix()) as Fn<C, B>
     }
 }
@@ -70,4 +66,51 @@ fun <A, B> Fn<A, B>.table(): Map<A, B> = when (this) {
     is Fn.PairFn<*, *, B> -> fn.table().flatMap { it.value.table().asIterable() }.map { (it.key as A) toT it.value }.toMap()
     is Fn.TableFn -> m
     is Fn.MapFn<*, *, B> -> g.table().mapValues { (cF as (Any?) -> A).invoke(it.key) } as Map<A, B>
+}
+
+
+interface Func<A> {
+    fun <B>function(f: (A) -> B): Fn<A, B>
+}
+
+fun <A, B, C>funMap(fb: Func<B>, f: (A) -> B, cF: (B) -> A, g: (A) -> C): Fn<A, C> = fb.run {
+    Fn.MapFn(f, cF, function { g(cF(it)) })
+}
+
+fun <A, B, C>funPair(fA: Func<A>, fB: Func<B>, f: (Tuple2<A, B>) -> C): Fn<Tuple2<A, B>, C> = fA.run {
+    fB.run {
+        Fn.PairFn(
+            function { a: A ->
+                function {b: B ->
+                    f(a toT b)
+                }
+            }
+        )
+    }
+}
+
+fun <A, B, C>funEither(fA: Func<A>, fB: Func<B>, f: (Either<A, B>) -> C): Fn<Either<A, B>, C> =
+    Fn.EitherFn(
+        fA.run { function { f(it.left()) } },
+        fB.run { function { f(it.right()) } }
+    )
+
+fun unitFunc(): Func<Unit> = object: Func<Unit> {
+    override fun <B> function(f: (Unit) -> B): Fn<Unit, B> = Fn.UnitFn(f(Unit))
+}
+
+inline fun <reified A: Enum<A>, B> funEnum(noinline f: (A) -> B): Fn<A, B> =
+    funList(enumValues<A>().toList(), f)
+
+fun <A, B> funList(vals: Collection<A>, f: (A) -> B): Fn<A, B> =
+    Fn.TableFn(vals.map { it toT f(it) }.toMap())
+
+
+// Keep that here because I don't want to write other instances for Tuple3+ in the autogen file
+@extension
+interface Tuple2Func<A, B> : Func<Tuple2<A, B>> {
+    fun AF(): Func<A>
+    fun BF(): Func<B>
+
+    override fun <C> function(f: (Tuple2<A, B>) -> C): Fn<Tuple2<A, B>, C> = funPair(AF(), BF(), f)
 }

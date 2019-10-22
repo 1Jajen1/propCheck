@@ -4,8 +4,7 @@ import arrow.core.Id
 import arrow.core.value
 import arrow.extension
 import arrow.typeclasses.Show
-import propCheck.arbitrary.Arbitrary
-import propCheck.arbitrary.Gen
+import propCheck.arbitrary.*
 
 @extension
 interface IdArbitrary<A> : Arbitrary<Id<A>> {
@@ -18,4 +17,11 @@ interface IdShow<A> : Show<Id<A>> {
     fun SA(): Show<A>
     override fun Id<A>.show(): String =
             "Id(" + SA().run { value().show() } + ")"
+}
+
+@extension
+interface IdFunc<A> : Func<Id<A>> {
+    fun AF(): Func<A>
+
+    override fun <B> function(f: (Id<A>) -> B): Fn<Id<A>, B> = funMap(AF(), { it.value() }, ::Id, f)
 }
