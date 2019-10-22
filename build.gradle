@@ -37,8 +37,12 @@ dependencies {
     implementation "io.arrow-kt:arrow-syntax:$arrow_version" // helper functions like curried...
     implementation "io.arrow-kt:arrow-mtl:$arrow_version" // StateT, Reader, Writer...
 
-    testImplementation "io.kotlintest:kotlintest-runner-junit5:3.2.1"
-    testImplementation "io.arrow-kt:arrow-test:$arrow_version" // test helpers and laws
+    testImplementation("io.kotlintest:kotlintest-runner-junit5:3.4.2") {
+        exclude group: "io.arrow-kt"
+    }
+    testImplementation("io.arrow-kt:arrow-test:$arrow_version") { // test helpers and laws
+        exclude group: "io.kotlintest"
+    }
 }
 
 test {
