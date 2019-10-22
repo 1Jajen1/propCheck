@@ -37,7 +37,8 @@ interface LongFunc : Func<Long> {
         funMap(ListK.func(Byte.func()), {
             it.toBigInteger().toByteArray().toList().k()
         }, {
-            BigInteger(it.toByteArray()).toLong()
+            if (it.isEmpty()) 0
+            else BigInteger(it.toByteArray()).toLong()
         }, f)
 }
 
