@@ -1,25 +1,22 @@
 package propCheck
 
 import arrow.core.*
+import arrow.core.extensions.list.foldable.sequence_
+import arrow.core.extensions.list.traverse.traverse
+import arrow.core.extensions.mapk.foldable.combineAll
+import arrow.core.extensions.mapk.semigroup.plus
+import arrow.core.extensions.mapk.semigroup.semigroup
 import arrow.core.extensions.monoid
 import arrow.core.extensions.semigroup
-import arrow.data.MapK
-import arrow.data.extensions.list.foldable.sequence_
-import arrow.data.extensions.list.traverse.traverse
-import arrow.data.extensions.mapk.foldable.combineAll
-import arrow.data.extensions.mapk.semigroup.plus
-import arrow.data.extensions.mapk.semigroup.semigroup
-import arrow.data.extensions.sequence.foldable.isEmpty
-import arrow.data.k
-import arrow.effects.ForIO
-import arrow.effects.IO
-import arrow.effects.Ref
-import arrow.effects.extensions.io.applicative.applicative
-import arrow.effects.extensions.io.monad.followedBy
-import arrow.effects.extensions.io.monad.monad
-import arrow.effects.extensions.io.monadDefer.monadDefer
-import arrow.effects.fix
+import arrow.core.extensions.sequence.foldable.isEmpty
 import arrow.extension
+import arrow.fx.ForIO
+import arrow.fx.IO
+import arrow.fx.Ref
+import arrow.fx.extensions.fx
+import arrow.fx.extensions.io.applicative.applicative
+import arrow.fx.extensions.io.monadDefer.monadDefer
+import arrow.fx.fix
 import arrow.optics.optics
 import org.apache.commons.math3.special.Erf
 import propCheck.arbitrary.Gen
@@ -182,7 +179,7 @@ interface TestResultTestable : Testable<TestResult> {
 @extension
 interface PropertyTestable : Testable<Property> {
     override fun Property.property(): Property = Property(
-        Gen.monad().binding {
+        Gen.monad().fx.monad {
             this@property.unProperty.bind()
         }.fix()
     )
@@ -194,7 +191,7 @@ interface PropertyTestable : Testable<Property> {
 fun propCheckIO(
     args: Args = Args(),
     f: () -> Property
-): IO<Result> = IO.monad().binding {
+): IO<Result> = IO.fx {
     withState(args) {
         runTest(it, f())
     }.bind().bind().also {
@@ -208,7 +205,7 @@ fun propCheckIO(
                 }
             )
     }
-}.fix()
+}
 
 /**
  * same as propCheckIO but throws an AssertionError at the end (useful for actually running inside test runners)
@@ -264,7 +261,7 @@ internal fun failureMessage(result: Result): String = when (result) {
 /**
  * Run a test with a state derived from the args
  */
-fun <A> withState(args: Args, f: (State) -> A): IO<A> = IO.monad().binding {
+fun <A> withState(args: Args, f: (State) -> A): IO<A> = IO.fx {
     val randSeed = args.replay.fold({
         IO { RandSeed(Random.nextLong()) }
     }, { IO.just(it.a) }).bind()
@@ -320,11 +317,11 @@ fun <A> withState(args: Args, f: (State) -> A): IO<A> = IO.monad().binding {
         numTotTryShrinks = 0,
         randomSeed = randSeed,
         requiredCoverage = emptyMap<Tuple2<Option<String>, String>, Double>().k(),
-        output = Ref.of("", IO.monadDefer()).bind()
+        output = Ref(IO.monadDefer(), "").bind()
     )
 
     f(state)
-}.fix()
+}
 
 /**
  * Run a test case with a given state and property
@@ -344,7 +341,7 @@ fun runTest(
 /**
  * Done testing, construct result and add some output
  */
-fun doneTesting(state: State): IO<Result> = IO.monad().binding {
+fun doneTesting(state: State): IO<Result> = IO.fx {
     if (state.expected) {
         state.output.update {
             it + "+++ OK, passed ${showTestCount(state)}"
@@ -380,12 +377,12 @@ fun doneTesting(state: State): IO<Result> = IO.monad().binding {
             tables = state.tables
         )
     }
-}.fix()
+}
 
 /**
  * Give up testing because of a high discard ratio. Add some output and construct result
  */
-fun giveUpTesting(state: State): IO<Result> = IO.monad().binding {
+fun giveUpTesting(state: State): IO<Result> = IO.fx {
     state.output.updateAndGet {
         it + "*** Gave up! Passed only ${showTestCount(state)}"
     }.bind()
@@ -402,12 +399,12 @@ fun giveUpTesting(state: State): IO<Result> = IO.monad().binding {
         labels = state.labels,
         tables = state.tables
     )
-}.fix()
+}
 
 /**
  * Execute a test
  */
-fun runATest(state: State, prop: Property): IO<Result> = IO.monad().binding {
+fun runATest(state: State, prop: Property): IO<Result> = IO.fx {
     val (rand1, rand2) = state.randomSeed.split()
 
     /**
@@ -489,7 +486,7 @@ fun runATest(state: State, prop: Property): IO<Result> = IO.monad().binding {
             )
         }
         false.some() -> {
-            IO.monad().binding {
+            IO.fx {
                 val (numShrinks, totFailed, lastFailed, nRes) = foundFailure(newState, res, ts).bind()
                 val output = newState.output.get().bind()
                 if (nRes.expected.not())
@@ -517,7 +514,7 @@ fun runATest(state: State, prop: Property): IO<Result> = IO.monad().binding {
                         numShrinkTries = totFailed,
                         usedSize = size
                     )
-            }.fix()
+            }
         }
         None -> {
             cont(
@@ -530,7 +527,7 @@ fun runATest(state: State, prop: Property): IO<Result> = IO.monad().binding {
         }
         else -> throw IllegalStateException("Not possible")
     }.bind()
-}.fix()
+}
 
 typealias FailureResult = IO<Tuple4<Int, Int, Int, TestResult>>
 
@@ -558,7 +555,7 @@ fun localMin(state: State, res: TestResult, ts: Sequence<Rose<TestResult>>): Fai
 internal fun _localMin(state: State, res: TestResult, ts: Sequence<Rose<TestResult>>): FailureResult =
     when (ts.isEmpty()) {
         true -> localMinFound(state, res)
-        else -> IO.monad().binding {
+        else -> IO.fx {
             val (nRes0, nTs) = when (val it = protectRose(reduceRose(ts.first()))
                 .bind()) {
                 is Rose.IORose -> throw IllegalStateException("Should never happen")
@@ -585,7 +582,7 @@ internal fun _localMin(state: State, res: TestResult, ts: Sequence<Rose<TestResu
 /**
  * Done shrinking, append output. Back to runATest to finish up
  */
-fun localMinFound(state: State, res: TestResult): FailureResult = IO.monad().binding {
+fun localMinFound(state: State, res: TestResult): FailureResult = IO.fx {
     failureReason(state, res).reversed().map { s ->
         state.output.update {
             "$it$s\n"
@@ -593,7 +590,7 @@ fun localMinFound(state: State, res: TestResult): FailureResult = IO.monad().bin
     }.sequence_(IO.applicative()).bind()
     callbackPostFinalFailure(state, res).bind()
     Tuple4(state.numSuccessShrinks, state.numTotTryShrinks - state.numTryShrinks, state.numTryShrinks, res)
-}.fix()
+}
 
 /**
  * call all post test callbacks

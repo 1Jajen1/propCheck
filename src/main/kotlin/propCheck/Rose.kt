@@ -3,16 +3,17 @@ package propCheck
 import arrow.Kind
 import arrow.core.*
 import arrow.core.extensions.eval.monad.monad
-import arrow.data.extensions.list.traverse.traverse
-import arrow.data.extensions.sequence.traverse.traverse
-import arrow.data.extensions.sequencek.foldable.foldRight
-import arrow.data.fix
-import arrow.effects.IO
-import arrow.effects.extensions.io.applicative.applicative
-import arrow.effects.extensions.io.applicativeError.handleError
-import arrow.effects.extensions.io.monad.monad
-import arrow.effects.fix
+import arrow.core.extensions.fx
+import arrow.core.extensions.list.traverse.traverse
+import arrow.core.extensions.sequence.traverse.traverse
+import arrow.core.extensions.sequencek.foldable.foldRight
 import arrow.extension
+import arrow.fx.IO
+import arrow.fx.extensions.fx
+import arrow.fx.extensions.io.applicative.applicative
+import arrow.fx.extensions.io.applicativeError.handleError
+import arrow.fx.extensions.io.monad.monad
+import arrow.fx.fix
 import arrow.optics.optics
 import arrow.typeclasses.*
 import propCheck.arbitrary.Arbitrary
@@ -198,10 +199,10 @@ fun protectResult(io: IO<TestResult>): IO<TestResult> = io.handleError {
 fun protectResults(rose: Rose<TestResult>): Rose<TestResult> =
     onRose(rose) { x, rs ->
         Rose.IORose(
-            IO.monad().binding {
+            IO.fx {
                 val y = protectResult(IO.just(x)).bind()
                 Rose.MkRose(y, rs.map(::protectResults))
-            }.fix()
+            }
         )
     }
 
@@ -508,7 +509,7 @@ internal fun status(res: TestResult): String = when (res.ok) {
 
 internal fun newCb(cbs: List<Callback>): Callback =
     Callback.PostTest(CallbackKind.Counterexample) { st, res ->
-        IO.monad().binding {
+        IO.fx {
             st.output.update {
                 it + status(res) + ": " + res.testCase.joinToString() + "\n"
             }.bind()
@@ -519,7 +520,7 @@ internal fun newCb(cbs: List<Callback>): Callback =
             st.output.update {
                 it + "\n"
             }.bind()
-        }.fix()
+        }
     }
 
 /**
@@ -533,7 +534,7 @@ fun verboseShrinking(a: Property): Property =
 internal fun newCb2(cbs: List<Callback>): Callback =
     Callback.PostTest(CallbackKind.Counterexample) { st, res ->
         if (res.ok == false.some())
-            IO.monad().binding {
+            IO.fx {
                 st.output.update {
                     it + "Failed: " + res.testCase.joinToString() + "\n"
                 }.bind()
@@ -544,7 +545,7 @@ internal fun newCb2(cbs: List<Callback>): Callback =
                 st.output.update {
                     it + "\n"
                 }.bind()
-            }.fix()
+            }
         else IO.unit
     }
 
@@ -613,7 +614,7 @@ fun <A, B> forAllShrinkBlind(
 ): Property =
     again(
         Property(
-            Gen.monad().binding {
+            Gen.monad().fx.monad {
                 shrinking(shrinkerB, genB.bind(), testA.run { prop.andThen { it.property() } }).unProperty.bind()
             }.fix()
         )
@@ -698,7 +699,7 @@ fun and(
 fun conjoin(props: Sequence<Eval<Property>>): Property =
     again(
         Property(
-            Gen.monad().binding {
+            Gen.monad().fx.monad {
                 val roses = props.traverse(Gen.applicative()) {
                     it.map {
                         it.unProperty.map { it.unProp }
@@ -712,7 +713,7 @@ fun conjoin(props: Sequence<Eval<Property>>): Property =
 internal fun conj(roses: Sequence<Eval<Rose<TestResult>>>, k: (TestResult) -> TestResult): Rose<TestResult> = when {
     roses.firstOrNull() == null -> Rose.MkRose(k(succeeded()), emptySequence())
     else -> Rose.IORose(
-        IO.monad().binding {
+        IO.fx {
             val reduced = when (val it = reduceRose(roses.first().value()).bind()) {
                 is Rose.MkRose -> it
                 is Rose.IORose -> throw IllegalStateException("The impossible happened")
@@ -725,7 +726,7 @@ internal fun conj(roses: Sequence<Eval<Rose<TestResult>>>, k: (TestResult) -> Te
                         addLabels(reduced.res, addCallbacksAndCoverage(reduced.res, k(it)))
                     }
                     false.some() -> reduced
-                    None -> IO.monad().binding {
+                    None -> IO.fx {
                         val reduced2 = when (val it =
                             reduceRose(conj(roses.drop(1)) {
                                 addCallbacksAndCoverage(
@@ -750,7 +751,7 @@ internal fun conj(roses: Sequence<Eval<Rose<TestResult>>>, k: (TestResult) -> Te
                     }.bind()
                     else -> throw IllegalStateException("The impossible happened")
                 }
-        }.fix()
+        }
     )
 }
 
@@ -791,7 +792,7 @@ fun or(
 fun disjoin(props: Sequence<Eval<Property>>): Property =
     again(
         Property(
-            Gen.monad().binding {
+            Gen.monad().fx.monad {
                 val roses = props.traverse(Gen.applicative()) {
                     it.map {
                         it.unProperty.map { it.unProp }
@@ -799,16 +800,16 @@ fun disjoin(props: Sequence<Eval<Property>>): Property =
                 }.bind()
                 Prop(
                     roses.foldRight(Eval.now(Rose.just(failed("")))) { r, acc ->
-                        Eval.monad().binding {
+                        Eval.fx {
                             disj(r.fix().bind(), acc)
-                        }.fix()
+                        }
                     }.value()
                 )
             }.fix()
         )
     )
 
-internal fun disj(p: Rose<TestResult>, q: Eval<Rose<TestResult>>): Rose<TestResult> = Rose.monad().binding {
+internal fun disj(p: Rose<TestResult>, q: Eval<Rose<TestResult>>): Rose<TestResult> = Rose.monad().fx.monad {
     val res1 = p.bind()
     if (res1.expected.not())
         failed("expectFailure may not occur inside a disjunction")

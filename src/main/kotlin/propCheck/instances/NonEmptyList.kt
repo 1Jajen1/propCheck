@@ -1,7 +1,7 @@
 package propCheck.instances
 
-import arrow.data.Nel
-import arrow.data.NonEmptyList
+import arrow.core.Nel
+import arrow.core.NonEmptyList
 import arrow.extension
 import arrow.typeclasses.Show
 import propCheck.arbitrary.Arbitrary

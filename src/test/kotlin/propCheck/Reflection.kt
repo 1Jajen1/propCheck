@@ -1,12 +1,18 @@
 package propCheck
 
 import arrow.core.*
-import arrow.data.*
 import io.kotlintest.specs.WordSpec
 import propCheck.arbitrary.*
 import propCheck.arbitrary.asciistring.arbitrary.arbitrary
 import propCheck.arbitrary.blind.arbitrary.arbitrary
 import propCheck.arbitrary.fixed.arbitrary.arbitrary
+import propCheck.arbitrary.negative.arbitrary.arbitrary
+import propCheck.arbitrary.nonnegative.arbitrary.arbitrary
+import propCheck.arbitrary.nonpositive.arbitrary.arbitrary
+import propCheck.arbitrary.positive.arbitrary.arbitrary
+import propCheck.arbitrary.shrink2.arbitrary.arbitrary
+import propCheck.arbitrary.smart.arbitrary.arbitrary
+import propCheck.arbitrary.unicodestring.arbitrary.arbitrary
 import propCheck.instances.*
 import propCheck.instances.either.arbitrary.arbitrary
 import propCheck.instances.id.arbitrary.arbitrary
@@ -19,13 +25,6 @@ import propCheck.instances.setk.arbitrary.arbitrary
 import propCheck.instances.tuple2.arbitrary.arbitrary
 import propCheck.instances.tuple4.arbitrary.arbitrary
 import propCheck.instances.validated.arbitrary.arbitrary
-import propCheck.arbitrary.negative.arbitrary.arbitrary
-import propCheck.arbitrary.nonnegative.arbitrary.arbitrary
-import propCheck.arbitrary.nonpositive.arbitrary.arbitrary
-import propCheck.arbitrary.positive.arbitrary.arbitrary
-import propCheck.arbitrary.shrink2.arbitrary.arbitrary
-import propCheck.arbitrary.smart.arbitrary.arbitrary
-import propCheck.arbitrary.unicodestring.arbitrary.arbitrary
 
 class ReflectionSpec : WordSpec({
     "reflection should be able to lookup " should {

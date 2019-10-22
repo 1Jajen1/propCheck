@@ -2,11 +2,11 @@ package propCheck
 
 import arrow.core.Eval
 import arrow.core.some
-import arrow.effects.ForIO
-import arrow.effects.IO
-import arrow.effects.Ref
-import arrow.effects.extensions.io.monadDefer.monadDefer
-import arrow.effects.fix
+import arrow.fx.ForIO
+import arrow.fx.IO
+import arrow.fx.Ref
+import arrow.fx.extensions.io.monadDefer.monadDefer
+import arrow.fx.fix
 import propCheck.arbitrary.Gen
 
 // -----------
@@ -93,7 +93,7 @@ class StateSpec : PropertySpec({
                     is ACT.Get -> s.get().fix()
                 }
             },
-            sut = { Ref.of(0, IO.monadDefer()).fix() },
+            sut = { Ref(IO.monadDefer(), 0).fix() },
             cmdGen = {
                 Gen.elements(
                     ACT.Inc,

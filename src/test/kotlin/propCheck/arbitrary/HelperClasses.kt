@@ -1,19 +1,18 @@
 package propCheck.arbitrary
 
+import arrow.core.ListK
 import arrow.core.Tuple2
 import arrow.core.extensions.eq
+import arrow.core.extensions.listk.eq.eq
 import arrow.core.extensions.order
+import arrow.core.k
 import arrow.core.toT
-import arrow.data.ListK
-import arrow.data.extensions.listk.eq.eq
-import arrow.data.k
 import arrow.test.laws.FunctorLaws
 import arrow.typeclasses.Eq
 import propCheck.*
 import propCheck.arbitrary.blind.eq.eq
 import propCheck.arbitrary.blind.functor.functor
 import propCheck.arbitrary.blind.show.show
-import propCheck.instances.arbitrary
 import propCheck.arbitrary.negative.arbitrary.arbitrary
 import propCheck.arbitrary.negative.eq.eq
 import propCheck.arbitrary.negative.functor.functor
@@ -35,6 +34,7 @@ import propCheck.arbitrary.shrink2.functor.functor
 import propCheck.arbitrary.shrinking.arbitrary.arbitrary
 import propCheck.arbitrary.shrinking.functor.functor
 import propCheck.arbitrary.smart.functor.functor
+import propCheck.instances.arbitrary
 
 class BlindSpec : LawSpec() {
     init {

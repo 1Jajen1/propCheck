@@ -1,9 +1,8 @@
 package propCheck.arbitrary
 
-import arrow.core.Option
+import arrow.core.Nel
 import arrow.core.Tuple2
 import arrow.core.toT
-import arrow.data.Nel
 import arrow.test.laws.MonadLaws
 import arrow.typeclasses.Eq
 import propCheck.*

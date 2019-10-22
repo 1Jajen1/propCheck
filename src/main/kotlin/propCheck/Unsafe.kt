@@ -7,7 +7,7 @@ import propCheck.arbitrary.Gen
 import propCheck.arbitrary.fix
 import propCheck.arbitrary.gen.monad.monad
 
-fun <F, A> Kind<F, Gen<A>>.promote(M: Monad<F>): Gen<Kind<F, A>> = Gen.monad().binding {
+fun <F, A> Kind<F, Gen<A>>.promote(M: Monad<F>): Gen<Kind<F, A>> = Gen.monad().fx.monad {
     val eval = delay<A>().bind()
     M.lift(eval).invoke(this@promote)
 }.fix()

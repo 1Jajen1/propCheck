@@ -2,7 +2,7 @@ package propCheck
 
 import arrow.core.Eval
 import arrow.core.Tuple2
-import arrow.effects.IO
+import arrow.fx.IO
 import arrow.syntax.function.andThen
 import arrow.typeclasses.Show
 

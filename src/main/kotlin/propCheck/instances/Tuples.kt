@@ -38,7 +38,7 @@ import propCheck.arbitrary.shrinkMap
 interface Tuple2Arbitrary<A, B> : Arbitrary<Tuple2<A, B>> {
     fun AA(): Arbitrary<A>
     fun AB(): Arbitrary<B>
-    override fun arbitrary(): Gen<Tuple2<A, B>> = Gen.monad().binding {
+    override fun arbitrary(): Gen<Tuple2<A, B>> = Gen.monad().fx.monad {
         Tuple2(AA().arbitrary().bind(), AB().arbitrary().bind())
     }.fix()
     override fun shrink(fail: Tuple2<A, B>): Sequence<Tuple2<A, B>> =
@@ -60,7 +60,7 @@ interface Tuple3Arbitrary<A, B, C> : Arbitrary<Tuple3<A, B, C>> {
     fun AA(): Arbitrary<A>
     fun AB(): Arbitrary<B>
     fun AC(): Arbitrary<C>
-    override fun arbitrary(): Gen<Tuple3<A, B, C>> = Gen.monad().binding {
+    override fun arbitrary(): Gen<Tuple3<A, B, C>> = Gen.monad().fx.monad {
         Tuple3(AA().arbitrary().bind(), AB().arbitrary().bind(), AC().arbitrary().bind())
     }.fix()
     override fun shrink(fail: Tuple3<A, B, C>): Sequence<Tuple3<A, B, C>> =
@@ -84,7 +84,7 @@ interface Tuple4Arbitrary<A, B, C, D> : Arbitrary<Tuple4<A, B, C, D>> {
     fun AB(): Arbitrary<B>
     fun AC(): Arbitrary<C>
     fun AD(): Arbitrary<D>
-    override fun arbitrary(): Gen<Tuple4<A, B, C, D>> = Gen.monad().binding {
+    override fun arbitrary(): Gen<Tuple4<A, B, C, D>> = Gen.monad().fx.monad {
         Tuple4(AA().arbitrary().bind(), AB().arbitrary().bind(), AC().arbitrary().bind(), AD().arbitrary().bind())
     }.fix()
     override fun shrink(fail: Tuple4<A, B, C, D>): Sequence<Tuple4<A, B, C, D>> =
@@ -111,7 +111,7 @@ interface Tuple5Arbitrary<A, B, C, D, E> : Arbitrary<Tuple5<A, B, C, D, E>> {
     fun AC(): Arbitrary<C>
     fun AD(): Arbitrary<D>
     fun AE(): Arbitrary<E>
-    override fun arbitrary(): Gen<Tuple5<A, B, C, D, E>> = Gen.monad().binding {
+    override fun arbitrary(): Gen<Tuple5<A, B, C, D, E>> = Gen.monad().fx.monad {
         Tuple5(AA().arbitrary().bind(), AB().arbitrary().bind(), AC().arbitrary().bind(), AD().arbitrary().bind(), AE().arbitrary().bind())
     }.fix()
     override fun shrink(fail: Tuple5<A, B, C, D, E>): Sequence<Tuple5<A, B, C, D, E>> =
@@ -141,7 +141,7 @@ interface Tuple6Arbitrary<A, B, C, D, E, F> : Arbitrary<Tuple6<A, B, C, D, E, F>
     fun AD(): Arbitrary<D>
     fun AE(): Arbitrary<E>
     fun AF(): Arbitrary<F>
-    override fun arbitrary(): Gen<Tuple6<A, B, C, D, E, F>> = Gen.monad().binding {
+    override fun arbitrary(): Gen<Tuple6<A, B, C, D, E, F>> = Gen.monad().fx.monad {
         Tuple6(AA().arbitrary().bind(), AB().arbitrary().bind(), AC().arbitrary().bind(), AD().arbitrary().bind(), AE().arbitrary().bind(), AF().arbitrary().bind())
     }.fix()
     override fun shrink(fail: Tuple6<A, B, C, D, E, F>): Sequence<Tuple6<A, B, C, D, E, F>> =
@@ -174,7 +174,7 @@ interface Tuple7Arbitrary<A, B, C, D, E, F, G> : Arbitrary<Tuple7<A, B, C, D, E,
     fun AE(): Arbitrary<E>
     fun AF(): Arbitrary<F>
     fun AG(): Arbitrary<G>
-    override fun arbitrary(): Gen<Tuple7<A, B, C, D, E, F, G>> = Gen.monad().binding {
+    override fun arbitrary(): Gen<Tuple7<A, B, C, D, E, F, G>> = Gen.monad().fx.monad {
         Tuple7(AA().arbitrary().bind(), AB().arbitrary().bind(), AC().arbitrary().bind(), AD().arbitrary().bind(), AE().arbitrary().bind(), AF().arbitrary().bind(), AG().arbitrary().bind())
     }.fix()
     override fun shrink(fail: Tuple7<A, B, C, D, E, F, G>): Sequence<Tuple7<A, B, C, D, E, F, G>> =
@@ -210,7 +210,7 @@ interface Tuple8Arbitrary<A, B, C, D, E, F, G, H> : Arbitrary<Tuple8<A, B, C, D,
     fun AF(): Arbitrary<F>
     fun AG(): Arbitrary<G>
     fun AH(): Arbitrary<H>
-    override fun arbitrary(): Gen<Tuple8<A, B, C, D, E, F, G, H>> = Gen.monad().binding {
+    override fun arbitrary(): Gen<Tuple8<A, B, C, D, E, F, G, H>> = Gen.monad().fx.monad {
         Tuple8(AA().arbitrary().bind(), AB().arbitrary().bind(), AC().arbitrary().bind(), AD().arbitrary().bind(), AE().arbitrary().bind(), AF().arbitrary().bind(), AG().arbitrary().bind(), AH().arbitrary().bind())
     }.fix()
     override fun shrink(fail: Tuple8<A, B, C, D, E, F, G, H>): Sequence<Tuple8<A, B, C, D, E, F, G, H>> =
@@ -250,7 +250,7 @@ interface Tuple9Arbitrary<A, B, C, D, E, F, G, H, I> :
     fun AG(): Arbitrary<G>
     fun AH(): Arbitrary<H>
     fun AI(): Arbitrary<I>
-    override fun arbitrary(): Gen<Tuple9<A, B, C, D, E, F, G, H, I>> = Gen.monad().binding {
+    override fun arbitrary(): Gen<Tuple9<A, B, C, D, E, F, G, H, I>> = Gen.monad().fx.monad {
         Tuple9(AA().arbitrary().bind(), AB().arbitrary().bind(), AC().arbitrary().bind(), AD().arbitrary().bind(), AE().arbitrary().bind(), AF().arbitrary().bind(), AG().arbitrary().bind(), AH().arbitrary().bind(), AI().arbitrary().bind())
     }.fix()
     override fun shrink(fail: Tuple9<A, B, C, D, E, F, G, H, I>): Sequence<Tuple9<A, B, C, D, E, F, G, H, I>> =
@@ -293,7 +293,7 @@ interface Tuple10Arbitrary<A, B, C, D, E, F, G, H, I, J> :
     fun AH(): Arbitrary<H>
     fun AI(): Arbitrary<I>
     fun AJ(): Arbitrary<J>
-    override fun arbitrary(): Gen<Tuple10<A, B, C, D, E, F, G, H, I, J>> = Gen.monad().binding {
+    override fun arbitrary(): Gen<Tuple10<A, B, C, D, E, F, G, H, I, J>> = Gen.monad().fx.monad {
         Tuple10(AA().arbitrary().bind(), AB().arbitrary().bind(), AC().arbitrary().bind(), AD().arbitrary().bind(), AE().arbitrary().bind(), AF().arbitrary().bind(), AG().arbitrary().bind(), AH().arbitrary().bind(), AI().arbitrary().bind(), AJ().arbitrary().bind())
     }.fix()
     override fun shrink(fail: Tuple10<A, B, C, D, E, F, G, H, I, J>): Sequence<Tuple10<A, B, C, D, E, F, G, H, I, J>> =
@@ -339,7 +339,7 @@ interface Tuple11Arbitrary<A, B, C, D, E, F, G, H, I, J, K> :
     fun AI(): Arbitrary<I>
     fun AJ(): Arbitrary<J>
     fun AK(): Arbitrary<K>
-    override fun arbitrary(): Gen<Tuple11<A, B, C, D, E, F, G, H, I, J, K>> = Gen.monad().binding {
+    override fun arbitrary(): Gen<Tuple11<A, B, C, D, E, F, G, H, I, J, K>> = Gen.monad().fx.monad {
         Tuple11(AA().arbitrary().bind(), AB().arbitrary().bind(), AC().arbitrary().bind(), AD().arbitrary().bind(), AE().arbitrary().bind(), AF().arbitrary().bind(), AG().arbitrary().bind(), AH().arbitrary().bind(), AI().arbitrary().bind(), AJ().arbitrary().bind(), AK().arbitrary().bind())
     }.fix()
     override fun shrink(fail: Tuple11<A, B, C, D, E, F, G, H, I, J, K>): Sequence<Tuple11<A, B, C, D, E, F, G, H, I, J, K>> =
@@ -388,7 +388,7 @@ interface Tuple12Arbitrary<A, B, C, D, E, F, G, H, I, J, K, L> :
     fun AJ(): Arbitrary<J>
     fun AK(): Arbitrary<K>
     fun AL(): Arbitrary<L>
-    override fun arbitrary(): Gen<Tuple12<A, B, C, D, E, F, G, H, I, J, K, L>> = Gen.monad().binding {
+    override fun arbitrary(): Gen<Tuple12<A, B, C, D, E, F, G, H, I, J, K, L>> = Gen.monad().fx.monad {
         Tuple12(AA().arbitrary().bind(), AB().arbitrary().bind(), AC().arbitrary().bind(), AD().arbitrary().bind(), AE().arbitrary().bind(), AF().arbitrary().bind(), AG().arbitrary().bind(), AH().arbitrary().bind(), AI().arbitrary().bind(), AJ().arbitrary().bind(), AK().arbitrary().bind(), AL().arbitrary().bind())
     }.fix()
     override fun shrink(fail: Tuple12<A, B, C, D, E, F, G, H, I, J, K, L>): Sequence<Tuple12<A, B, C, D, E, F, G, H, I, J, K, L>> =
@@ -440,7 +440,7 @@ interface Tuple13Arbitrary<A, B, C, D, E, F, G, H, I, J, K, L, M> :
     fun AK(): Arbitrary<K>
     fun AL(): Arbitrary<L>
     fun AM(): Arbitrary<M>
-    override fun arbitrary(): Gen<Tuple13<A, B, C, D, E, F, G, H, I, J, K, L, M>> = Gen.monad().binding {
+    override fun arbitrary(): Gen<Tuple13<A, B, C, D, E, F, G, H, I, J, K, L, M>> = Gen.monad().fx.monad {
         Tuple13(AA().arbitrary().bind(), AB().arbitrary().bind(), AC().arbitrary().bind(), AD().arbitrary().bind(), AE().arbitrary().bind(), AF().arbitrary().bind(), AG().arbitrary().bind(), AH().arbitrary().bind(), AI().arbitrary().bind(), AJ().arbitrary().bind(), AK().arbitrary().bind(), AL().arbitrary().bind(), AM().arbitrary().bind())
     }.fix()
     override fun shrink(fail: Tuple13<A, B, C, D, E, F, G, H, I, J, K, L, M>): Sequence<Tuple13<A, B, C, D, E, F, G, H, I, J, K, L, M>> =
@@ -495,7 +495,7 @@ interface Tuple14Arbitrary<A, B, C, D, E, F, G, H, I, J, K, L, M, N> :
     fun AL(): Arbitrary<L>
     fun AM(): Arbitrary<M>
     fun AN(): Arbitrary<N>
-    override fun arbitrary(): Gen<Tuple14<A, B, C, D, E, F, G, H, I, J, K, L, M, N>> = Gen.monad().binding {
+    override fun arbitrary(): Gen<Tuple14<A, B, C, D, E, F, G, H, I, J, K, L, M, N>> = Gen.monad().fx.monad {
         Tuple14(AA().arbitrary().bind(), AB().arbitrary().bind(), AC().arbitrary().bind(), AD().arbitrary().bind(), AE().arbitrary().bind(), AF().arbitrary().bind(), AG().arbitrary().bind(), AH().arbitrary().bind(), AI().arbitrary().bind(), AJ().arbitrary().bind(), AK().arbitrary().bind(), AL().arbitrary().bind(), AM().arbitrary().bind(), AN().arbitrary().bind())
     }.fix()
     override fun shrink(fail: Tuple14<A, B, C, D, E, F, G, H, I, J, K, L, M, N>): Sequence<Tuple14<A, B, C, D, E, F, G, H, I, J, K, L, M, N>> =
@@ -553,7 +553,7 @@ interface Tuple15Arbitrary<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O> :
     fun AM(): Arbitrary<M>
     fun AN(): Arbitrary<N>
     fun AO(): Arbitrary<O>
-    override fun arbitrary(): Gen<Tuple15<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O>> = Gen.monad().binding {
+    override fun arbitrary(): Gen<Tuple15<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O>> = Gen.monad().fx.monad {
         Tuple15(AA().arbitrary().bind(), AB().arbitrary().bind(), AC().arbitrary().bind(), AD().arbitrary().bind(), AE().arbitrary().bind(), AF().arbitrary().bind(), AG().arbitrary().bind(), AH().arbitrary().bind(), AI().arbitrary().bind(), AJ().arbitrary().bind(), AK().arbitrary().bind(), AL().arbitrary().bind(), AM().arbitrary().bind(), AN().arbitrary().bind(), AO().arbitrary().bind())
     }.fix()
     override fun shrink(fail: Tuple15<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O>): Sequence<Tuple15<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O>> =
@@ -614,7 +614,7 @@ interface Tuple16Arbitrary<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P> :
     fun AN(): Arbitrary<N>
     fun AO(): Arbitrary<O>
     fun AP(): Arbitrary<P>
-    override fun arbitrary(): Gen<Tuple16<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P>> = Gen.monad().binding {
+    override fun arbitrary(): Gen<Tuple16<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P>> = Gen.monad().fx.monad {
         Tuple16(AA().arbitrary().bind(), AB().arbitrary().bind(), AC().arbitrary().bind(), AD().arbitrary().bind(), AE().arbitrary().bind(), AF().arbitrary().bind(), AG().arbitrary().bind(), AH().arbitrary().bind(), AI().arbitrary().bind(), AJ().arbitrary().bind(), AK().arbitrary().bind(), AL().arbitrary().bind(), AM().arbitrary().bind(), AN().arbitrary().bind(), AO().arbitrary().bind(), AP().arbitrary().bind())
     }.fix()
     override fun shrink(fail: Tuple16<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P>): Sequence<Tuple16<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P>> =
@@ -678,7 +678,7 @@ interface Tuple17Arbitrary<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q> :
     fun AO(): Arbitrary<O>
     fun AP(): Arbitrary<P>
     fun AQ(): Arbitrary<Q>
-    override fun arbitrary(): Gen<Tuple17<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q>> = Gen.monad().binding {
+    override fun arbitrary(): Gen<Tuple17<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q>> = Gen.monad().fx.monad {
         Tuple17(AA().arbitrary().bind(), AB().arbitrary().bind(), AC().arbitrary().bind(), AD().arbitrary().bind(), AE().arbitrary().bind(), AF().arbitrary().bind(), AG().arbitrary().bind(), AH().arbitrary().bind(), AI().arbitrary().bind(), AJ().arbitrary().bind(), AK().arbitrary().bind(), AL().arbitrary().bind(), AM().arbitrary().bind(), AN().arbitrary().bind(), AO().arbitrary().bind(), AP().arbitrary().bind(), AQ().arbitrary().bind())
     }.fix()
     override fun shrink(fail: Tuple17<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q>): Sequence<Tuple17<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q>> =
@@ -745,7 +745,7 @@ interface Tuple18Arbitrary<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R>
     fun AP(): Arbitrary<P>
     fun AQ(): Arbitrary<Q>
     fun AR(): Arbitrary<R>
-    override fun arbitrary(): Gen<Tuple18<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R>> = Gen.monad().binding {
+    override fun arbitrary(): Gen<Tuple18<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R>> = Gen.monad().fx.monad {
         Tuple18(AA().arbitrary().bind(), AB().arbitrary().bind(), AC().arbitrary().bind(), AD().arbitrary().bind(), AE().arbitrary().bind(), AF().arbitrary().bind(), AG().arbitrary().bind(), AH().arbitrary().bind(), AI().arbitrary().bind(), AJ().arbitrary().bind(), AK().arbitrary().bind(), AL().arbitrary().bind(), AM().arbitrary().bind(), AN().arbitrary().bind(), AO().arbitrary().bind(), AP().arbitrary().bind(), AQ().arbitrary().bind(), AR().arbitrary().bind())
     }.fix()
     override fun shrink(fail: Tuple18<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R>): Sequence<Tuple18<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R>> =
@@ -815,7 +815,7 @@ interface Tuple19Arbitrary<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R,
     fun AQ(): Arbitrary<Q>
     fun AR(): Arbitrary<R>
     fun AS(): Arbitrary<S>
-    override fun arbitrary(): Gen<Tuple19<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S>> = Gen.monad().binding {
+    override fun arbitrary(): Gen<Tuple19<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S>> = Gen.monad().fx.monad {
         Tuple19(AA().arbitrary().bind(), AB().arbitrary().bind(), AC().arbitrary().bind(), AD().arbitrary().bind(), AE().arbitrary().bind(), AF().arbitrary().bind(), AG().arbitrary().bind(), AH().arbitrary().bind(), AI().arbitrary().bind(), AJ().arbitrary().bind(), AK().arbitrary().bind(), AL().arbitrary().bind(), AM().arbitrary().bind(), AN().arbitrary().bind(), AO().arbitrary().bind(), AP().arbitrary().bind(), AQ().arbitrary().bind(), AR().arbitrary().bind(), AS().arbitrary().bind())
     }.fix()
     override fun shrink(fail: Tuple19<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S>): Sequence<Tuple19<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S>> =
@@ -888,7 +888,7 @@ interface Tuple20Arbitrary<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R,
     fun AR(): Arbitrary<R>
     fun AS(): Arbitrary<S>
     fun AT(): Arbitrary<T>
-    override fun arbitrary(): Gen<Tuple20<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T>> = Gen.monad().binding {
+    override fun arbitrary(): Gen<Tuple20<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T>> = Gen.monad().fx.monad {
         Tuple20(AA().arbitrary().bind(), AB().arbitrary().bind(), AC().arbitrary().bind(), AD().arbitrary().bind(), AE().arbitrary().bind(), AF().arbitrary().bind(), AG().arbitrary().bind(), AH().arbitrary().bind(), AI().arbitrary().bind(), AJ().arbitrary().bind(), AK().arbitrary().bind(), AL().arbitrary().bind(), AM().arbitrary().bind(), AN().arbitrary().bind(), AO().arbitrary().bind(), AP().arbitrary().bind(), AQ().arbitrary().bind(), AR().arbitrary().bind(), AS().arbitrary().bind(), AT().arbitrary().bind())
     }.fix()
     override fun shrink(fail: Tuple20<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T>): Sequence<Tuple20<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T>> =
@@ -964,7 +964,7 @@ interface Tuple21Arbitrary<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R,
     fun AS(): Arbitrary<S>
     fun AT(): Arbitrary<T>
     fun AU(): Arbitrary<U>
-    override fun arbitrary(): Gen<Tuple21<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U>> = Gen.monad().binding {
+    override fun arbitrary(): Gen<Tuple21<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U>> = Gen.monad().fx.monad {
         Tuple21(AA().arbitrary().bind(), AB().arbitrary().bind(), AC().arbitrary().bind(), AD().arbitrary().bind(), AE().arbitrary().bind(), AF().arbitrary().bind(), AG().arbitrary().bind(), AH().arbitrary().bind(), AI().arbitrary().bind(), AJ().arbitrary().bind(), AK().arbitrary().bind(), AL().arbitrary().bind(), AM().arbitrary().bind(), AN().arbitrary().bind(), AO().arbitrary().bind(), AP().arbitrary().bind(), AQ().arbitrary().bind(), AR().arbitrary().bind(), AS().arbitrary().bind(), AT().arbitrary().bind(), AU().arbitrary().bind())
     }.fix()
     override fun shrink(fail: Tuple21<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U>): Sequence<Tuple21<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U>> =
@@ -1043,7 +1043,7 @@ interface Tuple22Arbitrary<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R,
     fun AT(): Arbitrary<T>
     fun AU(): Arbitrary<U>
     fun AV(): Arbitrary<V>
-    override fun arbitrary(): Gen<Tuple22<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V>> = Gen.monad().binding {
+    override fun arbitrary(): Gen<Tuple22<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V>> = Gen.monad().fx.monad {
         Tuple22(AA().arbitrary().bind(), AB().arbitrary().bind(), AC().arbitrary().bind(), AD().arbitrary().bind(), AE().arbitrary().bind(), AF().arbitrary().bind(), AG().arbitrary().bind(), AH().arbitrary().bind(), AI().arbitrary().bind(), AJ().arbitrary().bind(), AK().arbitrary().bind(), AL().arbitrary().bind(), AM().arbitrary().bind(), AN().arbitrary().bind(), AO().arbitrary().bind(), AP().arbitrary().bind(), AQ().arbitrary().bind(), AR().arbitrary().bind(), AS().arbitrary().bind(), AT().arbitrary().bind(), AU().arbitrary().bind(), AV().arbitrary().bind())
     }.fix()
     override fun shrink(fail: Tuple22<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V>): Sequence<Tuple22<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V>> =

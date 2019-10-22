@@ -1,8 +1,8 @@
 package propCheck.instances
 
-import arrow.data.Validated
-import arrow.data.invalid
-import arrow.data.valid
+import arrow.core.Validated
+import arrow.core.invalid
+import arrow.core.valid
 import arrow.extension
 import arrow.typeclasses.Show
 import propCheck.arbitrary.Arbitrary

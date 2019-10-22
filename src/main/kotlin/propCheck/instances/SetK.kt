@@ -1,7 +1,7 @@
 package propCheck.instances
 
-import arrow.data.SetK
-import arrow.data.k
+import arrow.core.SetK
+import arrow.core.k
 import arrow.extension
 import arrow.typeclasses.Show
 import propCheck.arbitrary.Arbitrary

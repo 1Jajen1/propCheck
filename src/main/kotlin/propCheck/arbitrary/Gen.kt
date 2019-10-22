@@ -2,17 +2,13 @@ package propCheck.arbitrary
 
 import arrow.Kind
 import arrow.core.*
-import arrow.data.Nel
-import arrow.data.extensions.list.traverse.sequence
-import arrow.data.extensions.list.traverse.traverse
-import arrow.data.fix
-import arrow.effects.IO
-import arrow.effects.extensions.io.applicative.applicative
-import arrow.effects.extensions.io.monad.monad
-import arrow.effects.fix
+import arrow.core.extensions.list.traverse.sequence
+import arrow.core.extensions.list.traverse.traverse
 import arrow.extension
-import arrow.free.bindingStackSafe
-import arrow.free.run
+import arrow.fx.IO
+import arrow.fx.extensions.fx
+import arrow.fx.extensions.io.applicative.applicative
+import arrow.fx.fix
 import arrow.typeclasses.Applicative
 import arrow.typeclasses.Functor
 import arrow.typeclasses.Monad
@@ -54,7 +50,7 @@ class Gen<A>(val unGen: (Tuple2<RandSeed, Int>) -> A) : GenOf<A> {
      * FIXME This is as of now not stacksafe
      * generate values that pass a predicate, increase size on failure until a value was generated
      */
-    fun suchThat(pred: (A) -> Boolean): Gen<A> = Gen.monad().binding {
+    fun suchThat(pred: (A) -> Boolean): Gen<A> = Gen.monad().fx.monad {
         suchThatOption(pred).bind().fold({
             sized { suchThat(pred).resize(it + 1) }.bind()
         }, {
@@ -69,13 +65,13 @@ class Gen<A>(val unGen: (Tuple2<RandSeed, Int>) -> A) : GenOf<A> {
     fun suchThatOption(pred: (A) -> Boolean): Gen<Option<A>> =
         sized {
             fun attempt(m: Int, n: Int): Gen<Option<A>> =
-                Gen.monad().bindingStackSafe {
+                Gen.monad().fx.monad {
                     if (m > n) none()
                     else {
                         val res = resize(m).bind()
                         if (pred(res)) res.some() else attempt(m + 1, n).bind()
                     }
-                }.run(Gen.monad()).fix()
+                }.fix()
             attempt(it, it * 2)
         }
 
@@ -90,7 +86,7 @@ class Gen<A>(val unGen: (Tuple2<RandSeed, Int>) -> A) : GenOf<A> {
      * turn this gen into one that generates lists
      */
     fun listOf(): Gen<List<A>> = sized { n ->
-        Gen.monad().binding {
+        Gen.monad().fx.monad {
             val k = choose(0 toT n, Int.random()).bind()
             this@Gen.vectorOf(k).bind()
         }.fix()
@@ -100,7 +96,7 @@ class Gen<A>(val unGen: (Tuple2<RandSeed, Int>) -> A) : GenOf<A> {
      * Generate non empty lists
      */
     fun nelOf(): Gen<Nel<A>> = sized { n ->
-        Gen.monad().binding {
+        Gen.monad().fx.monad {
             val k = choose(1 toT Math.max(1, n), Int.random()).bind()
             Nel.fromListUnsafe(this@Gen.vectorOf(k).bind())
         }.fix()
@@ -109,7 +105,7 @@ class Gen<A>(val unGen: (Tuple2<RandSeed, Int>) -> A) : GenOf<A> {
     /**
      * generate lists of a given size
      */
-    fun vectorOf(n: Int): Gen<List<A>> = Gen.monad().binding {
+    fun vectorOf(n: Int): Gen<List<A>> = Gen.monad().fx.monad {
         (0..(n - 1)).toList().map { this@Gen.bind() }
     }.fix()
 
@@ -142,7 +138,7 @@ class Gen<A>(val unGen: (Tuple2<RandSeed, Int>) -> A) : GenOf<A> {
          */
         fun <A> oneOf(vararg gens: Gen<out A>): Gen<A> = if (gens.isEmpty())
             throw IllegalArgumentException("oneOf cannot work without generators")
-        else Gen.monad().binding {
+        else Gen.monad().fx.monad {
             gens[choose(0 toT gens.size, Int.random()).bind()].bind()
         }.fix()
 
@@ -151,7 +147,7 @@ class Gen<A>(val unGen: (Tuple2<RandSeed, Int>) -> A) : GenOf<A> {
          */
         fun <A> frequency(vararg gens: Tuple2<Int, Gen<out A>>): Gen<A> = if (gens.isEmpty())
             throw IllegalArgumentException("frequency cannot work without generators")
-        else Gen.monad().binding {
+        else Gen.monad().fx.monad {
             val sum = gens.map { it.a }.sum() + 1 // + 1 for inclusive range
             val c = choose(0 toT sum, Int.random()).bind()
 
@@ -169,21 +165,21 @@ class Gen<A>(val unGen: (Tuple2<RandSeed, Int>) -> A) : GenOf<A> {
          */
         fun <A> elements(vararg el: A): Gen<A> = if (el.isEmpty())
             throw IllegalArgumentException("elements cannot work without elements")
-        else Gen.monad().binding {
+        else Gen.monad().fx.monad {
             el[choose(0 toT el.size, Int.random()).bind()]
         }.fix()
 
         /**
          * choose a random sublist from a given list
          */
-        fun <A> sublistOf(list: List<A>): Gen<List<A>> = Gen.monad().binding {
+        fun <A> sublistOf(list: List<A>): Gen<List<A>> = Gen.monad().fx.monad {
             list.filter { chooseAny(Boolean.random()).bind() }
         }.fix()
 
         /**
          * shuffle a given list
          */
-        fun <A> shuffle(list: List<A>): Gen<List<A>> = Gen.monad().binding {
+        fun <A> shuffle(list: List<A>): Gen<List<A>> = Gen.monad().fx.monad {
             val l = arbitraryBoundedInt().vectorOf(list.size).bind()
             list.zip(l).sortedBy { it.second }.map { it.first }
         }.fix()
@@ -222,13 +218,13 @@ class Gen<A>(val unGen: (Tuple2<RandSeed, Int>) -> A) : GenOf<A> {
                 }
             }
         }.flatMap {
-            IO.monad().binding {
+            IO.fx {
                 IO { println("$name:") }.bind()
                 it.entries.toList().sortedBy { (_, v) -> v }.map { (k, v) -> k toT v }
                     .traverse(IO.applicative()) { (k, v) ->
                         IO { println("${"%.2f".format(100 * (v.toDouble() / n.toDouble()))}% $k") }
                     }.fix().flatMap { IO.unit }.bind()
-            }.fix()
+            }
         }
 }
 
