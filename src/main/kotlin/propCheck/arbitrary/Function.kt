@@ -21,7 +21,7 @@ import propCheck.propCheck
 
 fun main() {
     propCheck {
-        forAll(Fun.arbitrary(Boolean.arbitrary(), Byte.func()), Fun.show(Byte.show(), Boolean.show())) { (f) ->
+        forAll(Fun.arbitrary(Boolean.arbitrary(), Long.func()), Fun.show(Long.show(), Boolean.show())) { (f) ->
             f(100)
         }
     }
@@ -216,14 +216,13 @@ fun <A, B, C> funMap(fb: Func<B>, f: (A) -> B, cF: (B) -> A, g: (A) -> C): Fn<A,
 fun <A, B, C> funPair(fA: Func<A>, fB: Func<B>, f: (Tuple2<A, B>) -> C): Fn<Tuple2<A, B>, C> = fA.run {
     fB.run {
         Fn.PairFn(
-            function { a: A ->
-                function { b: B ->
-                    f(a toT b)
-                }
-            }
+            function(f.curry()).map { function(it) }
         )
     }
 }
+
+private fun <A, B, C> ((Tuple2<A, B>) -> C).curry(): ((A) -> ((B) -> C)) =
+    { a -> { b -> this(a toT b) }}
 
 fun <A, B, C> funEither(fA: Func<A>, fB: Func<B>, f: (Either<A, B>) -> C): Fn<Either<A, B>, C> =
     Fn.EitherFn(

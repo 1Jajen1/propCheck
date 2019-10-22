@@ -1,14 +1,15 @@
 package propCheck.instances
 
 import arrow.core.*
+import propCheck.Args
 import propCheck.arbitrary.*
 import propCheck.arbitrary.gen.monad.monad
 import propCheck.arbitrary.tuple2.func.func
+import propCheck.forAll
 import propCheck.instances.either.func.func
 import propCheck.instances.listk.arbitrary.arbitrary
 import propCheck.instances.listk.func.func
-import java.math.BigInteger
-import kotlin.math.absoluteValue
+import propCheck.propCheck
 
 interface IntArbitrary : Arbitrary<Int> {
     override fun arbitrary(): Gen<Int> = arbitrarySizedInt()
@@ -32,14 +33,33 @@ interface LongArbitrary : Arbitrary<Long> {
 fun Long.Companion.arbitrary(): Arbitrary<Long> = object :
     LongArbitrary {}
 
+// I don't like this code, there must be better ways
 interface LongFunc : Func<Long> {
     override fun <B> function(f: (Long) -> B): Fn<Long, B> =
-        funMap(ListK.func(Byte.func()), {
-            it.toBigInteger().toByteArray().toList().k()
-        }, {
-            if (it.isEmpty()) 0
-            else BigInteger(it.toByteArray()).toLong()
-        }, f)
+        funMap(
+            Tuple2.func(UByte.func(), Tuple2.func(UByte.func(), Tuple2.func(UByte.func(), Tuple2.func(UByte.func(), Tuple2.func(UByte.func(), Tuple2.func(UByte.func(), Tuple2.func(UByte.func(), UByte.func()))))))),
+            {
+                val l = it.toByteList()
+                l[0] toT (l[1] toT (l[2] toT (l[3] toT (l[4] toT (l[5] toT (l[6] toT l[7]))))))
+            },
+            { (a, xs) ->
+                listOf(a, xs.a, xs.b.a, xs.b.b.a, xs.b.b.b.a, xs.b.b.b.b.a, xs.b.b.b.b.b.a, xs.b.b.b.b.b.b).toLong()
+            }, f)
+}
+
+// TODO: do the other unsigned types
+interface UByteFunc : Func<UByte> {
+    override fun <B> function(f: (UByte) -> B): Fn<UByte, B> =
+        funList((UByte.MIN_VALUE..UByte.MAX_VALUE).map { it.toUByte() }, f)
+}
+fun UByte.Companion.func(): Func<UByte> = object : UByteFunc {}
+
+private fun List<UByte>.toLong() = foldIndexed(0L) { i, acc, v ->
+    acc or (v.toLong().shl(8 * i))
+}
+private fun Long.toByteList(): List<UByte> = when (this) {
+    0L -> emptyList()
+    else -> listOf(this.and(UByte.MAX_VALUE.toLong()).toUByte()) + this.ushr(8).toByteList()
 }
 
 fun Long.Companion.func(): Func<Long> = object : LongFunc {}
