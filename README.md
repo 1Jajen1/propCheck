@@ -95,7 +95,7 @@ fun shrink(fail: A): Sequence<A> = emptySequence()
 ```
 Since shrink has a default implementation (no shrinking) the main focus for generating custom data is on `.arbitrary()`.
 
-In the following examplee we wirite a simple generator for a user data class:
+In the following example we wirite a simple generator for a user data class:
 ```kotlin
 data class User(val name: String, val age: Int, val friends: List<String>)
 
@@ -134,8 +134,8 @@ Here `shrinkMap` is used to implement shrinking. `shrinkMap` returns a shrinking
 
 This is how a failed test would look with shrinking (just output, no exceptions)
 ```kotlin
-propCcheck {
-    forAllShrink(userArb) { user ->
+propCheck {
+    forAll(userArb) { user ->
         user.age < 20 // Fail for users older than 20
     }
 }
