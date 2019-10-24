@@ -6,6 +6,7 @@ import arrow.typeclasses.Show
 import propCheck.arbitrary.*
 import propCheck.arbitrary.gen.applicative.applicative
 import propCheck.arbitrary.tuple2.func.func
+import propCheck.instances.either.func.func
 import propCheck.instances.option.func.func
 import java.lang.IllegalStateException
 
@@ -49,15 +50,11 @@ interface IorFunc<L, R> : Func<Ior<L, R>> {
     fun RF(): Func<R>
 
     override fun <B> function(f: (Ior<L, R>) -> B): Fn<Ior<L, R>, B> =
-        funMap(Tuple2.func(Option.func(LF()), Option.func(RF())), {
-            it.fold({ it.some() toT none() }, { none<L>() toT it.some() }, { l, r -> l.some() toT r.some() })
-        }, { (l, r) ->
-            when (l) {
-                is Some -> if (r is Some) Ior.Both(l.t, r.t) else Ior.Left(l.t)
-                else -> when (r) {
-                    is Some -> Ior.Right(r.t)
-                    else -> throw IllegalStateException("Cannot and should not happen")
-                }
-            }
+        funMap(Either.func(Either.func(LF(), RF()), Tuple2.func(LF(), RF())), {
+            it.fold({ it.left().left() }, { it.right().left() }, { l, r -> (l toT r).right() })
+        }, {
+            it.fold({
+                it.fold({ it.leftIor() }, { it.rightIor() })
+            }, { (l, r) -> Ior.Both(l, r) })
         }, f)
 }
