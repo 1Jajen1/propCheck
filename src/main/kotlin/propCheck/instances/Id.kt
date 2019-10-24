@@ -25,3 +25,9 @@ interface IdFunc<A> : Func<Id<A>> {
 
     override fun <B> function(f: (Id<A>) -> B): Fn<Id<A>, B> = funMap(AF(), { it.value() }, ::Id, f)
 }
+
+@extension
+interface IdCoarbitrary<A> : Coarbitrary<Id<A>> {
+    fun CA(): Coarbitrary<A>
+    override fun <B> Gen<B>.coarbitrary(a: Id<A>): Gen<B> = CA().run { coarbitrary(a.value()) }
+}

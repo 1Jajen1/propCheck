@@ -40,3 +40,14 @@ interface EitherFunc<L, R> : Func<Either<L, R>> {
 
     override fun <B> function(f: (Either<L, R>) -> B): Fn<Either<L, R>, B> = funEither(LF(), RF(), f)
 }
+
+@extension
+interface EitherCoarbitrary<L, R> : Coarbitrary<Either<L, R>> {
+    fun CL(): Coarbitrary<L>
+    fun CR(): Coarbitrary<R>
+    override fun <B> Gen<B>.coarbitrary(a: Either<L, R>): Gen<B> = a.fold({ l ->
+        CL().run { coarbitrary(l).variant(0) }
+    }, { r ->
+        CR().run { coarbitrary(r).variant(1) }
+    })
+}

@@ -4,6 +4,7 @@ import arrow.core.*
 import arrow.extension
 import arrow.typeclasses.Show
 import propCheck.arbitrary.*
+import propCheck.arbitrary.tuple2.coarbitrary.coarbitrary
 import propCheck.arbitrary.tuple2.func.func
 import propCheck.instances.either.func.func
 
@@ -50,4 +51,15 @@ interface ListKFunc<A> : Func<ListK<A>> {
         }, {
             it.fold({ emptyList<A>() }, { listOf(it.a) + it.b }).k()
         }, f)
+}
+
+@extension
+interface ListKCoarbitrary<A> : Coarbitrary<ListK<A>> {
+    fun CA(): Coarbitrary<A>
+
+    override fun <B> Gen<B>.coarbitrary(a: ListK<A>): Gen<B> =
+        if (a.isEmpty()) variant(0)
+        else Tuple2.coarbitrary(CA(), this@ListKCoarbitrary).run {
+            coarbitrary(a.first() toT a.drop(1).k())
+        }
 }

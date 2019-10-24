@@ -13,14 +13,17 @@ import propCheck.arbitrary.nonpositive.arbitrary.arbitrary
 import propCheck.arbitrary.positive.arbitrary.arbitrary
 import propCheck.arbitrary.shrink2.arbitrary.arbitrary
 import propCheck.arbitrary.smart.arbitrary.arbitrary
+import propCheck.arbitrary.tuple2.coarbitrary.coarbitrary
 import propCheck.arbitrary.tuple2.func.func
 import propCheck.arbitrary.unicodestring.arbitrary.arbitrary
 import propCheck.instances.*
 import propCheck.instances.either.arbitrary.arbitrary
+import propCheck.instances.either.coarbitrary.coarbitrary
 import propCheck.instances.either.func.func
 import propCheck.instances.id.arbitrary.arbitrary
 import propCheck.instances.ior.arbitrary.arbitrary
 import propCheck.instances.listk.arbitrary.arbitrary
+import propCheck.instances.listk.coarbitrary.coarbitrary
 import propCheck.instances.listk.func.func
 import propCheck.instances.mapk.arbitrary.arbitrary
 import propCheck.instances.nonemptylist.arbitrary.arbitrary
@@ -82,7 +85,12 @@ class ReflectionSpec : WordSpec({
         }
         "TupleN arbitrary instances" {
             defArbitrary<Tuple2<Int, Int>>() == Tuple2.arbitrary(Int.arbitrary(), Int.arbitrary())
-            defArbitrary<Tuple4<Int, String, String, Int>>() == Tuple4.arbitrary(Int.arbitrary(), String.arbitrary(), String.arbitrary(), Int.arbitrary())
+            defArbitrary<Tuple4<Int, String, String, Int>>() == Tuple4.arbitrary(
+                Int.arbitrary(),
+                String.arbitrary(),
+                String.arbitrary(),
+                Int.arbitrary()
+            )
         }
         "Pair arbitrary instaces" {
             // TODO
@@ -159,14 +167,21 @@ class ReflectionSpec : WordSpec({
                     )
         }
         "fun arbitrary instances" {
-            defArbitrary<Fun<Int, String>>() == Fun.arbitrary(Int.func(), String.arbitrary())
+            defArbitrary<Fun<Int, String>>() == Fun.arbitrary(Int.func(), Int.coarbitrary(), String.arbitrary())
         }
         "fun arbitrary instances2" {
             defArbitrary<Fun<Either<Long, Tuple2<Char, ListK<String>>>, Byte>>() ==
-                    Fun.arbitrary(Either.func(
-                        Long.func(),
-                        Tuple2.func(Char.func(), ListK.func(String.func()))
-                    ), Byte.arbitrary())
+                    Fun.arbitrary(
+                        Either.func(
+                            Long.func(),
+                            Tuple2.func(Char.func(), ListK.func(String.func()))
+                        ),
+                        Either.coarbitrary(
+                            Long.coarbitrary(),
+                            Tuple2.coarbitrary(Char.coarbitrary(), ListK.coarbitrary(String.coarbitrary()))
+                        ),
+                        Byte.arbitrary()
+                    )
         }
     }
 })

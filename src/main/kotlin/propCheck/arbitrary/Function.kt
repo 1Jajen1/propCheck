@@ -5,6 +5,7 @@ import arrow.core.*
 import arrow.core.extensions.show
 import arrow.extension
 import arrow.typeclasses.Functor
+import arrow.typeclasses.Monad
 import arrow.typeclasses.Show
 import propCheck.arbitrary.`fun`.arbitrary.arbitrary
 import propCheck.arbitrary.`fun`.show.show
@@ -12,9 +13,12 @@ import propCheck.arbitrary.fn.arbitrary.arbitrary
 import propCheck.arbitrary.fn.functor.functor
 import propCheck.arbitrary.fn.functor.map
 import propCheck.arbitrary.gen.applicative.applicative
+import propCheck.delay
 import propCheck.forAll
 import propCheck.instances.arbitrary
 import propCheck.instances.func
+import propCheck.instances.function1.arbitrary.arbitrary
+import propCheck.promote
 import propCheck.propCheck
 
 // @higherkind boilerplate
@@ -53,14 +57,15 @@ interface FunShow<A, B> : Show<Fun<A, B>> {
 @extension
 interface FunArbitrary<A, B> : Arbitrary<Fun<A, B>> {
     fun FA(): Func<A>
+    fun CA(): Coarbitrary<A>
     fun AB(): Arbitrary<B>
 
     override fun arbitrary(): Gen<Fun<A, B>> =
-        Gen.applicative().map(Fn.arbitrary(FA(), AB()).arbitrary(), AB().arbitrary()) { (fn, d) ->
+        Gen.applicative().map(Fn.arbitrary(FA(), CA(), AB()).arbitrary(), AB().arbitrary()) { (fn, d) ->
             Fun(fn, d, false, abstract(fn, d).f)
         }.fix()
 
-    override fun shrink(fail: Fun<A, B>): Sequence<Fun<A, B>> = Fn.arbitrary(FA(), AB()).shrink(fail.fn).map {
+    override fun shrink(fail: Fun<A, B>): Sequence<Fun<A, B>> = Fn.arbitrary(FA(), CA(), AB()).shrink(fail.fn).map {
         Fun(it, fail.d, false, abstract(it, fail.d).f)
     } + (if (!fail.shrunk) sequenceOf(Fun(fail.fn, fail.d, true, fail.f)) else emptySequence())
 }
@@ -117,10 +122,10 @@ interface FnFunctor<C> : Functor<FnPartialOf<C>> {
 @extension
 interface FnArbitrary<A, B> : Arbitrary<Fn<A, B>> {
     fun FA(): Func<A>
+    fun CA(): Coarbitrary<A>
     fun AB(): Arbitrary<B>
-
     override fun arbitrary(): Gen<Fn<A, B>> = FA().run {
-        AB().arbitrary().map { b -> function { b } }
+        Function1.arbitrary(CA(), AB()).arbitrary().map { function(it.f) }
     }
 
     override fun shrink(fail: Fn<A, B>): Sequence<Fn<A, B>> = shrinkFun(fail) { AB().shrink(it) }

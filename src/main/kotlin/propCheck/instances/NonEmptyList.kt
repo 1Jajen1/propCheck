@@ -4,7 +4,9 @@ import arrow.core.*
 import arrow.extension
 import arrow.typeclasses.Show
 import propCheck.arbitrary.*
+import propCheck.arbitrary.tuple2.coarbitrary.coarbitrary
 import propCheck.arbitrary.tuple2.func.func
+import propCheck.instances.listk.coarbitrary.coarbitrary
 import propCheck.instances.listk.func.func
 
 @extension
@@ -31,4 +33,12 @@ interface NonEmptyListFunc<A> : Func<NonEmptyList<A>> {
         }, { (h, t) ->
             NonEmptyList(h, t)
         }, f)
+}
+
+@extension
+interface NonEmptyListCoarbitrary<A> : Coarbitrary<NonEmptyList<A>> {
+    fun CA(): Coarbitrary<A>
+    override fun <B> Gen<B>.coarbitrary(a: Nel<A>): Gen<B> = Tuple2.coarbitrary(CA(), ListK.coarbitrary(CA())).run {
+        coarbitrary(a.head toT a.tail.k())
+    }
 }

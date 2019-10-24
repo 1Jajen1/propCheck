@@ -58,3 +58,21 @@ interface IorFunc<L, R> : Func<Ior<L, R>> {
             }, { (l, r) -> Ior.Both(l, r) })
         }, f)
 }
+
+@extension
+interface IorCoarbitrary<L, R> : Coarbitrary<Ior<L, R>> {
+    fun CL(): Coarbitrary<L>
+    fun CR(): Coarbitrary<R>
+
+    override fun <B> Gen<B>.coarbitrary(a: Ior<L, R>): Gen<B> = a.fold({ l ->
+        CL().run { coarbitrary(l).variant(0) }
+    }, { r ->
+        CR().run { coarbitrary(r).variant(1) }
+    }, { l, r ->
+        CL().run {
+            CR().run {
+                coarbitrary(l).coarbitrary(r).variant(2)
+            }
+        }
+    })
+}

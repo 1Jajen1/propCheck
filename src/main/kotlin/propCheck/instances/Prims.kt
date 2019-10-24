@@ -8,6 +8,7 @@ import propCheck.arbitrary.tuple2.func.func
 import propCheck.forAll
 import propCheck.instances.either.func.func
 import propCheck.instances.listk.arbitrary.arbitrary
+import propCheck.instances.listk.coarbitrary.coarbitrary
 import propCheck.instances.listk.func.func
 import propCheck.propCheck
 
@@ -25,6 +26,12 @@ interface IntFunc : Func<Int> {
 
 fun Int.Companion.func(): Func<Int> = object : IntFunc {}
 
+interface IntCoarbitrary : Coarbitrary<Int> {
+    override fun <B> Gen<B>.coarbitrary(a: Int): Gen<B> = variant(a.toLong())
+}
+
+fun Int.Companion.coarbitrary(): Coarbitrary<Int> = object : IntCoarbitrary {}
+
 interface LongArbitrary : Arbitrary<Long> {
     override fun arbitrary(): Gen<Long> = arbitrarySizedLong()
     override fun shrink(fail: Long): Sequence<Long> = shrinkLong(fail)
@@ -32,6 +39,12 @@ interface LongArbitrary : Arbitrary<Long> {
 
 fun Long.Companion.arbitrary(): Arbitrary<Long> = object :
     LongArbitrary {}
+
+interface LongCoarbitrary : Coarbitrary<Long> {
+    override fun <B> Gen<B>.coarbitrary(a: Long): Gen<B> = variant(a)
+}
+
+fun Long.Companion.coarbitrary(): Coarbitrary<Long> = object : LongCoarbitrary {}
 
 // I don't like this code, there must be better ways
 interface LongFunc : Func<Long> {
@@ -87,6 +100,12 @@ interface FloatFunc : Func<Float> {
 
 fun Float.Companion.func(): Func<Float> = object : FloatFunc {}
 
+interface FloatCoarbitrary : Coarbitrary<Float> {
+    override fun <B> Gen<B>.coarbitrary(a: Float): Gen<B> = variant(a.toDouble().toRawBits())
+}
+
+fun Float.Companion.coarbitrary(): Coarbitrary<Float> = object : FloatCoarbitrary {}
+
 interface DoubleArbitrary : Arbitrary<Double> {
     override fun arbitrary(): Gen<Double> = arbitrarySizedDouble()
     override fun shrink(fail: Double): Sequence<Double> = shrinkDouble(fail)
@@ -106,6 +125,12 @@ interface DoubleFunc : Func<Double> {
 
 fun Double.Companion.func(): Func<Double> = object : DoubleFunc {}
 
+interface DoubleCoarbitrary : Coarbitrary<Double> {
+    override fun <B> Gen<B>.coarbitrary(a: Double): Gen<B> = variant(a.toRawBits())
+}
+
+fun Double.Companion.coarbitrary(): Coarbitrary<Double> = object : DoubleCoarbitrary {}
+
 interface BooleanArbitrary : Arbitrary<Boolean> {
     override fun arbitrary(): Gen<Boolean> = Gen.elements(true, false)
     override fun shrink(fail: Boolean): Sequence<Boolean> = if (fail) sequenceOf(false) else emptySequence()
@@ -124,6 +149,12 @@ interface BooleanFunc : Func<Boolean> {
 
 fun Boolean.Companion.func(): Func<Boolean> = object : BooleanFunc {}
 
+interface BooleanCoarbitrary : Coarbitrary<Boolean> {
+    override fun <B> Gen<B>.coarbitrary(a: Boolean): Gen<B> = variant(if (a) 1L else 0L)
+}
+
+fun Boolean.Companion.coarbitrary(): Coarbitrary<Boolean> = object : BooleanCoarbitrary {}
+
 interface ByteArbitrary : Arbitrary<Byte> {
     override fun arbitrary(): Gen<Byte> = arbitrarySizedByte()
     override fun shrink(fail: Byte): Sequence<Byte> = shrinkByte(fail)
@@ -137,6 +168,12 @@ interface ByteFunc : Func<Byte> {
 }
 
 fun Byte.Companion.func(): Func<Byte> = object : ByteFunc {}
+
+interface ByteCoarbitrary : Coarbitrary<Byte> {
+    override fun <B> Gen<B>.coarbitrary(a: Byte): Gen<B> = variant(a.toLong())
+}
+
+fun Byte.Companion.coarbitrary(): Coarbitrary<Byte> = object : ByteCoarbitrary {}
 
 interface CharArbitrary : Arbitrary<Char> {
     override fun arbitrary(): Gen<Char> = Gen.frequency(
@@ -157,6 +194,12 @@ interface CharFunc : Func<Char> {
 
 fun Char.Companion.func(): Func<Char> = object : CharFunc {}
 
+interface CharCoarbitrary : Coarbitrary<Char> {
+    override fun <B> Gen<B>.coarbitrary(a: Char): Gen<B> = variant(a.toLong())
+}
+
+fun Char.Companion.coarbitrary(): Coarbitrary<Char> = object : CharCoarbitrary {}
+
 // not really a prim but included for simplicity
 interface StringArbitrary : Arbitrary<String> {
     override fun arbitrary(): Gen<String> = arbitraryASCIIString()
@@ -176,6 +219,14 @@ interface StringFunc : Func<String> {
 }
 
 fun String.Companion.func(): Func<String> = object : StringFunc {}
+
+interface StringCoarbitrary : Coarbitrary<String> {
+    override fun <B> Gen<B>.coarbitrary(a: String): Gen<B> = ListK.coarbitrary(Char.coarbitrary()).run {
+        coarbitrary(a.toCharArray().toList().k())
+    }
+}
+
+fun String.Companion.coarbitrary(): Coarbitrary<String> = object : StringCoarbitrary {}
 
 // ---------- arrays
 val intArrayArb = object : Arbitrary<IntArray> {

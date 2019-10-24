@@ -18,3 +18,9 @@ interface ConstFunc<A, T> : Func<Const<A, T>> {
     fun AF(): Func<A>
     override fun <B> function(f: (Const<A, T>) -> B): Fn<Const<A, T>, B> = funMap(AF(), { it.value() }, ::Const, f)
 }
+
+@extension
+interface ConstCoarbitrary<A, T> : Coarbitrary<Const<A, T>> {
+    fun CA(): Coarbitrary<A>
+    override fun <B> Gen<B>.coarbitrary(a: Const<A, T>): Gen<B> = CA().run { coarbitrary(a.value()) }
+}

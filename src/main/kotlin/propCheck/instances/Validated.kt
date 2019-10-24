@@ -7,6 +7,7 @@ import arrow.core.valid
 import arrow.extension
 import arrow.typeclasses.Show
 import propCheck.arbitrary.*
+import propCheck.instances.either.coarbitrary.coarbitrary
 import propCheck.instances.either.func.func
 
 @extension
@@ -46,4 +47,14 @@ interface ValidatedFunc<E, A> : Func<Validated<E, A>> {
         }, {
             it.fold({ it.invalid() }, { it.valid() })
         }, f)
+}
+
+@extension
+interface ValidatedCoarbitrary<E, A> : Coarbitrary<Validated<E, A>> {
+    fun CE(): Coarbitrary<E>
+    fun CA(): Coarbitrary<A>
+
+    override fun <B> Gen<B>.coarbitrary(a: Validated<E, A>): Gen<B> = Either.coarbitrary(CE(), CA()).run {
+        coarbitrary(a.toEither())
+    }
 }

@@ -6,6 +6,7 @@ import arrow.core.k
 import arrow.extension
 import arrow.typeclasses.Show
 import propCheck.arbitrary.*
+import propCheck.instances.listk.coarbitrary.coarbitrary
 import propCheck.instances.listk.func.func
 
 @extension
@@ -30,4 +31,13 @@ interface SetKFunc<A> : Func<SetK<A>> {
         }, {
             it.toSet().k()
         }, f)
+}
+
+@extension
+interface SetKCoarbitrary<A> : Coarbitrary<SetK<A>> {
+    fun CA(): Coarbitrary<A>
+
+    override fun <B> Gen<B>.coarbitrary(a: SetK<A>): Gen<B> = ListK.coarbitrary(CA()).run {
+        coarbitrary(a.toList().k())
+    }
 }

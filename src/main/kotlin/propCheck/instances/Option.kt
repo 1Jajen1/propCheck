@@ -41,3 +41,14 @@ interface OptionFunc<A> : Func<Option<A>> {
             it.fold({ none() }, ::Some)
         }, f)
 }
+
+@extension
+interface OptionCoarbitrary<A> : Coarbitrary<Option<A>> {
+    fun CA(): Coarbitrary<A>
+
+    override fun <B> Gen<B>.coarbitrary(a: Option<A>): Gen<B> = a.fold({
+        variant(0)
+    }, { a ->
+        CA().run { coarbitrary(a).variant(1) }
+    })
+}

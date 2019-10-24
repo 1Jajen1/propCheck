@@ -21,6 +21,32 @@ class RandSeed private constructor(
 
     override fun toString(): String = "RandSeed($seed, $gamma)"
 
+    // See http://hackage.haskell.org/package/QuickCheck-2.13.2/docs/src/Test.QuickCheck.Random.html#integerVariant
+    fun variant(i: Long): RandSeed = when {
+        i >= 1 -> gammaF(i)(this.split().a)
+        else -> gammaF(1 - i)(this.split().b)
+    }
+    private fun gammaF(i: Long): (RandSeed) -> RandSeed = {
+        ilog2(i).let { k ->
+            encode(i, k, zeroes(k, it))
+        }
+    }
+    private fun encode(n: Long, k: Int, r: RandSeed): RandSeed = when (k) {
+        -1 -> r
+        else -> when {
+            n and (1L shl k) == 0L -> encode(n, k - 1, r.split().a)
+            else -> encode(n, k - 1, r.split().b)
+        }
+    }
+    private fun zeroes(n: Int, r: RandSeed): RandSeed = when (n) {
+        0 -> r
+        else -> zeroes(n - 1, r.split().a)
+    }
+    private fun ilog2(i: Long): Int = when (i) {
+        1L -> 0
+        else -> 1 + ilog2(i / 2)
+    }
+
     fun nextLong(): Tuple2<Long, RandSeed> = nextSeed(seed, gamma).let { mix64(it) toT RandSeed(it, gamma) }
     fun nextLong(origin: Long, bound: Long): Tuple2<Long, RandSeed> = when {
         origin >= bound -> throw IllegalArgumentException("Invalid bounds $origin $bound")

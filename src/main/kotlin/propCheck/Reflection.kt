@@ -27,25 +27,34 @@ import propCheck.arbitrary.shrink2.arbitrary.arbitrary
 import propCheck.arbitrary.shrink2.show.show
 import propCheck.arbitrary.smart.arbitrary.arbitrary
 import propCheck.arbitrary.smart.show.show
+import propCheck.arbitrary.tuple2.coarbitrary.coarbitrary
 import propCheck.arbitrary.tuple2.func.func
 import propCheck.arbitrary.unicodestring.arbitrary.arbitrary
 import propCheck.arbitrary.unicodestring.show.show
 import propCheck.instances.*
 import propCheck.instances.either.arbitrary.arbitrary
+import propCheck.instances.either.coarbitrary.coarbitrary
 import propCheck.instances.either.func.func
 import propCheck.instances.id.arbitrary.arbitrary
+import propCheck.instances.id.coarbitrary.coarbitrary
 import propCheck.instances.id.func.func
 import propCheck.instances.ior.arbitrary.arbitrary
+import propCheck.instances.ior.coarbitrary.coarbitrary
 import propCheck.instances.ior.func.func
 import propCheck.instances.listk.arbitrary.arbitrary
+import propCheck.instances.listk.coarbitrary.coarbitrary
 import propCheck.instances.listk.func.func
 import propCheck.instances.mapk.arbitrary.arbitrary
+import propCheck.instances.mapk.coarbitrary.coarbitrary
 import propCheck.instances.mapk.func.func
 import propCheck.instances.nonemptylist.arbitrary.arbitrary
+import propCheck.instances.nonemptylist.coarbitrary.coarbitrary
 import propCheck.instances.nonemptylist.func.func
 import propCheck.instances.option.arbitrary.arbitrary
+import propCheck.instances.option.coarbitrary.coarbitrary
 import propCheck.instances.option.func.func
 import propCheck.instances.setk.arbitrary.arbitrary
+import propCheck.instances.setk.coarbitrary.coarbitrary
 import propCheck.instances.setk.func.func
 import propCheck.instances.tuple10.arbitrary.arbitrary
 import propCheck.instances.tuple11.arbitrary.arbitrary
@@ -69,6 +78,7 @@ import propCheck.instances.tuple7.arbitrary.arbitrary
 import propCheck.instances.tuple8.arbitrary.arbitrary
 import propCheck.instances.tuple9.arbitrary.arbitrary
 import propCheck.instances.validated.arbitrary.arbitrary
+import propCheck.instances.validated.coarbitrary.coarbitrary
 import propCheck.instances.validated.func.func
 import propCheck.property.testable.testable
 import propCheck.testresult.testable.testable
@@ -480,14 +490,116 @@ fun <A : Any> lookupArbyWithGenerics(klass: Class<A>, l: Nel<Type>): Arbitrary<A
             name == Fun::class.qualifiedName || name == Fun::class.java.name -> lookupArbyAndFunc(
                 klass,
                 l
-            ) { f, a -> Fun.arbitrary(f, a) }
+            ) { f, ca, a -> Fun.arbitrary(f as Func<Any?>, ca as Coarbitrary<Any?>, a) }
             else -> throw IllegalStateException("Unsupported class $name")
         } as Arbitrary<A>
     }
 
-fun <A> lookupArbyAndFunc(klass: Class<A>, l: Nel<Type>, cf: (Func<*>, Arbitrary<*>) -> Arbitrary<*>): Arbitrary<*> =
+fun <A> lookupArbyAndFunc(klass: Class<A>, l: Nel<Type>, cf: (Func<*>, Coarbitrary<*>, Arbitrary<*>) -> Arbitrary<*>): Arbitrary<*> =
     if (l.size != 2) throw IllegalStateException("Could not find default arbitrary for ${klass.name}")
-    else cf(lookupFuncWithPossibleGenerics(l.all[0]), lookupArbyWithPossibleGenerics(l.all[1]))
+    else cf(lookupFuncWithPossibleGenerics(l.all[0]), lookupCoArbyWithPossibleGenerics(l.all[0]), lookupArbyWithPossibleGenerics(l.all[1]))
+
+fun lookupCoArbyWithPossibleGenerics(t: Type): Coarbitrary<*> = when (t) {
+    is ParameterizedType -> Nel.fromList(t.actualTypeArguments.toList()).fold({
+        lookupCoArbyByName(className(0, Nel.of(t)))
+    }, {
+        lookupCoArbyWithGenerics(t.rawType as Class<*>, it)
+    })
+    is WildcardType -> lookupCoArbyWithPossibleGenerics(t.upperBounds.first())
+    is Class<*> -> lookupCoArbyByName(t.name)
+    else -> println("WTF ARE YOU $t").let { throw IllegalStateException("WTF") }
+}
+
+fun lookupCoArbyByName(n: String): Coarbitrary<*> = when (n) {
+    "kotlin.Int", "java.lang.Integer" -> Int.coarbitrary()
+    "kotlin.Long", "java.lang.Long" -> Long.coarbitrary()
+    "kotlin.String", "java.lang.String" -> String.coarbitrary()
+    "kotlin.Char", "java.lang.Character" -> Char.coarbitrary()
+    "kotlin.Float", "java.lang.Float" -> Float.coarbitrary()
+    "kotlin.Double", "java.lang.Double" -> Double.coarbitrary()
+    "kotlin.Boolean", "java.lang.Boolean" -> Boolean.coarbitrary()
+    "kotlin.Byte", "java.lang.Byte" -> Byte.coarbitrary()
+    else -> throw IllegalStateException("Could not find default coarbitrary for $n")
+}
+
+fun <A : Any> lookupCoArbyWithGenerics(klass: Class<A>, l: Nel<Type>): Coarbitrary<A> =
+    klass.name.let { name ->
+        when { // I am keeping the KClass qualified names for now because i might want to use them later ...
+            name == Tuple2::class.qualifiedName || name == Tuple2::class.java.name -> lookupCoArbyNParameters(
+                klass,
+                2,
+                l
+            ) { Tuple2.coarbitrary(it[0], it[1]) }
+            name == Pair::class.qualifiedName || name == Pair::class.java.name -> lookupCoArbyNParameters(
+                klass,
+                2,
+                l
+            ) {
+                object : Tuple2Coarbitrary<Any, Any> {
+                    override fun CA(): Coarbitrary<Any> = it[0] as Coarbitrary<Any>
+                    override fun CB(): Coarbitrary<Any> = it[1] as Coarbitrary<Any>
+                }
+            }
+            name == List::class.qualifiedName || name == ListK::class.qualifiedName ||
+                    name == List::class.java.name || name == ListK::class.java.name -> lookupCoArbyNParameters(
+                klass,
+                1,
+                l
+            ) { ListK.coarbitrary(it[0]) }
+            name == Set::class.qualifiedName || name == SetK::class.qualifiedName ||
+                    name == Set::class.java.name || name == SetK::class.java.name -> lookupCoArbyNParameters(
+                klass,
+                1,
+                l
+            ) { SetK.coarbitrary(it[0]) }
+            name == Map::class.qualifiedName || name == MapK::class.qualifiedName ||
+                    name == Map::class.java.name || name == MapK::class.java.name -> lookupCoArbyNParameters(
+                klass,
+                2,
+                l
+            ) { MapK.coarbitrary(it[0], it[1]) }
+            name == Either::class.qualifiedName || name == Either::class.java.name -> lookupCoArbyNParameters(
+                klass,
+                2,
+                l
+            ) { Either.coarbitrary(it[0], it[1]) }
+            name == Option::class.qualifiedName || name == Option::class.java.name -> lookupCoArbyNParameters(
+                klass,
+                1,
+                l
+            ) { Option.coarbitrary(it[0]) }
+            name == Id::class.qualifiedName || name == Id::class.java.name -> lookupCoArbyNParameters(
+                klass,
+                1,
+                l
+            ) { Id.coarbitrary(it[0]) }
+            name == Ior::class.qualifiedName || name == Ior::class.java.name -> lookupCoArbyNParameters(
+                klass,
+                2,
+                l
+            ) { Ior.coarbitrary(it[0], it[1]) }
+            name == NonEmptyList::class.qualifiedName || name == NonEmptyList::class.java.name -> lookupCoArbyNParameters(
+                klass,
+                1,
+                l
+            ) { Nel.coarbitrary(it[0]) }
+            name == Validated::class.qualifiedName || name == Validated::class.java.name -> lookupCoArbyNParameters(
+                klass,
+                2,
+                l
+            ) { Validated.coarbitrary(it[0], it[1]) }
+            else -> throw IllegalStateException("Unsupported class $name")
+        } as Coarbitrary<A>
+    }
+
+fun <A : Any> lookupCoArbyNParameters(
+    klass: Class<A>,
+    n: Int,
+    l: Nel<Type>,
+    cf: (List<Coarbitrary<*>>) -> Coarbitrary<*>
+): Coarbitrary<*> =
+    if (l.size != n) throw IllegalStateException("Could not find default coarbitrary for ${klass.name}")
+    else cf((1..n).map { lookupCoArbyWithPossibleGenerics(l.all[it - 1]) })
 
 fun lookupFuncWithPossibleGenerics(t: Type): Func<*> = when (t) {
     is ParameterizedType -> Nel.fromList(t.actualTypeArguments.toList()).fold({
@@ -509,7 +621,7 @@ fun lookupFuncByName(n: String): Func<*> = when (n) {
     "kotlin.Double", "java.lang.Double" -> Double.func()
     "kotlin.Boolean", "java.lang.Boolean" -> Boolean.func()
     "kotlin.Byte", "java.lang.Byte" -> Byte.func()
-    else -> throw IllegalStateException("Could not find default arbitrary for $n")
+    else -> throw IllegalStateException("Could not find default func for $n")
 }
 
 fun <A : Any> lookupFuncWithGenerics(klass: Class<A>, l: Nel<Type>): Func<A> =
