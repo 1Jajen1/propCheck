@@ -1043,7 +1043,7 @@ This is a list of types that have predefined instances for `Arbitrary` and thus 
 * `ByteArray` -> `byteArrayArb`
 * `BooleanArray` -> `booleanArrayArb`
 * `Array<T>` -> `arrayArb()` // Cannot be infered by `defArbitrary` atm
-* `(A) -> B` // Generate using the `Fun<A, B>` wrapper, will be documented better later on. (Requires an instance of `Function<A>`, `Coarbitrary<A>` and `Arbitrary<B>`)
+* `(A) -> B` // Generate using the `Fun<A, B>` wrapper, will be documented better later on. (Requires an instance of `Func<A>`, `Coarbitrary<A>` and `Arbitrary<B>`)
 
 #### Collections
 The `K` variants are `arrow` wrappers. They are isomorphic to their non-k variants and can be used as such. That is to say: Every `ListK` is a `List` and vice versa.
