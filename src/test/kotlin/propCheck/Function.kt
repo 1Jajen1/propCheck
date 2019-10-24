@@ -19,7 +19,7 @@ class FunctionSpec : PropertySpec({
                     Eval.later {
                         checkCoverage(
                             cover(
-                                95.0,
+                                90.0,
                                 f(i) != f(j),
                                 "different in => different out",
                                 true
