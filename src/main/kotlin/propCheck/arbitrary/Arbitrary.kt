@@ -130,7 +130,7 @@ fun <A> shrinkList(list: List<A>, f: (A) -> Sequence<A>): Sequence<List<A>> {
     fun shrinkListIt(l: List<A>): Sequence<List<A>> = when (l.size) {
         0 -> emptySequence()
         else -> iterate({ it / 2 }, l.size).takeWhile { it > 0 }
-            .flatMap { k -> removes(k, l.size, l) }
+            .map { k -> removes(k, l.size, l) }.reduce { a, b -> a + b }
     }
 
     fun shrinkOne(l: List<A>): Sequence<List<A>> = when (l.size) {
@@ -147,36 +147,7 @@ fun <A> shrinkList(list: List<A>, f: (A) -> Sequence<A>): Sequence<List<A>> {
 fun shrinkByte(fail: Byte): Sequence<Byte> = (
         (if (fail < 0 && (-fail).toByte() > fail) sequenceOf(-fail) else emptySequence()) +
                 (sequenceOf(0) + iterate({ it / 2 }, fail.toInt()).drop(1)
-                    .map { fail - it }.takeWhile {
-                        when ((it >= 0) toT (fail >= 0)) {
-                            Tuple2(true, true) -> it < fail
-                            Tuple2(false, false) -> it > fail
-                            Tuple2(true, false) -> (it + fail) < 0
-                            Tuple2(false, true) -> (it + fail) > 0
-                            else -> throw IllegalStateException("The impossible happened")
-                        }
-                    }
-                        )
-        ).map { it.toByte() } // safe because shrinking only makes things smaller and we start with a byte anyway
-
-fun shrinkInt(fail: Int): Sequence<Int> = (
-        (if (fail < 0 && -fail > fail) sequenceOf(-fail) else emptySequence()) +
-                (sequenceOf(0) + iterate({ it / 2 }, fail).drop(1)
-                    .map { fail - it }.takeWhile {
-                        when ((it >= 0) toT (fail >= 0)) {
-                            Tuple2(true, true) -> it < fail
-                            Tuple2(false, false) -> it > fail
-                            Tuple2(true, false) -> (it + fail) < 0
-                            Tuple2(false, true) -> (it + fail) > 0
-                            else -> throw IllegalStateException("The impossible happened")
-                        }
-                    }
-                        )
-        )
-
-fun shrinkLong(fail: Long): Sequence<Long> = (
-        (if (fail < 0 && -fail > fail) sequenceOf(-fail) else emptySequence()) +
-                (sequenceOf(0L) + iterate({ it / 2 }, fail).drop(1).map { fail - it }.takeWhile {
+                    .map { fail - it }).takeWhile {
                     when ((it >= 0) toT (fail >= 0)) {
                         Tuple2(true, true) -> it < fail
                         Tuple2(false, false) -> it > fail
@@ -185,7 +156,33 @@ fun shrinkLong(fail: Long): Sequence<Long> = (
                         else -> throw IllegalStateException("The impossible happened")
                     }
                 }
-                        )
+        ).map { it.toByte() } // safe because shrinking only makes things smaller and we start with a byte anyway
+
+fun shrinkInt(fail: Int): Sequence<Int> = (
+        (if (fail < 0 && -fail > fail) sequenceOf(-fail) else emptySequence()) +
+                (sequenceOf(0) + iterate({ it / 2 }, fail).drop(1)
+                    .map { fail - it }).takeWhile {
+                    when ((it >= 0) toT (fail >= 0)) {
+                        Tuple2(true, true) -> it < fail
+                        Tuple2(false, false) -> it > fail
+                        Tuple2(true, false) -> (it + fail) < 0
+                        Tuple2(false, true) -> (it + fail) > 0
+                        else -> throw IllegalStateException("The impossible happened")
+                    }
+                }
+        )
+
+fun shrinkLong(fail: Long): Sequence<Long> = (
+        (if (fail < 0 && -fail > fail) sequenceOf(-fail) else emptySequence()) +
+                (sequenceOf(0L) + iterate({ it / 2 }, fail).drop(1).map { fail - it }).takeWhile {
+                    when ((it >= 0) toT (fail >= 0)) {
+                        Tuple2(true, true) -> it < fail
+                        Tuple2(false, false) -> it > fail
+                        Tuple2(true, false) -> (it + fail) < 0
+                        Tuple2(false, true) -> (it + fail) > 0
+                        else -> throw IllegalStateException("The impossible happened")
+                    }
+                }
         )
 
 fun shrinkFloat(fail: Float): Sequence<Float> = (
