@@ -125,12 +125,12 @@ fun <A> shrinkList(list: List<A>, f: (A) -> Sequence<A>): Sequence<List<A>> {
     fun <F> removes(k: Int, n: Int, l: List<F>): Sequence<List<F>> =
         if (k > n) emptySequence()
         else if (l.isEmpty()) sequenceOf(emptyList())
-        else sequenceOf(l.drop(k)) + removes(k, (n - k), l.drop(k)).map { l.take(k) + it }
+        else sequenceOf(l.drop(k)) + sequenceOf(Unit).flatMap { removes(k, (n - k), l.drop(k)).map { l.take(k) + it } }
 
     fun shrinkListIt(l: List<A>): Sequence<List<A>> = when (l.size) {
         0 -> emptySequence()
         else -> iterate({ it / 2 }, l.size).takeWhile { it > 0 }
-            .map { k -> removes(k, l.size, l) }.reduce { acc, list -> acc + list }
+            .flatMap { k -> removes(k, l.size, l) }
     }
 
     fun shrinkOne(l: List<A>): Sequence<List<A>> = when (l.size) {
@@ -140,7 +140,7 @@ fun <A> shrinkList(list: List<A>, f: (A) -> Sequence<A>): Sequence<List<A>> {
     }
 
     return if (list.isEmpty()) emptySequence()
-    else shrinkListIt(list) + shrinkOne(list)
+    else shrinkListIt(list) + sequenceOf(Unit).flatMap { shrinkOne(list) }
 }
 
 // ---------------------------- Number shrinkers
