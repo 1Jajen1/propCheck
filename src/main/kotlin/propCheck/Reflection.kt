@@ -7,6 +7,8 @@ import arrow.fx.extensions.io.applicativeError.handleError
 import arrow.fx.extensions.io.monadThrow.monadThrow
 import arrow.typeclasses.Show
 import propCheck.arbitrary.*
+import propCheck.arbitrary.`fun`.arbitrary.arbitrary
+import propCheck.arbitrary.`fun`.show.show
 import propCheck.arbitrary.asciistring.arbitrary.arbitrary
 import propCheck.arbitrary.asciistring.show.show
 import propCheck.arbitrary.blind.arbitrary.arbitrary
@@ -25,17 +27,26 @@ import propCheck.arbitrary.shrink2.arbitrary.arbitrary
 import propCheck.arbitrary.shrink2.show.show
 import propCheck.arbitrary.smart.arbitrary.arbitrary
 import propCheck.arbitrary.smart.show.show
+import propCheck.arbitrary.tuple2.func.func
 import propCheck.arbitrary.unicodestring.arbitrary.arbitrary
 import propCheck.arbitrary.unicodestring.show.show
 import propCheck.instances.*
 import propCheck.instances.either.arbitrary.arbitrary
+import propCheck.instances.either.func.func
 import propCheck.instances.id.arbitrary.arbitrary
+import propCheck.instances.id.func.func
 import propCheck.instances.ior.arbitrary.arbitrary
+import propCheck.instances.ior.func.func
 import propCheck.instances.listk.arbitrary.arbitrary
+import propCheck.instances.listk.func.func
 import propCheck.instances.mapk.arbitrary.arbitrary
+import propCheck.instances.mapk.func.func
 import propCheck.instances.nonemptylist.arbitrary.arbitrary
+import propCheck.instances.nonemptylist.func.func
 import propCheck.instances.option.arbitrary.arbitrary
+import propCheck.instances.option.func.func
 import propCheck.instances.setk.arbitrary.arbitrary
+import propCheck.instances.setk.func.func
 import propCheck.instances.tuple10.arbitrary.arbitrary
 import propCheck.instances.tuple11.arbitrary.arbitrary
 import propCheck.instances.tuple12.arbitrary.arbitrary
@@ -58,6 +69,7 @@ import propCheck.instances.tuple7.arbitrary.arbitrary
 import propCheck.instances.tuple8.arbitrary.arbitrary
 import propCheck.instances.tuple9.arbitrary.arbitrary
 import propCheck.instances.validated.arbitrary.arbitrary
+import propCheck.instances.validated.func.func
 import propCheck.property.testable.testable
 import propCheck.testresult.testable.testable
 import java.lang.reflect.ParameterizedType
@@ -70,7 +82,7 @@ import java.lang.reflect.WildcardType
  */
 
 // ------------------ Testable
-inline fun <reified A>defTestable(): Testable<A> = when (A::class.qualifiedName) {
+inline fun <reified A> defTestable(): Testable<A> = when (A::class.qualifiedName) {
     Boolean::class.qualifiedName -> Boolean.testable()
     TestResult::class.qualifiedName -> TestResult.testable()
     Property::class.qualifiedName -> Property.testable()
@@ -82,7 +94,7 @@ fun <A : Any> lookupShow(qualifiedName: String): Show<A> = when (qualifiedName) 
     "kotlin.Int", "java.lang.Integer" -> Int.show()
     "kotlin.Long", "java.lang.Long" -> Long.show()
     "kotlin.String", "java.lang.String" -> String.show()
-    "kotlin.Char", "java.lang.Char" -> Char.show()
+    "kotlin.Char", "java.lang.Character" -> Char.show()
     "kotlin.Float", "java.lang.Float" -> Float.show()
     "kotlin.Double", "java.lang.Double" -> Double.show()
     "kotlin.Boolean", "java.lang.Boolean" -> Boolean.show()
@@ -162,14 +174,22 @@ fun <A : Any> lookupShowWithGenerics(klass: Class<A>, l: Nel<Type>): Show<A> =
                 }
             }
             name == Set::class.qualifiedName || name == SetK::class.qualifiedName ||
-                    name == Set::class.java.name || name == SetK::class.java.name -> lookupShowNParameters(klass, 1, l) {
+                    name == Set::class.java.name || name == SetK::class.java.name -> lookupShowNParameters(
+                klass,
+                1,
+                l
+            ) {
                 object : SetKShow<Any> {
                     override fun SA(): Show<Any> = it[0] as Show<Any>
                 }
             }
             name == Map::class.qualifiedName || name == MapK::class.qualifiedName ||
-                    name == Map::class.java.name || name == MapK::class.java.name -> lookupShowNParameters(klass, 2, l) {
-                object: MapKShow<Any, Any> {
+                    name == Map::class.java.name || name == MapK::class.java.name -> lookupShowNParameters(
+                klass,
+                2,
+                l
+            ) {
+                object : MapKShow<Any, Any> {
                     override fun SK(): Show<Any> = it[0] as Show<Any>
                     override fun SV(): Show<Any> = it[1] as Show<Any>
                 }
@@ -190,35 +210,51 @@ fun <A : Any> lookupShowWithGenerics(klass: Class<A>, l: Nel<Type>): Show<A> =
                 1,
                 l
             ) { Shrink2.show(it[0]) }
-            name == Either::class.qualifiedName || name == Either::class.java.name -> lookupShowNParameters(klass, 2, l) {
-                object: EitherShow<Any, Any> {
+            name == Either::class.qualifiedName || name == Either::class.java.name -> lookupShowNParameters(
+                klass,
+                2,
+                l
+            ) {
+                object : EitherShow<Any, Any> {
                     override fun SL(): Show<Any> = it[0] as Show<Any>
                     override fun SR(): Show<Any> = it[1] as Show<Any>
                 }
             }
-            name == Option::class.qualifiedName || name == Option::class.java.name -> lookupShowNParameters(klass, 1, l) {
-                object: OptionShow<Any> {
+            name == Option::class.qualifiedName || name == Option::class.java.name -> lookupShowNParameters(
+                klass,
+                1,
+                l
+            ) {
+                object : OptionShow<Any> {
                     override fun SA(): Show<Any> = it[0] as Show<Any>
                 }
             }
             name == Id::class.qualifiedName || name == Id::class.java.name -> lookupShowNParameters(klass, 1, l) {
-                object: IdShow<Any> {
+                object : IdShow<Any> {
                     override fun SA(): Show<Any> = it[0] as Show<Any>
                 }
             }
             name == Ior::class.qualifiedName || name == Ior::class.java.name -> lookupShowNParameters(klass, 2, l) {
-                object: IorShow<Any, Any> {
+                object : IorShow<Any, Any> {
                     override fun SL(): Show<Any> = it[0] as Show<Any>
                     override fun SR(): Show<Any> = it[1] as Show<Any>
                 }
             }
-            name == NonEmptyList::class.qualifiedName || name == NonEmptyList::class.java.name -> lookupShowNParameters(klass, 1, l) {
-                object: NonEmptyListShow<Any> {
+            name == NonEmptyList::class.qualifiedName || name == NonEmptyList::class.java.name -> lookupShowNParameters(
+                klass,
+                1,
+                l
+            ) {
+                object : NonEmptyListShow<Any> {
                     override fun SA(): Show<Any> = it[0] as Show<Any>
                 }
             }
-            name == Validated::class.qualifiedName || name == Validated::class.java.name -> lookupShowNParameters(klass, 2, l) {
-                object: ValidatedShow<Any, Any> {
+            name == Validated::class.qualifiedName || name == Validated::class.java.name -> lookupShowNParameters(
+                klass,
+                2,
+                l
+            ) {
+                object : ValidatedShow<Any, Any> {
                     override fun SE(): Show<Any> = it[0] as Show<Any>
                     override fun SA(): Show<Any> = it[1] as Show<Any>
                 }
@@ -243,6 +279,11 @@ fun <A : Any> lookupShowWithGenerics(klass: Class<A>, l: Nel<Type>): Show<A> =
                 1,
                 l
             ) { NonPositive.show(it[0]) }
+            name == Fun::class.qualifiedName || name == Fun::class.java.name -> lookupShowNParameters(
+                klass,
+                2,
+                l
+            ) { Fun.show(it[0], it[1]) }
             else -> Show.any()
         } as Show<A>
     }
@@ -270,7 +311,7 @@ fun <A : Any> lookupArby(qualifiedName: String): Arbitrary<A> = when (qualifiedN
     "kotlin.Int", "java.lang.Integer" -> Int.arbitrary()
     "kotlin.Long", "java.lang.Long" -> Long.arbitrary()
     "kotlin.String", "java.lang.String" -> String.arbitrary()
-    "kotlin.Char", "java.lang.Char" -> Char.arbitrary()
+    "kotlin.Char", "java.lang.Character" -> Char.arbitrary()
     "kotlin.Float", "java.lang.Float" -> Float.arbitrary()
     "kotlin.Double", "java.lang.Double" -> Double.arbitrary()
     "kotlin.Boolean", "java.lang.Boolean" -> Boolean.arbitrary()
@@ -436,9 +477,119 @@ fun <A : Any> lookupArbyWithGenerics(klass: Class<A>, l: Nel<Type>): Arbitrary<A
                 1,
                 l
             ) { NonPositive.arbitrary(it[0] as Arbitrary<Number>) }
+            name == Fun::class.qualifiedName || name == Fun::class.java.name -> lookupArbyAndFunc(
+                klass,
+                l
+            ) { f, a -> Fun.arbitrary(f, a) }
             else -> throw IllegalStateException("Unsupported class $name")
         } as Arbitrary<A>
     }
+
+fun <A> lookupArbyAndFunc(klass: Class<A>, l: Nel<Type>, cf: (Func<*>, Arbitrary<*>) -> Arbitrary<*>): Arbitrary<*> =
+    if (l.size != 2) throw IllegalStateException("Could not find default arbitrary for ${klass.name}")
+    else cf(lookupFuncWithPossibleGenerics(l.all[0]), lookupArbyWithPossibleGenerics(l.all[1]))
+
+fun lookupFuncWithPossibleGenerics(t: Type): Func<*> = when (t) {
+    is ParameterizedType -> Nel.fromList(t.actualTypeArguments.toList()).fold({
+        lookupFuncByName(className(0, Nel.of(t)))
+    }, {
+        lookupFuncWithGenerics(t.rawType as Class<*>, it)
+    })
+    is WildcardType -> lookupFuncWithPossibleGenerics(t.upperBounds.first())
+    is Class<*> -> lookupFuncByName(t.name)
+    else -> println("WTF ARE YOU $t").let { throw IllegalStateException("WTF") }
+}
+
+fun lookupFuncByName(n: String): Func<*> = when (n) {
+    "kotlin.Int", "java.lang.Integer" -> Int.func()
+    "kotlin.Long", "java.lang.Long" -> Long.func()
+    "kotlin.String", "java.lang.String" -> String.func()
+    "kotlin.Char", "java.lang.Character" -> Char.func()
+    "kotlin.Float", "java.lang.Float" -> Float.func()
+    "kotlin.Double", "java.lang.Double" -> Double.func()
+    "kotlin.Boolean", "java.lang.Boolean" -> Boolean.func()
+    "kotlin.Byte", "java.lang.Byte" -> Byte.func()
+    else -> throw IllegalStateException("Could not find default arbitrary for $n")
+}
+
+fun <A : Any> lookupFuncWithGenerics(klass: Class<A>, l: Nel<Type>): Func<A> =
+    klass.name.let { name ->
+        when { // I am keeping the KClass qualified names for now because i might want to use them later ...
+            name == Tuple2::class.qualifiedName || name == Tuple2::class.java.name -> lookupFuncNParameters(
+                klass,
+                2,
+                l
+            ) { Tuple2.func(it[0], it[1]) }
+            name == Pair::class.qualifiedName || name == Pair::class.java.name -> lookupFuncNParameters(
+                klass,
+                2,
+                l
+            ) {
+                object : Tuple2Func<Any, Any> {
+                    override fun AF(): Func<Any> = it[0] as Func<Any>
+                    override fun BF(): Func<Any> = it[1] as Func<Any>
+                }
+            }
+            name == List::class.qualifiedName || name == ListK::class.qualifiedName ||
+                    name == List::class.java.name || name == ListK::class.java.name -> lookupFuncNParameters(
+                klass,
+                1,
+                l
+            ) { ListK.func(it[0]) }
+            name == Set::class.qualifiedName || name == SetK::class.qualifiedName ||
+                    name == Set::class.java.name || name == SetK::class.java.name -> lookupFuncNParameters(
+                klass,
+                1,
+                l
+            ) { SetK.func(it[0]) }
+            name == Map::class.qualifiedName || name == MapK::class.qualifiedName ||
+                    name == Map::class.java.name || name == MapK::class.java.name -> lookupFuncNParameters(
+                klass,
+                2,
+                l
+            ) { MapK.func(it[0], it[1]) }
+            name == Either::class.qualifiedName || name == Either::class.java.name -> lookupFuncNParameters(
+                klass,
+                2,
+                l
+            ) { Either.func(it[0], it[1]) }
+            name == Option::class.qualifiedName || name == Option::class.java.name -> lookupFuncNParameters(
+                klass,
+                1,
+                l
+            ) { Option.func(it[0]) }
+            name == Id::class.qualifiedName || name == Id::class.java.name -> lookupFuncNParameters(
+                klass,
+                1,
+                l
+            ) { Id.func(it[0]) }
+            name == Ior::class.qualifiedName || name == Ior::class.java.name -> lookupFuncNParameters(
+                klass,
+                2,
+                l
+            ) { Ior.func(it[0], it[1]) }
+            name == NonEmptyList::class.qualifiedName || name == NonEmptyList::class.java.name -> lookupFuncNParameters(
+                klass,
+                1,
+                l
+            ) { Nel.func(it[0]) }
+            name == Validated::class.qualifiedName || name == Validated::class.java.name -> lookupFuncNParameters(
+                klass,
+                2,
+                l
+            ) { Validated.func(it[0], it[1]) }
+            else -> throw IllegalStateException("Unsupported class $name")
+        } as Func<A>
+    }
+
+fun <A : Any> lookupFuncNParameters(
+    klass: Class<A>,
+    n: Int,
+    l: Nel<Type>,
+    cf: (List<Func<*>>) -> Func<*>
+): Func<*> =
+    if (l.size != n) throw IllegalStateException("Could not find default func for ${klass.name}")
+    else cf((1..n).map { lookupFuncWithPossibleGenerics(l.all[it - 1]) })
 
 fun <A : Any> lookupTuple(klass: Class<A>, n: Int, l: Nel<Type>): Arbitrary<A> =
     if (l.size != n) throw IllegalStateException("Could not find default arbitrary for ${klass.name}")

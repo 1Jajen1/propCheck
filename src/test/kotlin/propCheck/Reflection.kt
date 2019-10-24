@@ -3,6 +3,7 @@ package propCheck
 import arrow.core.*
 import io.kotlintest.specs.WordSpec
 import propCheck.arbitrary.*
+import propCheck.arbitrary.`fun`.arbitrary.arbitrary
 import propCheck.arbitrary.asciistring.arbitrary.arbitrary
 import propCheck.arbitrary.blind.arbitrary.arbitrary
 import propCheck.arbitrary.fixed.arbitrary.arbitrary
@@ -12,12 +13,15 @@ import propCheck.arbitrary.nonpositive.arbitrary.arbitrary
 import propCheck.arbitrary.positive.arbitrary.arbitrary
 import propCheck.arbitrary.shrink2.arbitrary.arbitrary
 import propCheck.arbitrary.smart.arbitrary.arbitrary
+import propCheck.arbitrary.tuple2.func.func
 import propCheck.arbitrary.unicodestring.arbitrary.arbitrary
 import propCheck.instances.*
 import propCheck.instances.either.arbitrary.arbitrary
+import propCheck.instances.either.func.func
 import propCheck.instances.id.arbitrary.arbitrary
 import propCheck.instances.ior.arbitrary.arbitrary
 import propCheck.instances.listk.arbitrary.arbitrary
+import propCheck.instances.listk.func.func
 import propCheck.instances.mapk.arbitrary.arbitrary
 import propCheck.instances.nonemptylist.arbitrary.arbitrary
 import propCheck.instances.option.arbitrary.arbitrary
@@ -153,6 +157,16 @@ class ReflectionSpec : WordSpec({
                         ),
                         floatArrayArb
                     )
+        }
+        "fun arbitrary instances" {
+            defArbitrary<Fun<Int, String>>() == Fun.arbitrary(Int.func(), String.arbitrary())
+        }
+        "fun arbitrary instances2" {
+            defArbitrary<Fun<Either<Long, Tuple2<Char, ListK<String>>>, Byte>>() ==
+                    Fun.arbitrary(Either.func(
+                        Long.func(),
+                        Tuple2.func(Char.func(), ListK.func(String.func()))
+                    ), Byte.arbitrary())
         }
     }
 })

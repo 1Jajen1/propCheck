@@ -52,8 +52,8 @@ interface FunShow<A, B> : Show<Fun<A, B>> {
 
 @extension
 interface FunArbitrary<A, B> : Arbitrary<Fun<A, B>> {
-    fun AB(): Arbitrary<B>
     fun FA(): Func<A>
+    fun AB(): Arbitrary<B>
 
     override fun arbitrary(): Gen<Fun<A, B>> =
         Gen.applicative().map(Fn.arbitrary(FA(), AB()).arbitrary(), AB().arbitrary()) { (fn, d) ->
