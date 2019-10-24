@@ -1,6 +1,7 @@
 package propCheck.arbitrary
 
 import arrow.core.Tuple2
+import arrow.core.extensions.list.foldable.foldLeft
 import arrow.core.toT
 import arrow.optics.Iso
 import propCheck.arbitrary.gen.monad.monad
@@ -224,13 +225,26 @@ fun shrinkChar(fail: Char): Sequence<Char> = (
                 sequenceOf('1', '2', '3') +
                 sequenceOf(' ', '\n')
         ).filter {
-    // TODO I don't really know if this is ported correctly
-    it.isLowerCase().not() < fail.isLowerCase().not() ||
-            it.isUpperCase().not() < fail.isUpperCase().not() ||
-            it.isDigit().not() < fail.isDigit().not() ||
-            (it == ' ').not() < (fail == ' ').not() ||
-            it.isWhitespace().not() < fail.isWhitespace().not() ||
-            it < fail
+    listOf(
+        (it.isLowerCase().not().compareTo(fail.isLowerCase().not())),
+        (it.isUpperCase().not().compareTo(fail.isUpperCase().not())),
+        (it.isDigit().not().compareTo(fail.isDigit().not())),
+        ((it == ' ').not().compareTo((fail == ' ').not())),
+        (it.isWhitespace().not().compareTo(fail.isWhitespace().not())),
+        (it.toInt().compareTo(fail.toInt()))
+    ).foldLeft(0) { acc, i ->
+        if (acc != 0) acc
+        else when {
+            i > 0 -> 1
+            i == 0 -> acc
+            else -> i
+        }
+    } < 0
+
+}.also {
+    val t = it.toList()
+    println(t)
 }
+
 
 fun <T : Any> iterate(f: (T) -> T, start: T) = generateSequence(start) { f(it) }
