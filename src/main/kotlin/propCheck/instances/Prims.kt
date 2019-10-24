@@ -39,7 +39,7 @@ interface LongFunc : Func<Long> {
         funMap(
             Tuple2.func(UByte.func(), Tuple2.func(UByte.func(), Tuple2.func(UByte.func(), Tuple2.func(UByte.func(), Tuple2.func(UByte.func(), Tuple2.func(UByte.func(), Tuple2.func(UByte.func(), UByte.func()))))))),
             {
-                val l = it.toByteList()
+                val l = it.toByteList().padTo(8, 0.toUByte())
                 l[0] toT (l[1] toT (l[2] toT (l[3] toT (l[4] toT (l[5] toT (l[6] toT l[7]))))))
             },
             { (a, xs) ->
@@ -53,6 +53,10 @@ interface UByteFunc : Func<UByte> {
         funList((UByte.MIN_VALUE..UByte.MAX_VALUE).map { it.toUByte() }, f)
 }
 fun UByte.Companion.func(): Func<UByte> = object : UByteFunc {}
+
+private fun <A> List<A>.padTo(i: Int, a: A): List<A> =
+    if (size < i) (this + listOf(a)).padTo(i, a)
+    else this
 
 private fun List<UByte>.toLong() = foldIndexed(0L) { i, acc, v ->
     acc or (v.toLong().shl(8 * i))

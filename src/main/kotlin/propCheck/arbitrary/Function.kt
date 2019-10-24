@@ -3,7 +3,6 @@ package propCheck.arbitrary
 import arrow.Kind
 import arrow.core.*
 import arrow.core.extensions.show
-import arrow.core.extensions.tuple2.show.show
 import arrow.extension
 import arrow.typeclasses.Functor
 import arrow.typeclasses.Show
@@ -16,16 +15,7 @@ import propCheck.arbitrary.gen.applicative.applicative
 import propCheck.forAll
 import propCheck.instances.arbitrary
 import propCheck.instances.func
-import propCheck.instances.tuple2.arbitrary.arbitrary
 import propCheck.propCheck
-
-fun main() {
-    propCheck {
-        forAll(Fun.arbitrary(Boolean.arbitrary(), Long.func()), Fun.show(Long.show(), Boolean.show())) { (f) ->
-            f(100)
-        }
-    }
-}
 
 // @higherkind boilerplate
 class ForFun private constructor() {
@@ -97,7 +87,7 @@ sealed class Fn<A, B> : FnOf<A, B> {
 
     class PairFn<A, B, C>(val fn: Fn<A, Fn<B, C>>) : Fn<Tuple2<A, B>, C>()
 
-    class TableFn<A, B>(val m: Map<A, B>) : Fn<A, B>()
+    class TableFn<A, B>(val m: Map<A, Eval<B>>) : Fn<A, B>()
 
     class MapFn<A, B, C>(val f: (A) -> B, val cF: (B) -> A, val g: Fn<B, C>) : Fn<A, C>()
 
@@ -115,7 +105,7 @@ interface FnFunctor<C> : Functor<FnPartialOf<C>> {
             (t.r as Fn<C, A>).map(f).fix()
         ) as Fn<C, B>
         is Fn.PairFn<*, *, A> -> Fn.PairFn((t.fn as Fn<C, Fn<C, A>>).map { it.map(f).fix() }.fix()) as Fn<C, B>
-        is Fn.TableFn -> Fn.TableFn(t.m.mapValues { f(it.value) })
+        is Fn.TableFn -> Fn.TableFn(t.m.mapValues { it.value.map(f) })
         is Fn.MapFn<*, *, A> -> Fn.MapFn(
             t.f as (Any?) -> C,
             t.cF as (C) -> Any?,
@@ -161,18 +151,18 @@ fun <A, B> abstract(fn: Fn<A, B>, d: B): Function1<A, B> = when (fn) {
         })
     } as Function1<A, B>
     is Fn.MapFn<*, *, B> -> Function1 { (abstract(fn.g, d).f as (Any?) -> B)((fn.f as (A) -> Any?)(it)) }
-    is Fn.TableFn -> Function1 { fn.m.getOrDefault(it, d) }
+    is Fn.TableFn -> Function1 { fn.m.getOrDefault(it, Eval.now(d)).value() }
 }
 
 fun <A, B> Fn<A, B>.table(): Map<A, B> = when (this) {
     is Fn.UnitFn -> mapOf(Unit to b) as Map<A, B> // also safe, please add gadts
     is Fn.NilFn -> emptyMap()
     is Fn.EitherFn<*, *, B> -> (l.table().mapKeys { it.key.left() } + r.table().mapKeys { it.key.right() }) as Map<A, B>
-    is Fn.PairFn<*, *, B> -> fn.table().flatMap {
-        it.value.table().asIterable()
-    }.map { (it.key as A) toT it.value }.toMap()
-    is Fn.TableFn -> m
-    is Fn.MapFn<*, *, B> -> g.table().mapValues { (cF as (Any?) -> A).invoke(it.key) } as Map<A, B>
+    is Fn.PairFn<*, *, B> -> fn.table().toList().flatMap { (k, q) ->
+        q.table().toList().map { (k2, v) -> (k toT k2) to v }
+    }.toMap() as Map<A, B>
+    is Fn.TableFn -> m.mapValues { it.value.value() }
+    is Fn.MapFn<*, *, B> -> g.table().mapKeys { (cF as (Any?) -> A).invoke(it.key) }
 }
 
 fun <A, B> shrinkFun(fn: Fn<A, B>, shrinkB: (B) -> Sequence<B>): Sequence<Fn<A, B>> = when (fn) {
@@ -195,7 +185,9 @@ fun <A, B> shrinkFun(fn: Fn<A, B>, shrinkB: (B) -> Sequence<B>): Sequence<Fn<A, 
             else -> Fn.MapFn(fn.f, fn.cF as (Any?) -> A, it as Fn<Any?, B>)
         }
     }
-    is Fn.TableFn -> shrinkList(fn.m.toList()) { (a, b) -> shrinkB(b).map { a to it } }.map {
+    is Fn.TableFn -> shrinkList(fn.m.toList()) { (a, evalB) ->
+        sequenceOf(Unit).flatMap { evalB.map(shrinkB).value().map { a to Eval.now(it) } }
+    }.map {
         if (it.isEmpty()) Fn.NilFn<A, B>()
         else Fn.TableFn(it.toMap())
     }
@@ -222,7 +214,7 @@ fun <A, B, C> funPair(fA: Func<A>, fB: Func<B>, f: (Tuple2<A, B>) -> C): Fn<Tupl
 }
 
 private fun <A, B, C> ((Tuple2<A, B>) -> C).curry(): ((A) -> ((B) -> C)) =
-    { a -> { b -> this(a toT b) }}
+    { a -> { b -> this(a toT b) } }
 
 fun <A, B, C> funEither(fA: Func<A>, fB: Func<B>, f: (Either<A, B>) -> C): Fn<Either<A, B>, C> =
     Fn.EitherFn(
@@ -238,7 +230,7 @@ inline fun <reified A : Enum<A>, B> funEnum(noinline f: (A) -> B): Fn<A, B> =
     funList(enumValues<A>().toList(), f)
 
 fun <A, B> funList(vals: Collection<A>, f: (A) -> B): Fn<A, B> =
-    Fn.TableFn(vals.map { it toT f(it) }.toMap())
+    Fn.TableFn(vals.map { it toT Eval.later { f(it) } }.toMap())
 
 
 // Keep that here because I don't want to write other instances for Tuple3+ in the autogen file
