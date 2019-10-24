@@ -1,11 +1,16 @@
 package propCheck.instances
 
-import arrow.core.ListK
-import arrow.core.k
-import arrow.core.toT
+import arrow.core.*
+import propCheck.Args
 import propCheck.arbitrary.*
 import propCheck.arbitrary.gen.monad.monad
+import propCheck.arbitrary.tuple2.func.func
+import propCheck.forAll
+import propCheck.instances.either.func.func
 import propCheck.instances.listk.arbitrary.arbitrary
+import propCheck.instances.listk.coarbitrary.coarbitrary
+import propCheck.instances.listk.func.func
+import propCheck.propCheck
 
 interface IntArbitrary : Arbitrary<Int> {
     override fun arbitrary(): Gen<Int> = arbitrarySizedInt()
@@ -13,6 +18,19 @@ interface IntArbitrary : Arbitrary<Int> {
 }
 
 fun Int.Companion.arbitrary(): Arbitrary<Int> = object : IntArbitrary {}
+
+interface IntFunc : Func<Int> {
+    override fun <B> function(f: (Int) -> B): Fn<Int, B> =
+        funMap(Long.func(), { it.toLong() }, { it.toInt() }, f)
+}
+
+fun Int.Companion.func(): Func<Int> = object : IntFunc {}
+
+interface IntCoarbitrary : Coarbitrary<Int> {
+    override fun <B> Gen<B>.coarbitrary(a: Int): Gen<B> = variant(a.toLong())
+}
+
+fun Int.Companion.coarbitrary(): Coarbitrary<Int> = object : IntCoarbitrary {}
 
 interface LongArbitrary : Arbitrary<Long> {
     override fun arbitrary(): Gen<Long> = arbitrarySizedLong()
@@ -22,6 +40,47 @@ interface LongArbitrary : Arbitrary<Long> {
 fun Long.Companion.arbitrary(): Arbitrary<Long> = object :
     LongArbitrary {}
 
+interface LongCoarbitrary : Coarbitrary<Long> {
+    override fun <B> Gen<B>.coarbitrary(a: Long): Gen<B> = variant(a)
+}
+
+fun Long.Companion.coarbitrary(): Coarbitrary<Long> = object : LongCoarbitrary {}
+
+// I don't like this code, there must be better ways
+interface LongFunc : Func<Long> {
+    override fun <B> function(f: (Long) -> B): Fn<Long, B> =
+        funMap(
+            Tuple2.func(UByte.func(), Tuple2.func(UByte.func(), Tuple2.func(UByte.func(), Tuple2.func(UByte.func(), Tuple2.func(UByte.func(), Tuple2.func(UByte.func(), Tuple2.func(UByte.func(), UByte.func()))))))),
+            {
+                val l = it.toByteList().padTo(8, 0.toUByte())
+                l[0] toT (l[1] toT (l[2] toT (l[3] toT (l[4] toT (l[5] toT (l[6] toT l[7]))))))
+            },
+            { (a, xs) ->
+                listOf(a, xs.a, xs.b.a, xs.b.b.a, xs.b.b.b.a, xs.b.b.b.b.a, xs.b.b.b.b.b.a, xs.b.b.b.b.b.b).toLong()
+            }, f)
+}
+
+// TODO: do the other unsigned types
+interface UByteFunc : Func<UByte> {
+    override fun <B> function(f: (UByte) -> B): Fn<UByte, B> =
+        funList((UByte.MIN_VALUE..UByte.MAX_VALUE).map { it.toUByte() }, f)
+}
+fun UByte.Companion.func(): Func<UByte> = object : UByteFunc {}
+
+private fun <A> List<A>.padTo(i: Int, a: A): List<A> =
+    if (size < i) (this + listOf(a)).padTo(i, a)
+    else this
+
+private fun List<UByte>.toLong() = foldIndexed(0L) { i, acc, v ->
+    acc or (v.toLong().shl(8 * i))
+}
+private fun Long.toByteList(): List<UByte> = when (this) {
+    0L -> emptyList()
+    else -> listOf(this.and(UByte.MAX_VALUE.toLong()).toUByte()) + this.ushr(8).toByteList()
+}
+
+fun Long.Companion.func(): Func<Long> = object : LongFunc {}
+
 interface FloatArbitrary : Arbitrary<Float> {
     override fun arbitrary(): Gen<Float> = arbitrarySizedFloat()
     override fun shrink(fail: Float): Sequence<Float> = shrinkFloat(fail)
@@ -29,6 +88,23 @@ interface FloatArbitrary : Arbitrary<Float> {
 
 fun Float.Companion.arbitrary(): Arbitrary<Float> = object :
     FloatArbitrary {}
+
+interface FloatFunc : Func<Float> {
+    override fun <B> function(f: (Float) -> B): Fn<Float, B> =
+        funMap(Double.func(), {
+            it.toDouble()
+        }, {
+            it.toFloat()
+        }, f)
+}
+
+fun Float.Companion.func(): Func<Float> = object : FloatFunc {}
+
+interface FloatCoarbitrary : Coarbitrary<Float> {
+    override fun <B> Gen<B>.coarbitrary(a: Float): Gen<B> = variant(a.toDouble().toRawBits())
+}
+
+fun Float.Companion.coarbitrary(): Coarbitrary<Float> = object : FloatCoarbitrary {}
 
 interface DoubleArbitrary : Arbitrary<Double> {
     override fun arbitrary(): Gen<Double> = arbitrarySizedDouble()
@@ -38,6 +114,23 @@ interface DoubleArbitrary : Arbitrary<Double> {
 fun Double.Companion.arbitrary(): Arbitrary<Double> = object :
     DoubleArbitrary {}
 
+interface DoubleFunc : Func<Double> {
+    override fun <B> function(f: (Double) -> B): Fn<Double, B> =
+        funMap(Long.func(), {
+            it.toRawBits()
+        }, {
+            Double.fromBits(it)
+        }, f)
+}
+
+fun Double.Companion.func(): Func<Double> = object : DoubleFunc {}
+
+interface DoubleCoarbitrary : Coarbitrary<Double> {
+    override fun <B> Gen<B>.coarbitrary(a: Double): Gen<B> = variant(a.toRawBits())
+}
+
+fun Double.Companion.coarbitrary(): Coarbitrary<Double> = object : DoubleCoarbitrary {}
+
 interface BooleanArbitrary : Arbitrary<Boolean> {
     override fun arbitrary(): Gen<Boolean> = Gen.elements(true, false)
     override fun shrink(fail: Boolean): Sequence<Boolean> = if (fail) sequenceOf(false) else emptySequence()
@@ -46,12 +139,41 @@ interface BooleanArbitrary : Arbitrary<Boolean> {
 fun Boolean.Companion.arbitrary(): Arbitrary<Boolean> = object :
     BooleanArbitrary {}
 
+interface BooleanFunc : Func<Boolean> {
+    override fun <B> function(f: (Boolean) -> B): Fn<Boolean, B> =
+        funMap(Either.func(unitFunc(), unitFunc()), {
+            if (it) Unit.left()
+            else Unit.right()
+        }, { it.isRight() }, f)
+}
+
+fun Boolean.Companion.func(): Func<Boolean> = object : BooleanFunc {}
+
+interface BooleanCoarbitrary : Coarbitrary<Boolean> {
+    override fun <B> Gen<B>.coarbitrary(a: Boolean): Gen<B> = variant(if (a) 1L else 0L)
+}
+
+fun Boolean.Companion.coarbitrary(): Coarbitrary<Boolean> = object : BooleanCoarbitrary {}
+
 interface ByteArbitrary : Arbitrary<Byte> {
     override fun arbitrary(): Gen<Byte> = arbitrarySizedByte()
     override fun shrink(fail: Byte): Sequence<Byte> = shrinkByte(fail)
 }
 
 fun Byte.Companion.arbitrary(): Arbitrary<Byte> = object : ByteArbitrary {}
+
+interface ByteFunc : Func<Byte> {
+    override fun <B> function(f: (Byte) -> B): Fn<Byte, B> =
+        funList((Byte.MIN_VALUE..Byte.MAX_VALUE).map { it.toByte() }.toList(), f)
+}
+
+fun Byte.Companion.func(): Func<Byte> = object : ByteFunc {}
+
+interface ByteCoarbitrary : Coarbitrary<Byte> {
+    override fun <B> Gen<B>.coarbitrary(a: Byte): Gen<B> = variant(a.toLong())
+}
+
+fun Byte.Companion.coarbitrary(): Coarbitrary<Byte> = object : ByteCoarbitrary {}
 
 interface CharArbitrary : Arbitrary<Char> {
     override fun arbitrary(): Gen<Char> = Gen.frequency(
@@ -65,6 +187,19 @@ interface CharArbitrary : Arbitrary<Char> {
 fun Char.Companion.arbitrary(): Arbitrary<Char> = object :
     CharArbitrary {}
 
+interface CharFunc : Func<Char> {
+    override fun <B> function(f: (Char) -> B): Fn<Char, B> =
+        funMap(Long.func(), { it.toLong() }, { it.toChar() }, f)
+}
+
+fun Char.Companion.func(): Func<Char> = object : CharFunc {}
+
+interface CharCoarbitrary : Coarbitrary<Char> {
+    override fun <B> Gen<B>.coarbitrary(a: Char): Gen<B> = variant(a.toLong())
+}
+
+fun Char.Companion.coarbitrary(): Coarbitrary<Char> = object : CharCoarbitrary {}
+
 // not really a prim but included for simplicity
 interface StringArbitrary : Arbitrary<String> {
     override fun arbitrary(): Gen<String> = arbitraryASCIIString()
@@ -77,6 +212,21 @@ interface StringArbitrary : Arbitrary<String> {
 
 fun String.Companion.arbitrary(): Arbitrary<String> = object :
     StringArbitrary {}
+
+interface StringFunc : Func<String> {
+    override fun <B> function(f: (String) -> B): Fn<String, B> =
+        funMap(ListK.func(Char.func()), { it.toCharArray().toList().k() }, { it.joinToString("") }, f)
+}
+
+fun String.Companion.func(): Func<String> = object : StringFunc {}
+
+interface StringCoarbitrary : Coarbitrary<String> {
+    override fun <B> Gen<B>.coarbitrary(a: String): Gen<B> = ListK.coarbitrary(Char.coarbitrary()).run {
+        coarbitrary(a.toCharArray().toList().k())
+    }
+}
+
+fun String.Companion.coarbitrary(): Coarbitrary<String> = object : StringCoarbitrary {}
 
 // ---------- arrays
 val intArrayArb = object : Arbitrary<IntArray> {

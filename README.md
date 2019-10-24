@@ -349,12 +349,6 @@ Kotlintest already includes some means of property based testing. However their 
 ## Feedback
 `propCheck` is still in its early days so if you notice bugs or think something can be improved please create issues or shoot me a pull request. All feedback is highly appreciated.
 
-## Future plans
-* State-machine based models
-    * and later testing those models in parallel
-* Generate random functions (Coarbitrary or Function in quickcheck)
-    * will be interesting how much kotlin can do here
-
 ## Credits
 `propCheck` is a port of the awesome library [quickcheck](https://github.com/nick8325/quickcheck). If you ever come around to use haskell make sure to give it a go!
 Writing `propCheck` was also made much easier by using [arrow-kt](https://arrow-kt.io/) to be able to write code in a similar style to haskell and thus close to the original.
@@ -1049,6 +1043,7 @@ This is a list of types that have predefined instances for `Arbitrary` and thus 
 * `ByteArray` -> `byteArrayArb`
 * `BooleanArray` -> `booleanArrayArb`
 * `Array<T>` -> `arrayArb()` // Cannot be infered by `defArbitrary` atm
+* `(A) -> B` // Generate using the `Fun<A, B>` wrapper, will be documented better later on. (Requires an instance of `Func<A>`, `Coarbitrary<A>` and `Arbitrary<B>`)
 
 #### Collections
 The `K` variants are `arrow` wrappers. They are isomorphic to their non-k variants and can be used as such. That is to say: Every `ListK` is a `List` and vice versa.

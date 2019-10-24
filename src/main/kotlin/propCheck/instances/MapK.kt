@@ -1,14 +1,13 @@
 package propCheck.instances
 
-import arrow.core.MapK
-import arrow.core.Tuple2
-import arrow.core.mapOf
-import arrow.core.toT
+import arrow.core.*
 import arrow.extension
 import arrow.typeclasses.Show
-import propCheck.arbitrary.Arbitrary
-import propCheck.arbitrary.Gen
-import propCheck.arbitrary.shrinkList
+import propCheck.arbitrary.*
+import propCheck.arbitrary.tuple2.coarbitrary.coarbitrary
+import propCheck.arbitrary.tuple2.func.func
+import propCheck.instances.listk.coarbitrary.coarbitrary
+import propCheck.instances.listk.func.func
 import propCheck.instances.tuple2.arbitrary.arbitrary
 
 @extension
@@ -29,4 +28,26 @@ interface MapKShow<K, V> : Show<MapK<K, V>> {
     fun SV(): Show<V>
     override fun MapK<K, V>.show(): String =
             "Map(" + entries.joinToString { (k, v) -> SK().run { k.show() } + " -> " + SV().run { v.show() } } + ")"
+}
+
+@extension
+interface MapKFunc<K, V> : Func<MapK<K, V>> {
+    fun KF(): Func<K>
+    fun VF(): Func<V>
+
+    override fun <B> function(f: (MapK<K, V>) -> B): Fn<MapK<K, V>, B> =
+        funMap(ListK.func(Tuple2.func(KF(), VF())), {
+            it.toList().map { it.toTuple2() }.k()
+        }, {
+            it.toMap().k()
+        }, f)
+}
+
+@extension
+interface MapKCoarbitrary<K, V> : Coarbitrary<MapK<K, V>> {
+    fun CK(): Coarbitrary<K>
+    fun CV(): Coarbitrary<V>
+    override fun <B> Gen<B>.coarbitrary(a: MapK<K, V>): Gen<B> = ListK.coarbitrary(Tuple2.coarbitrary(CK(), CV())).run {
+        coarbitrary(a.toList().map { it.toTuple2() }.k())
+    }
 }
