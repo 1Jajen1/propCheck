@@ -142,7 +142,7 @@ fun <S, A, R, SUT> parArby(sm: StateMachine<S, A, R, SUT>, maxThreads: Int) = co
             val threads = Gen.choose(2 toT maxThreads, Int.random()).bind()
             Tuple2(
                 prefix,
-                (0..(threads - 1)).map {
+                (0 until threads).map {
                     pathArb.arbitrary().resize(
                         Gen.choose(
                             0 toT Gen.getSize().bind(),

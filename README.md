@@ -125,14 +125,6 @@ Insufficient coverage
 ```
 > Here a coverage of 95% non-trivial lists is required, but only 89.99% could be reached.
 
-## State-machine-testing and testing for race-conditions
-
-State-machine-testing is the concept of verifying actions against a stateful system by running them against a simpler model.
-
-### How does this work?!
-
-Behind the scenes propCheck runs randomly generated lists of commands in parallel against the system and records the results. Then after execution it tries to find a sequential path in which the model proves right for the results. In the above example there is just no order/interleaving to execute the commands that result in a correct state.
-
 ## Running these tests with a test runner
 
 propCheck is by itself stand-alone and does not provide test-runner capabilites like kotlintest. It however can and should be used together with a test-runner. By default `propCheck` will throw exceptions on failure and thus will cause the test case it is being run in to fail. (That can be diasbled by using methods like `propCheckWithResult` instead)
