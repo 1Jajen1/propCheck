@@ -1,6 +1,10 @@
 # Generating functions
 
 ## Table of contents
+* [Intro](https://github.com/1Jajen1/propCheck/blob/master/docs/GeneratingFunctions.md#Intro)
+* [Coarbitrary and Func](https://github.com/1Jajen1/propCheck/blob/master/docs/GeneratingFunctions.md#coarbitrarya-and-funca)
+    + [Coarbitrary](https://github.com/1Jajen1/propCheck/blob/master/docs/GeneratingFunctions.md#coarbitrary)
+    * [Func](https://github.com/1Jajen1/propCheck/blob/master/docs/GeneratingFunctions.md#func)
 
 ### Intro
 

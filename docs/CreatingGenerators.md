@@ -1,6 +1,14 @@
 # Creating data-generators and shrinkers
 
 ## Table of contents
+* [Overview](https://github.com/1Jajen1/propCheck/blob/master/docs/CreatingGenerators.md#overview)
+* Generators
+    * [Generator size](https://github.com/1Jajen1/propCheck/blob/master/docs/CreatingGenerators.md#generator-size)
+    * [Primitive generators](https://github.com/1Jajen1/propCheck/blob/master/docs/CreatingGenerators.md#primitive-generators)
+    * [Combinators for Gen](https://github.com/1Jajen1/propCheck/blob/master/docs/CreatingGenerators.md#combinators-for-gen)
+* [Shrinking](https://github.com/1Jajen1/propCheck/blob/master/docs/CreatingGenerators.md#shrinking)
+    * [Existing shrinking functions](https://github.com/1Jajen1/propCheck/blob/master/docs/CreatingGenerators.md#existing-shrinking-functions)
+* [Arbitrary typeclass instance lookups](https://github.com/1Jajen1/propCheck/blob/master/docs/CreatingGenerators.md#arbitrary-typeclass-lookups)
 
 ### Overview
 
@@ -114,7 +122,7 @@ Gen.monad().fx.monad {
 
 > If you want to learn more about how this works and how you can benefit from this in other data-types as well check out arrow-kt's documentation, it is really good.
 
-####`Gen<A>.map(f: (A) -> B): Gen<B>`
+#### `Gen<A>.map(f: (A) -> B): Gen<B>`
 
 Map over the value generated.
 
@@ -122,86 +130,86 @@ Map over the value generated.
 arbitraryBoundedByte().map { it.toInt() }
 ```
 
-####`Gen<A>.resize(i: Int): Gen<A>`
+#### `Gen<A>.resize(i: Int): Gen<A>`
 
 
 Set the size parameter to a given value.
 
-####`Gen<A>.scale(f: (Int) -> Int): Gen<A>`
+#### `Gen<A>.scale(f: (Int) -> Int): Gen<A>`
 
 
 Apply a function to the size parameter
 
 
-####`<A> sized(f: (Int) -> Gen<A>): Gen<A>`
+#### `<A> sized(f: (Int) -> Gen<A>): Gen<A>`
 
 Build a generator with access to the size parameter.
 
-####`getSize(): Gen<Int>`
+#### `getSize(): Gen<Int>`
 
 Get a generator "generating" its size parameter.
 
-####`Gen<A>.suchThat(f: (A) -> Boolean): Gen<A>`
+#### `Gen<A>.suchThat(f: (A) -> Boolean): Gen<A>`
 
 Filter results of a generator.
 > Warning: This is not stack-safe, do not fail too many times if possible
 
-####`Gen<A>.suchThatOption(f: (A) -> Boolean): Gen<Option<A>>`
+#### `Gen<A>.suchThatOption(f: (A) -> Boolean): Gen<Option<A>>`
 
 Filter results of a generator.
 > Warning: This is not stack-safe, do not fail too many times if possible
 
-####`Gen<A>.suchThatMap(f: (A) -> Option<B>): Gen<B>`
+#### `Gen<A>.suchThatMap(f: (A) -> Option<B>): Gen<B>`
 
 Map and filter results of a generator
 > Warning: This is not stack-safe, do not fail too many times if possible
 
-####`Gen<A>.listOf(): Gen<List<A>>`
+#### `Gen<A>.listOf(): Gen<List<A>>`
 
 Generate a list of `A` with length based on the size parameter.
 
-####`Gen<A>.nelOf(): Gen<Nel<A>>`
+#### `Gen<A>.nelOf(): Gen<Nel<A>>`
 
 Generate a non-empty list of `A` with length based on the size parameter.
 
-####`Gen<A>.vectorOf(n: Int): Gen<List<A>>`
+#### `Gen<A>.vectorOf(n: Int): Gen<List<A>>`
 
 Generate a list of `A` with a fixed length.
 
-####`<A>choose(range: Tuple2<A, A>, randA: Random<A>): Gen<A>`
+#### `<A>choose(range: Tuple2<A, A>, randA: Random<A>): Gen<A>`
 
 Choose random values from within a range.
 > `Random<A>` is a custom typeclass built around random generation of data. This is mostly used for primitives and as such already exists for most basic types.
 
-####`<A>chooseAny(randA: Random<A>): Gen<A>`
+#### `<A>chooseAny(randA: Random<A>): Gen<A>`
 
 Choose random values from the entire range of `A`.
 > `Random<A>` is a custom typeclass built around random generation of data. This is mostly used for primitives and as such already exists for most basic types.
 
-####`<A>oneOf(vararg gens: Gen<out A>): Gen<A>`
+#### `<A>oneOf(vararg gens: Gen<out A>): Gen<A>`
 
 Chooses randomly between the passed generators.
 >Throws when given no generators.
 
-####`<A>frequency(vararg gens: Tuple2<Int, Gen<out A>>): Gen<A>`
+#### `<A>frequency(vararg gens: Tuple2<Int, Gen<out A>>): Gen<A>`
 
 Chooses randomly, but weighed between the passed generators.
 >Throws when given no generators
 
-####`<A>elements(vararg els: A): Gen<A>`
+#### `<A>elements(vararg els: A): Gen<A>`
 
 Chooses randomly between the elements supplied as arguments.
 >Throws when given no elements
 
-####`<A>sublist(l: List<A>): Gen<List<A>>`
+#### `<A>sublist(l: List<A>): Gen<List<A>>`
 
 Generates lists containing a subset of the values of the supplied list.
 
-####`<A>shuffle(l: List<A>): Gen<List<A>>`
+#### `<A>shuffle(l: List<A>): Gen<List<A>>`
 
 Generates random permutations of a list.
 
-####`<A: Enum<A>>.fromEnum(): Gen<A>`
+#### `<A: Enum<A>>.fromEnum(): Gen<A>`
 
 Generates random values from all possible enum values.
 >`fromEnum() = elements(*enumValues())`
@@ -233,7 +241,7 @@ If we need to implement shrinking on our own, it's best to use existing function
 - `shrinkChar` shrink characters
 - `shrinkMap` map to a value that already has an arbitrary instance to shrink it
 
-### Arbitrary typeclass lookups
+### Arbitrary typeclass instance lookups
 
 Currently we support looking up a few instances for `Arbitrary` through reflection using `defArbitrary()`.
 >(That will be deprecated when the arrow plugin hits)

@@ -1,9 +1,9 @@
 # Statemachine testing
 
 ## Table of contents
-* [Intro]()
-* [Finding race conditions]()
-* [More!]()
+* [Intro](https://github.com/1Jajen1/propCheck/blob/master/docs/StatemachineTesting.md#intro)
+* [Finding race conditions](https://github.com/1Jajen1/propCheck/blob/master/docs/StatemachineTesting.md#finding-race-conditions)
+* [More!](https://github.com/1Jajen1/propCheck/blob/master/docs/StatemachineTesting.md#more)
 
 ### Intro
 

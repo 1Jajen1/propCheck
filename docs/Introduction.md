@@ -7,6 +7,7 @@
 * [Basic Usage](https://github.com/1Jajen1/propCheck/blob/master/docs/Introdution.md#basic-usage)
 * [Testing custom datatypes](https://github.com/1Jajen1/propCheck/blob/master/docs/Introdution.md#testing-custom-datatypes)
 * [Testing IO](https://github.com/1Jajen1/propCheck/blob/master/docs/Introdution.md#testing-io)
+* [Args](https://github.com/1Jajen1/propCheck/blob/master/docs/Introdution.md#args)
 
 ### Basic Usage
 
@@ -25,16 +26,16 @@ propCheck {
 propCheck { .. }
 ```
 Every test starts with a call to this (or one of it's variants) function. It has an optional argument for arguments (like a different random seed, etc) and a required argument that is of type `() -> Property` (This being a function is for pure convenience).
-> `Property` is a datatype that describes something that has been tested (yes "has been"). For example `Boolean`, `TestResult` all implement the `Testable<A>` typeclass, providing means to convert to the `Property` datatype, but that is rarely done manually. For more information view [this](https://github.com/1Jajen1/propCheck/blob/master/docs/Introdution.md#properties)
+> `Property` is a datatype that describes something that has been tested (yes "has been"). For example `Boolean`, `TestResult` all implement the `Testable<A>` typeclass, providing means to convert to the `Property` datatype, but that is rarely done manually.
 
 ```kotlin
 forAll { (a, b): Pair<Int, Int> -> ... }
 ```
-`forAll`` is one of the most common ways to create a `Property`. It has a few overloads, but if you are not using custom data-types you can use the default version.
-> Check here for an in-depth overview of forAll and it's variants TODO Link to api docs
+`forAll` is one of the most common ways to create a `Property`. It has a few overloads, but if you are not using custom data-types you can use the default version.
+> Check [here](https://github.com/1Jajen1/propCheck/blob/master/docs/CreatingProperties.md#forall) for an in-depth overview of forAll and it's variants
 
 The intuition for `forAll` is that it tests the inner property with "all" parameters. In practice only a subset of possible values is tested, but that is usually enough.
-> If not check out verifying coverage here. TODO Link
+> If not check out verifying coverage [here](https://github.com/1Jajen1/propCheck/blob/master/docs/CreatingProperties.md#inspecting-test-data). 
 
 ```kotlin
 a + b == b + a

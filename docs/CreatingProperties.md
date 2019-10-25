@@ -1,11 +1,14 @@
 # Creating properties to test
 
 ## Table of contents:
-* [Overview](TODO)
-* [Creating properties](TODO)
+* [Overview](https://github.com/1Jajen1/propCheck/blob/master/docs/CreatingProperties.md#overview)
+* [Creating properties](https://github.com/1Jajen1/propCheck/blob/master/docs/CreatingProperties.md#creating-properties)
+* [Combinators](https://github.com/1Jajen1/propCheck/blob/master/docs/CreatingProperties.md#combinators)
+    * [Inspecting test data](https://github.com/1Jajen1/propCheck/blob/master/docs/CreatingProperties.md#interacting-with-test-cases)
+    * [Interacting with test cases](https://github.com/1Jajen1/propCheck/blob/master/docs/CreatingProperties.md#interacting-with-test-cases)
 
 ### Overview
-As seen in the [introduction](TODO) a property usually starts with a `forAll` and contains some, usually boolean, condition.
+As seen in the [introduction](https://github.com/1Jajen1/propCheck/blob/master/docs/Introdution.md) a property usually starts with a `forAll` and contains some, usually boolean, condition.
 
 To express some more complex properties we'll take a look at all the combinators that propCheck offers.
 
