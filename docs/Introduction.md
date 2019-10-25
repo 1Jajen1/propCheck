@@ -4,10 +4,10 @@
 
 ## Table of contents
 
-* [Basic Usage](https://github.com/1Jajen1/propCheck/blob/master/docs/Introdution.md#basic-usage)
-* [Testing custom datatypes](https://github.com/1Jajen1/propCheck/blob/master/docs/Introdution.md#testing-custom-datatypes)
-* [Testing IO](https://github.com/1Jajen1/propCheck/blob/master/docs/Introdution.md#testing-io)
-* [Args](https://github.com/1Jajen1/propCheck/blob/master/docs/Introdution.md#args)
+* [Basic Usage](https://github.com/1Jajen1/propCheck/blob/master/docs/Introduction.md#basic-usage)
+* [Testing custom datatypes](https://github.com/1Jajen1/propCheck/blob/master/docs/Introduction.md#testing-custom-datatypes)
+* [Testing IO](https://github.com/1Jajen1/propCheck/blob/master/docs/Introduction.md#testing-io)
+* [Args](https://github.com/1Jajen1/propCheck/blob/master/docs/Introduction.md#args)
 
 ### Basic Usage
 
