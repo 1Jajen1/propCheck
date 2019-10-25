@@ -83,7 +83,7 @@ There are a number of generators already included in propCheck. A quick list:
 
 ### Combinators for Gen
 
-####`Gen.applicative()`
+#### `Gen.applicative()`
 
 If you are already familiar with Applicatives just skip this.
 > This is by no means an explanation for Applicative, just a tutorial to use it with Gen.
@@ -92,7 +92,7 @@ Using `Gen.applicative().map` in essence just combines the generators passed to 
 
 Use this whenever your datatype is isomophic to a tuple. (There are also generated methods fromTup to do the same thing, but intelliJ hates them with passion, they will slow down your ide...)
 
-####`Gen.monad()`
+#### `Gen.monad()`
 
 Same as above, when you are already familiar with monads just skip this.
 > This is no monad tutorial, that is a bit beyond the scope of this, and also not needed to just use it.
