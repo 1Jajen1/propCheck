@@ -87,7 +87,7 @@ Falsifiable
 ## A note regarding test data
 The quality of a property-based test is directly related to the quality of the data fed to it. There are some helpers to test and assure that the generated data holds some invariants.
 
-To inspect results use either [label](https://github.com/1Jajen1/propCheck/blob/master/docs/CreatingProperties.md#label), [collect](https://github.com/1Jajen1/propCheck#collect), [classify](https://github.com/1Jajen1/propCheck#classify) or [tabulate](https://github.com/1Jajen1/propCheck#tabulate).
+To inspect results use either [label](https://github.com/1Jajen1/propCheck/blob/master/docs/CreatingProperties.md#label), [collect](https://github.com/1Jajen1/propCheck/blob/master/docs/CreatingProperties.md#collect), [classify](https://github.com/1Jajen1/propCheck/blob/master/docs/CreatingProperties.md#classify) or [tabulate](https://github.com/1Jajen1/propCheck/blob/master/docs/CreatingProperties.md#tabulate).
 
 Here is an example on how to use [classify](https://github.com/1Jajen1/propCheck/blob/master/docs/CreatingProperties.md#classify):
 ```kotlin
