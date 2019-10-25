@@ -63,7 +63,7 @@ propCheck(Args(maxSuccess = 300)) {
 +++ OK, passed 300 tests.
 ```
 
-A full overview of what can be customised can be seen [here](https://github.com/1Jajen1/propCheck/blob/master/README.md#args)
+A full overview of what can be customised can be seen [here](https://github.com/1Jajen1/propCheck/blob/master/docs/Introduction.md#args)
 
 ## Shrinking
 
@@ -71,7 +71,7 @@ A powerful concept in property based testing is shrinking. Given a failed test a
 For example: Lists tend to shrink to smaller lists, numbers shrink towards zero and so on.
 This often ends you with a minimal counterexample for the failed test and is very useful if the data would otherwise be messy (as will likely happen with random data).
 
-For most cases enabling shrinking is as easy as changing [forAll](https://github.com/1Jajen1/propCheck#forall) to [forAllShrink](https://github.com/1Jajen1/propCheck#forallshrink):
+For most cases enabling shrinking is as easy as changing [forAll](https://github.com/1Jajen1/propCheck/blob/master/docs/CreatingProperties.md#forall) to [forAllShrink](https://github.com/1Jajen1/propCheck/blob/master/docs/CreatingProperties.md#forallshrink):
 ```kotlin
 propCheck { 
     forAllShrink { i: Int ->
@@ -87,9 +87,9 @@ Falsifiable
 ## A note regarding test data
 The quality of a property-based test is directly related to the quality of the data fed to it. There are some helpers to test and assure that the generated data holds some invariants.
 
-To inspect results use either [label](https://github.com/1Jajen1/propCheck#label), [collect](https://github.com/1Jajen1/propCheck#collect), [classify](https://github.com/1Jajen1/propCheck#classify) or [tabulate](https://github.com/1Jajen1/propCheck#tabulate).
+To inspect results use either [label](https://github.com/1Jajen1/propCheck/blob/master/docs/CreatingProperties.md#label), [collect](https://github.com/1Jajen1/propCheck#collect), [classify](https://github.com/1Jajen1/propCheck#classify) or [tabulate](https://github.com/1Jajen1/propCheck#tabulate).
 
-Here is an example on how to use [classify](https://github.com/1Jajen1/propCheck#classify):
+Here is an example on how to use [classify](https://github.com/1Jajen1/propCheck/blob/master/docs/CreatingProperties.md#classify):
 ```kotlin
 propCheck {
     forAll(OrderedList.arbitrary(Int.order(), Int.arbitrary())) { (l): OrderedList<Int> ->
@@ -104,7 +104,7 @@ propCheck {
 +++ OK, passed 100 tests (92,00% non-trivial).
 ```
 
-To fail a test with insufficient coverage use [checkCoverage](https://github.com/1Jajen1/propCheck#checkcoverage) with functions like [cover](https://github.com/1Jajen1/propCheck#cover) or [coverTable](https://github.com/1Jajen1/propCheck#covertable).
+To fail a test with insufficient coverage use [checkCoverage](https://github.com/1Jajen1/propCheck#checkcoverage) with functions like [cover](https://github.com/1Jajen1/propCheck#cover) or [coverTable](https://github.com/1Jajen1/propCheck/blob/master/docs/CreatingProperties.md#covertable).
 ```kotlin
 propCheck {
     forAll(OrderedList.arbitrary(Int.order(), Int.arbitrary())) { (l): OrderedList<Int> ->
