@@ -60,26 +60,54 @@ class StateSpec : PropertySpec({
             }
         )
 
+        execSeq(sm) { s, a, r ->
+            when (a) {
+                is ACT.Get -> s == r
+                is ACT.Inc -> s + 1 == r
+                is ACT.Dec -> s - 1 == r
+            }
+        }
+    }
 
-        expectFailure(
-            and(
-                execSeq(sm) { s, a, r ->
+    "State-machine-testing should fail in parallel for a simple counter model" {
+        val sm = StateMachine(
+            initialState = 0,
+            executeAction = { a: ACT, s: Counter ->
+                IO {
                     when (a) {
-                        is ACT.Get -> s == r
-                        is ACT.Inc -> s + 1 == r
-                        is ACT.Dec -> s - 1 == r
-                    }
-                },
-                Eval.later {
-                    execPar(sm, 2) { s, a, r ->
-                        when (a) {
-                            is ACT.Get -> s == r
-                            is ACT.Inc -> s + 1 == r
-                            is ACT.Dec -> s - 1 == r
-                        }
+                        is ACT.Inc -> s.inc()
+                        is ACT.Dec -> s.dec()
+                        is ACT.Get -> s.get()
                     }
                 }
-            )
+            },
+            sut = { IO { Counter() } },
+            cmdGen = {
+                Gen.elements(
+                    ACT.Inc,
+                    ACT.Dec,
+                    ACT.Get
+                ).map { it.some() }
+            },
+            preCondition = { _, _ -> true },
+            invariant = { true },
+            transition = { s, a ->
+                when (a) {
+                    is ACT.Get -> s
+                    is ACT.Dec -> s - 1
+                    is ACT.Inc -> s + 1
+                }
+            }
+        )
+
+        expectFailure(
+            execPar(sm, 2) { s, a, r ->
+                when (a) {
+                    is ACT.Get -> s == r
+                    is ACT.Inc -> s + 1 == r
+                    is ACT.Dec -> s - 1 == r
+                }
+            }
         )
     }
 
