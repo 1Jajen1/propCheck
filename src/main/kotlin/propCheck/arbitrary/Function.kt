@@ -18,6 +18,7 @@ import propCheck.forAll
 import propCheck.instances.arbitrary
 import propCheck.instances.func
 import propCheck.instances.function1.arbitrary.arbitrary
+import propCheck.instances.tuple2.arbitrary.arbitrary
 import propCheck.promote
 import propCheck.propCheck
 
@@ -65,8 +66,8 @@ interface FunArbitrary<A, B> : Arbitrary<Fun<A, B>> {
             Fun(fn, d, false, abstract(fn, d).f)
         }.fix()
 
-    override fun shrink(fail: Fun<A, B>): Sequence<Fun<A, B>> = Fn.arbitrary(FA(), CA(), AB()).shrink(fail.fn).map {
-        Fun(it, fail.d, false, abstract(it, fail.d).f)
+    override fun shrink(fail: Fun<A, B>): Sequence<Fun<A, B>> = Tuple2.arbitrary(Fn.arbitrary(FA(), CA(), AB()), AB()).shrink(fail.fn toT fail.d).map { (fn, d) ->
+        Fun(fn, d, false, abstract(fn, d).f)
     } + (if (!fail.shrunk) sequenceOf(Fun(fail.fn, fail.d, true, fail.f)) else emptySequence())
 }
 
