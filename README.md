@@ -161,7 +161,23 @@ If not then don't worry. Most of the api can be used without ever touching upon 
 > That is excluding types like Option or TupleN, which should be fine.
 
 ## Kotlintest generators vs propCheck
-Kotlintest already includes some means of property based testing. However their data-types and reflection-lookups are severly limited. The reason I ported quickcheck over is because it is built upon lawful instances for its datatypes and features a much richer set of methods. This makes testing with propCheck much easier and much more powerful.
+
+Another library that offers property-based testing is kotlintest, however it has several drawbacks:
+- Shrinking is much worse.
+    - Shrinking instances are rather primitive (especially lists). propCheck uses the same methods quickCheck uses, and quickcheck is built upon years and years of experience and research.
+        - This causes kotlintests shrunk results to be worse for most non-trivial shrinking operations (and even in the trivial cases)
+    - Generators are tied to shrinkers but most useful operations on generators silently drop the shrinker. This is quite problematic for several reasons, it makes using shrinking much harder as you have to avoid certain interface methods to keep it. Also it makes reasoning about code harder because it's silent! `Gen.map(id)` should not change the datatype, in kotlintest it will, because it forgets the shrinker
+    - Operates over over lists rather than lazy sequences, this will become a problem with shrinking larger examples
+- It is just less powerful. propCheck offers generating functions (properly), coverage checks on your generated data, statemachine testing for complex stateful systems (with support for catching race-conditions), and more smaller things.
+- Not very flexible. propCheck offers many more combinators for both properties, generators and shrinkers
+- While kotlintest does allow reproducable tests (by seeding a specific generator), propCheck takes this quite a step further, not associating a generator with a random seed, but having the whole property test being deterministic after seeding it. Retaining good random values is achieved by using a splittable random generator.
+- Kotlintest also has no notion of growing it's input over time. propCheck starts random generation with smaller values and increases to fail faster. This also allows precise control over the size of generated structures (needed for anything recursive, like lists and trees etc)
+
+However propCheck also has some drawbacks:
+- Exception handling has to go through IO/suspend or needs to be handled manually. Not a huge problem, but for exception heavy code can be a burden
+- Kotlintests api is easier to use in trivial cases (but that is also what limits it)
+
+Outside of property based testing kotlintest still makes a fine testing library, and I recommend using it to execute the tests and for anything that is not a property test!
 
 ## Feedback
 `propCheck` is still in its early days so if you notice bugs or think something can be improved please create issues or shoot me a pull request. All feedback is highly appreciated.
