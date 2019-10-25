@@ -25,7 +25,7 @@ propCheck {
 propCheck { .. }
 ```
 Every test starts with a call to this (or one of it's variants) function. It has an optional argument for arguments (like a different random seed, etc) and a required argument that is of type `() -> Property` (This being a function is for pure convenience).
-> `Property` is a datatype that describes something that has been tested (yes "has been"). For example `Boolean`, `TestResult` all implement the `Property<A>` typeclass, providing means to convert to the `Property` datatype, but that is rarely done manually. For more information view [this](https://github.com/1Jajen1/propCheck/blob/master/docs/Introdution.md#properties)
+> `Property` is a datatype that describes something that has been tested (yes "has been"). For example `Boolean`, `TestResult` all implement the `Testable<A>` typeclass, providing means to convert to the `Property` datatype, but that is rarely done manually. For more information view [this](https://github.com/1Jajen1/propCheck/blob/master/docs/Introdution.md#properties)
 
 ```kotlin
 forAll { (a, b): Pair<Int, Int> -> ... }
