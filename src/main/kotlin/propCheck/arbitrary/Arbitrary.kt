@@ -145,6 +145,7 @@ fun <A> shrinkList(list: List<A>, f: (A) -> Sequence<A>): Sequence<List<A>> {
 }
 
 // ---------------------------- Number shrinkers
+// TODO use only long and convert back and forth for others, since numbers approach 0 that should be safe
 fun shrinkByte(fail: Byte): Sequence<Byte> = (
         (if (fail < 0 && (-fail).toByte() > fail) sequenceOf(-fail) else emptySequence()) +
                 (sequenceOf(0) + iterate({ it / 2 }, fail.toInt()).drop(1)
