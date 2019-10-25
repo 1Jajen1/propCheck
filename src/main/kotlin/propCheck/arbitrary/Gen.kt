@@ -106,7 +106,7 @@ class Gen<A>(val unGen: (Tuple2<RandSeed, Int>) -> A) : GenOf<A> {
      * generate lists of a given size
      */
     fun vectorOf(n: Int): Gen<List<A>> = Gen.monad().fx.monad {
-        (0..(n - 1)).toList().map { this@Gen.bind() }
+        (0 until n).toList().map { this@Gen.bind() }
     }.fix()
 
     companion object {

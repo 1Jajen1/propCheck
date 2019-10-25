@@ -120,3 +120,14 @@ Exception
 
 In general it is best to have as few `IO` tests as possible.
 
+### Args
+
+`Args` represents the arguments that can be passed to `propCheck`.
+
+Possible fields:
+* `replay: Option<Tuple2<Long, Int>>` -> if specified uses the given seed and size parameter
+* `maxSuccess: Int` -> Number of tests to run
+* `maxDiscardRatio: Int` -> Ratio that if exceeded gives up testing
+* `maxSize: Int` -> The maximum size that is passed to a generator
+* `verbose: Boolean` -> More output.
+* `maxShrinks: Int` -> Maximum shrinking attempts performed
