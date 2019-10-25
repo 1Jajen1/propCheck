@@ -9,17 +9,22 @@ It started out as a straight port of quickcheck and was adapted slightly to work
 
 ## Table of contents
 
+* [Documentation](https://github.com/1Jajen1/propCheck#documentation)
 * [Usage](https://github.com/1Jajen1/propCheck#usage)
 * [Shrinking](https://github.com/1Jajen1/propCheck#shrinking)
-* [Testing custom classes](https://github.com/1Jajen1/propCheck#testing-custom-classes)
-* [The `Gen<A>` datatype](https://github.com/1Jajen1/propCheck#the-gena-datatype)
 * [A note regarding test data](https://github.com/1Jajen1/propCheck#a-note-regarding-test-data)
-* [State-machine-testing and testing for race-conditons](https://github.com/1Jajen1/propCheck#state-machine-testing-and-testing-for-race-conditions)
 * [Running with a test runner](https://github.com/1Jajen1/propCheck#running-these-tests-with-a-test-runner)
 * [Use of arrow in and with propCheck](https://github.com/1Jajen1/propCheck#use-of-arrow-in-and-with-propcheck)
 * [Kotlintest generators vs propCheck](https://github.com/1Jajen1/propCheck#kotlintest-generators-vs-propcheck)
 * [Feedback](https://github.com/1Jajen1/propCheck#feedback)
 * [Credits](https://github.com/1Jajen1/propCheck#credits)
+
+## Documentation
+* [Introduction](https://github.com/1Jajen1/propCheck/blob/master/docs/Introduction.md)
+* [Creating Generators](https://github.com/1Jajen1/propCheck/blob/master/docs/CreatingGenerators.md)
+* [Creating Properties](https://github.com/1Jajen1/propCheck/blob/master/docs/CreatingProperties.md)
+* [Generating functions](https://github.com/1Jajen1/propCheck/blob/master/docs/GeneratingFunctions.md)
+* [State-machine-testing and testing for race-conditons](https://github.com/1Jajen1/propCheck/blob/master/docs/StatemachineTesting.md)
    
 ## Usage
 
@@ -78,109 +83,6 @@ propCheck {
 Falsifiable
 20
 ```
-
-## Testing custom classes
-
-To understand how to generate custom data for testing it is best to look at the `Arbitrary<A>` interface first.
-`Arbitrary` defines two methods: 
-```kotlin
-fun arbitrary(): Gen<A>
-fun shrink(fail: A): Sequence<A> = emptySequence()
-```
-Since shrink has a default implementation (no shrinking) the main focus for generating custom data is on `.arbitrary()`.
-
-In the following example we wirite a simple generator for a user data class:
-```kotlin
-data class User(val name: String, val age: Int, val friends: List<String>)
-
-val userArb: Arbitrary<User> = Arbitrary(
-    Gen.applicative().map(
-        arbitraryASCIIString(),
-        arbitrarySizedInt(),
-        ListK.arbitrary(String.arbitrary()).arbitrary()
-    ) { (name, age, friends) ->
-        User(name, age, friends)
-    }.fix()
-)
-```
-Here we combine three generators (String, Int, List<String>) and map their result to a user.
-> This is also using the invoke constructor from `Arbitrary`.
-
-Let's add a way to shrink this user:
-```kotlin
-val userArb = object : Arbitrary<User> {
-    override fun arbitrary(): Gen<User> = ...
-    override fun shrink(fail: User): Sequence<User> =
-            shrinkMap({ user ->
-                Tuple3(user.name, user.age, user.friends.k())
-            }, { (name, age, friends) ->
-                User(name, age, friends)
-            }, Tuple3.arbitrary(
-                 String.arbitrary(),
-                 Int.arbitrary(),
-                 ListK.arbitrary(String.arbitrary())
-               )
-            ).invoke(fail)
-}
-
-```
-Here `shrinkMap` is used to implement shrinking. `shrinkMap` returns a shrinking function for a type that can be converted from `A` to `B` and back by using an existing instance of `Arbitrary<B>`. Since data classes in general can be expressed as tuples and `Tuple3` already has an arbitrary instance (with shrinking) we can take advantage of that.
-
-This is how a failed test would look with shrinking (just output, no exceptions)
-```kotlin
-propCheck {
-    forAll(userArb) { user ->
-        user.age < 20 // Fail for users older than 20
-    }
-}
-// output =>
-*** Failed! (after 32 tests and 3 shrinks):
-Falsifiable
-User(name=, age=20, friends=ListK(list=[]))
-```
-Our shrinking worked and we are left with a minimal example.
-
-Now there are several ways of simplifying all of this:
-* use [fromTup](https://github.com/1Jajen1/propCheck#fromtupto-a---tuplen-from-tuplen---a-arbitrarytuple2n) which given a function from and to a TupleN returns an Arbitrary instance with shrinking
-* use [arrow-generic](https://arrow-kt.io/docs/generic/product/) to auto generate from and to tuple functions
-* use [defArbitrary](https://github.com/1Jajen1/propCheck/blob/master/README.md#defarbitrarya-arbitrarya) which can for most `A`'s infer a Arbitrary instance. A full list can be seen [here](https://github.com/1Jajen1/propCheck/blob/master/README.md#types-with-default-implementations).
-
-This is as concise as it can get: (Given functions for to and from tup are defined or generated with arrow)
-```kotlin
-val userArbitrary: Arbitrary<User> = fromTup(::toTuple, ::fromTuple)
-```
-
-### The `Gen<A>` datatype
-
-At the heart of generating testing data is the `Gen<A>` datatype. It represents a function from `(Long) -> (Int) -> A`, which translates to: Given a random seed and a size parameter it returns an A.
-
-Hand crafting `Gen` instances is made very easy with powerful combinators.
-In this following example we create a generator for sorted non-empty lists with integers:
-```kotlin
-val sortedNelGen: Gen<List<Int>> = arbitrarySizedInt()
-    .listOf()
-    .suchThat { it.isNotEmpty() }
-    .map { it.sorted() }
-```
-> `arbitrarySizedInt` returns a generator for ints that depends on the size parameter.
-
-A more complex example could be generating a `BinaryTree` of ints:
-```kotlin
-sealed class BinaryTree {
-    data class Leaf(val i: Int): BinaryTree()
-    data class Branch(val left: BinaryTree, val right: BinaryTree): BinaryTree()
-}
-
-fun binaryTreeGen(): Gen<BinaryTree> = Gen.sized { size ->
-    if (size == 1) arbitrarySizedInt().map { BinaryTree.Leaf(it) as BinaryTree }
-    else Gen.frequency(
-        1 toT arbitrarySizedInt().map { BinaryTree.Leaf(it) as BinaryTree },
-        3 toT binding { BinaryTree.Branch(binaryTreeGen().resize(size - 1).bind(), binaryTreeGen().resize(size - 1).bind()) as BinaryTree }.fix()
-    )
-}
-```
-This example generates binary-trees based with a maximum depth based on the size parameter. Using `Gen.frequency` the chance of getting a `Branch` instead of a `Leaf` is adjusted.
-> This is using the amazing fp library [arrow](https://arrow-kt.io/) for `binding`. This is not necessary, it will however ease creation of nested `Gen`s and lots of other more complex generators.
 
 ## A note regarding test data
 The quality of a property-based test is directly related to the quality of the data fed to it. There are some helpers to test and assure that the generated data holds some invariants.

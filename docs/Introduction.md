@@ -77,7 +77,7 @@ Quite a bit to take in, so let's break it down:
 
 `Gen.applicative().map(Gen<A>, Gen<B>) { (a, b) -> .. }` This scary looking method comes from arrow and, in short, combines a number of `Gen<*>` to one single `Gen<A>`. (There is much more to `Applicative`, but for this example that understanding is enough).
 In this case we are combining `arbitraryASCIIString(): Gen<String>`, `arbitrarySizedInt(): Gen<Int>` and `ListK.arbitrary(String.arbitrary()): Gen<ListK<String>>` and mapping the result of these three to `Gen<User>`.
-> If you want the result of a `Gen<A>` to depend on a result of another `Gen<B>` you need a different method than `applicative().map` but more on that [here](TODO link)
+> If you want the result of a `Gen<A>` to depend on a result of another `Gen<B>` you need a different method than `applicative().map` but more on that [here](https://github.com/1Jajen1/propCheck/blob/master/docs/CreatingGenerators.md#genapplicative)
 
 ### Testing IO
 
