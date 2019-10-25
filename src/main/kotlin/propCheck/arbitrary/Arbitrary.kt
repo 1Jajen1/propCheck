@@ -240,10 +240,6 @@ fun shrinkChar(fail: Char): Sequence<Char> = (
             else -> i
         }
     } < 0
-
-}.also {
-    val t = it.toList()
-    println(t)
 }
 
 
