@@ -1,5 +1,6 @@
 package propCheck
 
+import arrow.Kind
 import arrow.core.*
 import arrow.core.extensions.list.foldable.sequence_
 import arrow.core.extensions.list.traverse.traverse
@@ -7,6 +8,7 @@ import arrow.core.extensions.mapk.foldable.combineAll
 import arrow.core.extensions.mapk.semigroup.plus
 import arrow.core.extensions.mapk.semigroup.semigroup
 import arrow.core.extensions.monoid
+import arrow.core.extensions.option.traverse.traverse
 import arrow.core.extensions.semigroup
 import arrow.core.extensions.sequence.foldable.isEmpty
 import arrow.extension
@@ -15,9 +17,13 @@ import arrow.fx.IO
 import arrow.fx.Ref
 import arrow.fx.extensions.fx
 import arrow.fx.extensions.io.applicative.applicative
+import arrow.fx.extensions.io.monad.monad
 import arrow.fx.extensions.io.monadDefer.monadDefer
 import arrow.fx.fix
 import arrow.optics.optics
+import arrow.recursion.CoalgebraM
+import arrow.typeclasses.Monad
+import arrow.typeclasses.Traverse
 import org.apache.commons.math3.special.Erf
 import propCheck.arbitrary.Gen
 import propCheck.arbitrary.RandSeed
@@ -104,6 +110,7 @@ data class Args(
  */
 @optics
 data class State(
+    val abortWith: Option<Result>,
     val output: Ref<ForIO, String>, // mutable ref for writing output
     val maxSuccess: Int,
     val coverageConfidence: Option<Confidence>,
@@ -192,9 +199,7 @@ fun propCheckIO(
     args: Args = Args(),
     f: () -> Property
 ): IO<Result> = IO.fx {
-    withState(args) {
-        runTest(it, f())
-    }.bind().bind().also {
+    runTest(args, f()).bind().also {
         if (args.verbose)
             println(
                 when (it) {
@@ -258,10 +263,32 @@ internal fun failureMessage(result: Result): String = when (result) {
     else -> throw IllegalStateException("Never")
 }
 
-/**
- * Run a test with a state derived from the args
- */
-fun <A> withState(args: Args, f: (State) -> A): IO<A> = IO.fx {
+fun runTest(args: Args, prop: Property): IO<Result> = IO.fx {
+    val initState = !getInitialState(args)
+    !initState.coelgotM<ForOption, ForIO, State, Result>({ (state, next) ->
+        // check current state if its fine
+        if (state.numSuccessTests >= state.maxSuccess && state.coverageConfidence.isEmpty())
+            doneTesting(state)
+        else if (state.numDiscardedTests >= state.maxDiscardRatio * Math.max(state.numSuccessTests, state.maxSuccess))
+            giveUpTesting(state)
+        else
+            state.abortWith.fold({
+                // eval next state if not
+                next.value().fix().map {
+                    it.fix().fold({
+                        throw IllegalStateException("Infinite unfold was finite?!")
+                    }, ::identity)
+                }
+            }, { IO.just(it) })
+    }, { state ->
+        // take a seed state and generate a new state (by running a test)
+        runTest(state, prop).map { newState ->
+            newState.some()
+        }
+    }, Option.traverse(), IO.monad())
+}.fix()
+
+fun getInitialState(args: Args): IO<State> = IO.fx {
     val randSeed = args.replay.fold({
         IO { RandSeed(Random.nextLong()) }
     }, { IO.just(it.a) }).bind()
@@ -295,7 +322,8 @@ fun <A> withState(args: Args, f: (State) -> A): IO<A> = IO.fx {
         }
     }
 
-    val state = State(
+    State(
+        abortWith = none(),
         maxSuccess = args.maxSuccess,
         coverageConfidence = none(),
         maxDiscardRatio = args.maxDiscardRatio,
@@ -319,24 +347,134 @@ fun <A> withState(args: Args, f: (State) -> A): IO<A> = IO.fx {
         requiredCoverage = emptyMap<Tuple2<Option<String>, String>, Double>().k(),
         output = Ref(IO.monadDefer(), "").bind()
     )
-
-    f(state)
 }
 
-/**
- * Run a test case with a given state and property
- * Checks if we are done, should give up or continue testing
- */
-fun runTest(
-    state: State,
-    prop: Property
-): IO<Result> =
-    if (state.numSuccessTests >= state.maxSuccess && state.coverageConfidence.isEmpty())
-        doneTesting(state)
-    else if (state.numDiscardedTests >= state.maxDiscardRatio * Math.max(state.numSuccessTests, state.maxSuccess))
-        giveUpTesting(state)
+fun runTest(state: State, prop: Property): IO<State> = IO.fx {
+    val (rand1, rand2) = state.randomSeed.split()
+
+    /**
+     * add a coverage check if needed
+     */
+    val f_or_cov: Property = state.coverageConfidence.map { conf ->
+        if (
+            (1 + state.numSuccessTests).rem(100) == 0 &&
+            ((1 + state.numSuccessTests) / 100).rem(2) == 0
+        ) addCoverageCheck(conf, state, prop)
+        else prop
+    }.fold({ prop }, ::identity)
+
+    val size = state.computeSize(state.numSuccessTests)(state.numRecentlyDiscardedTests)
+
+    /**
+     * run a test and unfold the rose structure
+     */
+    val (res0, ts) = when (val it = protectRose(
+        reduceRose(
+            f_or_cov.unProperty.unGen(
+                rand1 toT size
+            ).unProp
+        )
+    ).bind()) {
+        is Rose.IORose -> throw IllegalStateException("Should not happen")
+        is Rose.MkRose -> it.res toT it.shrunk
+    }
+
+    val res = callbackPostTest(state, res0).bind()
+
+    /**
+     * compute a new state by adding the current result
+     */
+    val newState = State(
+        abortWith = none(),
+        coverageConfidence = res.optionCheckCoverage.or(state.coverageConfidence),
+        maxSuccess = res.optionNumOfTests.getOrElse { state.maxSuccess },
+        tables = res.tables.foldRight(state.tables) { (k, l), acc ->
+            acc.k()
+                .plus<String, MapK<String, Int>>(MapK.semigroup(Int.semigroup()), mapOf(k to (mapOf(l to 1)).k()).k())
+        },
+        expected = res.expected,
+        labels = mapOf(*res.labels.map { it to 1 }.toTypedArray()).k().plus(Int.semigroup(), state.labels),
+        classes = mapOf(*res.classes.map { it to 1 }.toTypedArray()).k().plus(Int.semigroup(), state.classes),
+        requiredCoverage = res.requiredCoverage.foldRight(state.requiredCoverage) { v, acc ->
+            val (key, value, p) = v
+            val alreadyThere = acc[key toT value] ?: Double.MIN_VALUE
+            (acc + mapOf((key toT value) to Math.max(alreadyThere, p))).k()
+        },
+        // keep rest
+        numTotTryShrinks = state.numTotTryShrinks,
+        maxShrinks = state.maxShrinks,
+        numSuccessShrinks = state.numSuccessShrinks,
+        numTryShrinks = state.numTryShrinks,
+        numRecentlyDiscardedTests = state.numRecentlyDiscardedTests,
+        numDiscardedTests = state.numDiscardedTests,
+        numSuccessTests = state.numSuccessTests,
+        computeSize = state.computeSize,
+        maxDiscardRatio = state.maxDiscardRatio,
+        randomSeed = state.randomSeed,
+        output = state.output
+    )
+
+    fun cont(nState: State, br: (State) -> IO<Result>): IO<State> = if (res.abort)
+        br(nState).map { State.abortWith.set(nState, it) }
     else
-        runATest(state, prop)
+        IO.just(nState)
+
+    when (res.ok) {
+        true.some() -> {
+            cont(
+                State.numSuccessTests.modify(
+                    State.numRecentlyDiscardedTests.set(
+                        State.randomSeed.set(newState, rand2),
+                        0
+                    )
+                ) { it + 1 },
+                ::doneTesting
+            )
+        }
+        false.some() -> {
+            IO.fx {
+                val (numShrinks, totFailed, lastFailed, nRes) = foundFailure(newState, res, ts).bind()
+                val output = newState.output.get().bind()
+                val res = if (nRes.expected.not())
+                    Result.Success(
+                        numTests = newState.numSuccessTests + 1,
+                        numDiscardedTests = newState.numDiscardedTests,
+                        output = output,
+                        tables = newState.tables,
+                        labels = newState.labels,
+                        classes = newState.classes
+                    )
+                else
+                    Result.Failure(
+                        usedSeed = newState.randomSeed,
+                        output = output,
+                        numDiscardedTests = newState.numDiscardedTests,
+                        numTests = newState.numSuccessTests + 1,
+                        exception = nRes.exception,
+                        reason = nRes.reason,
+                        failingClasses = nRes.classes,
+                        failingLabels = nRes.labels,
+                        failingTestCase = nRes.testCase,
+                        numShrinkFinal = lastFailed,
+                        numShrinks = numShrinks,
+                        numShrinkTries = totFailed,
+                        usedSize = size
+                    )
+                State.abortWith.set(newState, res)
+            }
+        }
+        None -> {
+            cont(
+                State.numDiscardedTests.modify(
+                    State.numRecentlyDiscardedTests.modify(
+                        State.randomSeed.set(newState, rand2)
+                    ) { it + 1 }
+                ) { it + 1 }, ::giveUpTesting
+            )
+        }
+        else -> throw IllegalStateException("Not possible")
+    }.bind()
+}
 
 /**
  * Done testing, construct result and add some output
@@ -399,134 +537,6 @@ fun giveUpTesting(state: State): IO<Result> = IO.fx {
         labels = state.labels,
         tables = state.tables
     )
-}
-
-/**
- * Execute a test
- */
-fun runATest(state: State, prop: Property): IO<Result> = IO.fx {
-    val (rand1, rand2) = state.randomSeed.split()
-
-    /**
-     * add a coverage check if needed
-     */
-    val f_or_cov: Property = state.coverageConfidence.map { conf ->
-        if (
-            (1 + state.numSuccessTests).rem(100) == 0 &&
-            ((1 + state.numSuccessTests) / 100).rem(2) == 0
-        ) addCoverageCheck(conf, state, prop)
-        else prop
-    }.fold({ prop }, ::identity)
-
-    val size = state.computeSize(state.numSuccessTests)(state.numRecentlyDiscardedTests)
-
-    /**
-     * run a test and unfold the rose structure
-     */
-    val (res0, ts) = when (val it = protectRose(
-        reduceRose(
-            f_or_cov.unProperty.unGen(
-                rand1 toT size
-            ).unProp
-        )
-    ).bind()) {
-        is Rose.IORose -> throw IllegalStateException("Should not happen")
-        is Rose.MkRose -> it.res toT it.shrunk
-    }
-
-    val res = callbackPostTest(state, res0).bind()
-
-    /**
-     * compute a new state by adding the current result
-     */
-    val newState = State(
-        coverageConfidence = res.optionCheckCoverage.or(state.coverageConfidence),
-        maxSuccess = res.optionNumOfTests.getOrElse { state.maxSuccess },
-        tables = res.tables.foldRight(state.tables) { (k, l), acc ->
-            acc.k()
-                .plus<String, MapK<String, Int>>(MapK.semigroup(Int.semigroup()), mapOf(k to (mapOf(l to 1)).k()).k())
-        },
-        expected = res.expected,
-        labels = mapOf(*res.labels.map { it to 1 }.toTypedArray()).k().plus(Int.semigroup(), state.labels),
-        classes = mapOf(*res.classes.map { it to 1 }.toTypedArray()).k().plus(Int.semigroup(), state.classes),
-        requiredCoverage = res.requiredCoverage.foldRight(state.requiredCoverage) { v, acc ->
-            val (key, value, p) = v
-            val alreadyThere = acc[key toT value] ?: Double.MIN_VALUE
-            (acc + mapOf((key toT value) to Math.max(alreadyThere, p))).k()
-        },
-        // keep rest
-        numTotTryShrinks = state.numTotTryShrinks,
-        maxShrinks = state.maxShrinks,
-        numSuccessShrinks = state.numSuccessShrinks,
-        numTryShrinks = state.numTryShrinks,
-        numRecentlyDiscardedTests = state.numRecentlyDiscardedTests,
-        numDiscardedTests = state.numDiscardedTests,
-        numSuccessTests = state.numSuccessTests,
-        computeSize = state.computeSize,
-        maxDiscardRatio = state.maxDiscardRatio,
-        randomSeed = state.randomSeed,
-        output = state.output
-    )
-
-    fun cont(nState: State, br: (State) -> IO<Result>): IO<Result> = if (res.abort)
-        br(nState)
-    else
-        runTest(nState, prop)
-
-    when (res.ok) {
-        true.some() -> {
-            cont(
-                State.numSuccessTests.modify(
-                    State.numRecentlyDiscardedTests.set(
-                        State.randomSeed.set(newState, rand2),
-                        0
-                    )
-                ) { it + 1 },
-                ::doneTesting
-            )
-        }
-        false.some() -> {
-            IO.fx {
-                val (numShrinks, totFailed, lastFailed, nRes) = foundFailure(newState, res, ts).bind()
-                val output = newState.output.get().bind()
-                if (nRes.expected.not())
-                    Result.Success(
-                        numTests = newState.numSuccessTests + 1,
-                        numDiscardedTests = newState.numDiscardedTests,
-                        output = output,
-                        tables = newState.tables,
-                        labels = newState.labels,
-                        classes = newState.classes
-                    )
-                else
-                    Result.Failure(
-                        usedSeed = newState.randomSeed,
-                        output = output,
-                        numDiscardedTests = newState.numDiscardedTests,
-                        numTests = newState.numSuccessTests + 1,
-                        exception = nRes.exception,
-                        reason = nRes.reason,
-                        failingClasses = nRes.classes,
-                        failingLabels = nRes.labels,
-                        failingTestCase = nRes.testCase,
-                        numShrinkFinal = lastFailed,
-                        numShrinks = numShrinks,
-                        numShrinkTries = totFailed,
-                        usedSize = size
-                    )
-            }
-        }
-        None -> {
-            cont(
-                State.numDiscardedTests.modify(
-                    State.numRecentlyDiscardedTests.modify(
-                        State.randomSeed.set(newState, rand2)
-                    ) { it + 1 }
-                ) { it + 1 }, ::giveUpTesting
-            )
-        }
-        else -> throw IllegalStateException("Not possible")
-    }.bind()
 }
 
 typealias FailureResult = IO<Tuple4<Int, Int, Int, TestResult>>
@@ -802,8 +812,10 @@ fun addCoverageCheck(confidence: Confidence, state: State, prop: Property): Prop
             }.fold(false) { acc, v -> acc || v } -> {
                 val (labels, tables) = labelsAndTables(state)
                 listOf(labels, tables).filter { it.isNotEmpty() }.map { it.joinToString("") }
-                    .foldRight(TestResult.testable().run { failed("Insufficient coverage")
-                        .property() }) { v, acc ->
+                    .foldRight(TestResult.testable().run {
+                        failed("Insufficient coverage")
+                            .property()
+                    }) { v, acc ->
                         counterexample({ v }, acc)
                     }
             }
