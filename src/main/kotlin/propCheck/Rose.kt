@@ -5,16 +5,24 @@ import arrow.core.*
 import arrow.core.extensions.eval.monad.monad
 import arrow.core.extensions.fx
 import arrow.core.extensions.list.traverse.traverse
+import arrow.core.extensions.sequence.foldable.foldLeft
+import arrow.core.extensions.sequence.foldable.foldRight
 import arrow.core.extensions.sequence.traverse.traverse
 import arrow.core.extensions.sequencek.foldable.foldRight
 import arrow.extension
+import arrow.fx.ForIO
 import arrow.fx.IO
 import arrow.fx.extensions.fx
 import arrow.fx.extensions.io.applicative.applicative
 import arrow.fx.extensions.io.applicativeError.handleError
 import arrow.fx.extensions.io.monad.monad
 import arrow.fx.fix
+import arrow.mtl.typeclasses.ComposedFunctor
+import arrow.mtl.typeclasses.Nested
+import arrow.mtl.typeclasses.nest
+import arrow.mtl.typeclasses.unnest
 import arrow.optics.optics
+import arrow.recursion.typeclasses.Birecursive
 import arrow.typeclasses.*
 import propCheck.arbitrary.Arbitrary
 import propCheck.arbitrary.Gen
@@ -24,6 +32,7 @@ import propCheck.arbitrary.gen.monad.flatMap
 import propCheck.arbitrary.gen.monad.monad
 import propCheck.property.testable.testable
 import propCheck.rose.monad.monad
+import propCheck.rosef.functor.functor
 import propCheck.testresult.testable.testable
 
 /**
@@ -100,75 +109,128 @@ data class TestResult(
 class ForRose private constructor() {
     companion object
 }
-typealias RoseOf<A> = arrow.Kind<ForRose, A>
-typealias RoseKindedJ<A> = io.kindedj.Hk<ForRose, A>
+typealias RoseOf<M, A> = arrow.Kind<RosePartialOf<M>, A>
+typealias RosePartialOf<M> = arrow.Kind<ForRose, M>
 
 @Suppress("UNCHECKED_CAST", "NOTHING_TO_INLINE")
-inline fun <A> RoseOf<A>.fix(): Rose<A> =
-    this as Rose<A>
+inline fun <M, A> RoseOf<M, A>.fix(): Rose<M, A> =
+    this as Rose<M, A>
+
+data class Rose<M, A>(val runRose: Kind<M, RoseF<A, Rose<M, A>>>) : RoseOf<M, A> {
+
+    fun <B> map(FM: Functor<M>, f: (A) -> B): Rose<M, B> = FM.run {
+        Rose(runRose.map { RoseF(f(it.res), it.shrunk.map { it.map(FM, f) }) })
+    }
+
+    fun <B> flatMap(MM: Monad<M>, f: (A) -> Rose<M, B>): Rose<M, B> = Rose(
+        MM.fx.monad {
+            val rose1 = !runRose
+            val rose2 = !f(rose1.res).runRose
+            RoseF(
+                rose2.res,
+                rose1.shrunk.map { it.flatMap(MM, f) } + rose2.shrunk
+            )
+        }
+    )
+
+    companion object {
+        fun <M, A> just(AM: Applicative<M>, a: A): Rose<M, A> = Rose(AM.just(RoseF(a, emptySequence())))
+    }
+}
+
+class ForRoseF private constructor()
+typealias RoseFOf<A, F> = arrow.Kind<RoseFPartialOf<A>, F>
+typealias RoseFPartialOf<A> = arrow.Kind<ForRoseF, A>
+
+@Suppress("UNCHECKED_CAST", "NOTHING_TO_INLINE")
+inline fun <A, F> RoseFOf<A, F>.fix(): RoseF<A, F> =
+    this as RoseF<A, F>
 
 /**
  * Recursive data structure.
  * At every level keeps both the current tested value and (lazily) the shrunk values
  */
-sealed class Rose<A> : RoseOf<A> {
-    class MkRose<A>(val res: A, val shrunk: Sequence<Rose<A>>) : Rose<A>()
-    class IORose<A>(val ioRose: IO<Rose<A>>) : Rose<A>()
+data class RoseF<A, F>(val res: A, val shrunk: Sequence<F>) : RoseFOf<A, F> {
+    fun <B> map(f: (F) -> B): RoseF<A, B> = RoseF(res, shrunk.map(f))
 
-    fun <B> map(f: (A) -> B): Rose<B> = when (this) {
-        is IORose -> IORose(ioRose.map { it.map(f) })
-        is MkRose -> MkRose(f(res), shrunk.map { it.map(f) })
+    companion object
+}
+
+@extension
+interface RoseFFunctor<C> : Functor<RoseFPartialOf<C>> {
+    override fun <A, B> Kind<RoseFPartialOf<C>, A>.map(f: (A) -> B): Kind<RoseFPartialOf<C>, B> =
+        fix().map(f)
+}
+
+@extension
+interface RoseFTraverse<C> : Traverse<RoseFPartialOf<C>> {
+    override fun <A, B> Kind<RoseFPartialOf<C>, A>.foldLeft(b: B, f: (B, A) -> B): B =
+        fix().shrunk.foldLeft(b, f)
+
+    override fun <A, B> Kind<RoseFPartialOf<C>, A>.foldRight(lb: Eval<B>, f: (A, Eval<B>) -> Eval<B>): Eval<B> =
+        fix().shrunk.foldRight(lb, f)
+
+    override fun <G, A, B> Kind<RoseFPartialOf<C>, A>.traverse(
+        AP: Applicative<G>,
+        f: (A) -> Kind<G, B>
+    ): Kind<G, Kind<RoseFPartialOf<C>, B>> = AP.run {
+        fix().shrunk.traverse(AP, f).map {
+            RoseF(fix().res, it.fix())
+        }
     }
-
-    fun <B> flatMap(f: (A) -> Rose<B>): Rose<B> = joinRose(map(f))
-
-    companion object {
-        fun <A> just(a: A): Rose<A> = MkRose(a, emptySequence())
-    }
 }
 
 @extension
-interface RoseFunctor : Functor<ForRose> {
-    override fun <A, B> Kind<ForRose, A>.map(f: (A) -> B): Kind<ForRose, B> = fix().map(f)
+interface RoseFunctor<M> : Functor<RosePartialOf<M>> {
+    fun FM(): Functor<M>
+
+    override fun <A, B> Kind<RosePartialOf<M>, A>.map(f: (A) -> B): Kind<RosePartialOf<M>, B> =
+        fix().map(FM(), f)
 }
 
 @extension
-interface RoseApplicative : Applicative<ForRose> {
-    override fun <A, B> Kind<ForRose, A>.ap(ff: Kind<ForRose, (A) -> B>): Kind<ForRose, B> =
-        fix().flatMap { a -> ff.map { it(a) }.fix() }
+interface RoseApplicative<M> : Applicative<RosePartialOf<M>> {
+    fun MM(): Monad<M>
 
-    override fun <A> just(a: A): Kind<ForRose, A> = Rose.just(a)
+    override fun <A> just(a: A): Kind<RosePartialOf<M>, A> = Rose.just(MM(), a)
+
+    override fun <A, B> Kind<RosePartialOf<M>, A>.ap(ff: Kind<RosePartialOf<M>, (A) -> B>): Kind<RosePartialOf<M>, B> =
+        fix().flatMap(MM()) { a -> ff.fix().map(MM()) { f -> f(a) } }
 }
 
 @extension
-interface RoseMonad : Monad<ForRose> {
-    override fun <A, B> Kind<ForRose, A>.flatMap(f: (A) -> Kind<ForRose, B>): Kind<ForRose, B> =
-        fix().flatMap { f(it).fix() }
+interface RoseMonad<M> : Monad<RosePartialOf<M>> {
+    fun MM(): Monad<M>
 
-    override fun <A> just(a: A): Kind<ForRose, A> = Rose.just(a)
+    override fun <A, B> Kind<RosePartialOf<M>, A>.flatMap(f: (A) -> Kind<RosePartialOf<M>, B>): Kind<RosePartialOf<M>, B> =
+        fix().flatMap(MM()) { f(it).fix() }
 
-    override fun <A, B> tailRecM(a: A, f: (A) -> Kind<ForRose, Either<A, B>>): Kind<ForRose, B> =
+    override fun <A> just(a: A): Kind<RosePartialOf<M>, A> = Rose.just(MM(), a)
+
+    override fun <A, B> tailRecM(a: A, f: (A) -> Kind<RosePartialOf<M>, Either<A, B>>): Kind<RosePartialOf<M>, B> =
         f(a).flatMap {
-            when (it) {
-                is Either.Left -> tailRecM(it.a, f)
-                is Either.Right -> Rose.just(it.b)
-            }
+            it.fold({
+                tailRecM(it, f)
+            }, {
+                just(it)
+            })
         }
 }
 
 /**
  * wrap an IO with results safely
  */
-fun ioRose(rose: IO<Rose<TestResult>>): Rose<TestResult> =
-    Rose.IORose(
-        protectRose(rose)
+fun ioRose(rose: IO<Rose<ForIO, TestResult>>): Rose<ForIO, TestResult> =
+    Rose(
+        protectRose(rose).flatMap { it.runRose }
     )
 
 /**
  * catch exceptions in io code and fail the test if necessary
  */
-fun protectRose(rose: IO<Rose<TestResult>>): IO<Rose<TestResult>> = rose.handleError {
+fun protectRose(rose: IO<Rose<ForIO, TestResult>>): IO<Rose<ForIO, TestResult>> = rose.handleError {
     Rose.just(
+        IO.monad(),
         failed(
             reason = "Exception",
             exception = it.some()
@@ -179,10 +241,13 @@ fun protectRose(rose: IO<Rose<TestResult>>): IO<Rose<TestResult>> = rose.handleE
 /**
  * apply a function on a roses content
  */
-fun <A> onRose(rose: Rose<A>, f: (A, Sequence<Rose<A>>) -> Rose<A>): Rose<A> = when (rose) {
-    is Rose.MkRose -> f(rose.res, rose.shrunk)
-    is Rose.IORose -> Rose.IORose(rose.ioRose.map { onRose(it, f) })
-}
+fun <A> onRose(rose: Rose<ForIO, A>, f: (A, Sequence<Rose<ForIO, A>>) -> Rose<ForIO, A>): Rose<ForIO, A> =
+    Rose(
+        IO.fx {
+            val (res, shrunk) = !rose.runRose
+            !f(res, shrunk).runRose
+        }.fix()
+    )
 
 /**
  * catch exceptions in io code and fail if necessary
@@ -197,43 +262,15 @@ fun protectResult(io: IO<TestResult>): IO<TestResult> = io.handleError {
 /**
  * wrap internal roses with ioRose and install error handlers
  */
-fun protectResults(rose: Rose<TestResult>): Rose<TestResult> =
+fun protectResults(rose: Rose<ForIO, TestResult>): Rose<ForIO, TestResult> =
     onRose(rose) { x, rs ->
-        Rose.IORose(
+        Rose(
             IO.fx {
                 val y = protectResult(IO.just(x)).bind()
-                Rose.MkRose(y, rs.map(::protectResults))
+                RoseF(y, rs.map(::protectResults))
             }
         )
     }
-
-/**
- * "Execute" a rose by reducing it as far as possible
- */
-fun reduceRose(rose: Rose<TestResult>): IO<Rose<TestResult>> = when (rose) {
-    is Rose.IORose -> rose.ioRose.flatMap(::reduceRose)
-    is Rose.MkRose -> IO.just(rose)
-}
-
-/**
- * join two roses
- */
-fun <A> joinRose(rose: Rose<Rose<A>>): Rose<A> = when (rose) {
-    is Rose.IORose -> Rose.IORose(rose.ioRose.map(::joinRose))
-    is Rose.MkRose -> when (rose.res) {
-        is Rose.IORose -> Rose.IORose(
-            rose.res.ioRose.flatMap {
-                IO.just(
-                    joinRose(Rose.MkRose(it, rose.shrunk))
-                )
-            }
-        )
-        is Rose.MkRose -> Rose.MkRose(
-            rose.res.res,
-            rose.shrunk.map(::joinRose) + rose.res.shrunk
-        )
-    }
-}
 
 internal fun defaultRes(): TestResult = TestResult(
     ok = none(),
@@ -272,7 +309,7 @@ fun liftBoolean(bool: Boolean): TestResult = if (bool) succeeded() else failed(
 fun mapResult(
     a: Property,
     f: (TestResult) -> TestResult
-): Property = mapRoseResult(a) { protectResults(it.map(f)) }
+): Property = mapRoseResult(a) { protectResults(it.map(IO.monad(), f)) }
 
 /**
  * Map over the test result of a property. f must be total
@@ -280,14 +317,14 @@ fun mapResult(
 fun mapTotalResult(
     a: Property,
     f: (TestResult) -> TestResult
-): Property = mapRoseResult(a) { it.map(f) }
+): Property = mapRoseResult(a) { it.map(IO.monad(), f) }
 
 /**
  * Map over a rose containing the TestResult, f must be total
  */
 fun mapRoseResult(
     a: Property,
-    f: (Rose<TestResult>) -> Rose<TestResult>
+    f: (Rose<ForIO, TestResult>) -> Rose<ForIO, TestResult>
 ): Property = mapProp(a) { Prop(f(it.unProp)) }
 
 /**
@@ -314,24 +351,35 @@ fun <B> shrinking(
         shrink,
         pf,
         arg
-    ).promote(Rose.monad()).map { Prop(joinRose(it.fix().map { it.unProp })) })
+    ).promote(Rose.monad(IO.monad())).map {
+        Prop(
+            it.fix().flatMap(IO.monad()) {
+                it.unProp
+            }
+        )
+    })
 
 internal fun <B> props(
     shrink: (B) -> Sequence<B>,
     pf: (B) -> Property,
     b: B
-): Rose<Gen<Prop>> = Rose.MkRose(
-    pf(b).unProperty,
-    // this is a bit ugly, is there a better way to shrink lazy?
-    sequenceOf(Unit).flatMap { shrink(b).map { v -> props(shrink, pf, v) } }
-)
+): Rose<ForIO, Gen<Prop>> =
+    Rose(
+        IO.just(
+            RoseF(
+                pf(b).unProperty,
+                // this is a bit ugly, is there a better way to shrink lazy?
+                sequenceOf(Unit).flatMap { shrink(b).map { v -> props(shrink, pf, v) } }
+            )
+        )
+    )
 
 /**
  * disable shrinking in a property by just supplying empty sequences
  */
 fun noShrinking(a: Property): Property =
     mapRoseResult(a) {
-        onRose(it) { res, _ -> Rose.MkRose(res, emptySequence()) }
+        onRose(it) { res, _ -> Rose.just(IO.monad(), res) }
     }
 
 /**
@@ -711,35 +759,28 @@ fun conjoin(props: Sequence<Eval<Property>>): Property =
         )
     )
 
-internal fun conj(roses: Sequence<Eval<Rose<TestResult>>>, k: (TestResult) -> TestResult): Rose<TestResult> = when {
-    roses.firstOrNull() == null -> Rose.MkRose(k(succeeded()), emptySequence())
-    else -> Rose.IORose(
+internal fun conj(roses: Sequence<Eval<Rose<ForIO, TestResult>>>, k: (TestResult) -> TestResult): Rose<ForIO, TestResult> = when {
+    roses.firstOrNull() == null -> Rose.just(IO.monad(), k(succeeded()))
+    else -> Rose(
         IO.fx {
-            val reduced = when (val it = reduceRose(roses.first().value()).bind()) {
-                is Rose.MkRose -> it
-                is Rose.IORose -> throw IllegalStateException("The impossible happened")
-            }
+            val reduced = !roses.first().value().runRose
             if (reduced.res.expected.not())
-                Rose.just(failed("expect failure may not be used inside a conjunction"))
+                RoseF(failed("expect failure may not be used inside a conjunction"), emptySequence())
             else
                 when (reduced.res.ok) {
-                    true.some() -> conj(roses.drop(1)) {
+                    true.some() -> !conj(roses.drop(1)) {
                         addLabels(reduced.res, addCallbacksAndCoverage(reduced.res, k(it)))
-                    }
+                    }.runRose
                     false.some() -> reduced
                     None -> IO.fx {
-                        val reduced2 = when (val it =
-                            reduceRose(conj(roses.drop(1)) {
-                                addCallbacksAndCoverage(
-                                    reduced.res,
-                                    k(it)
-                                )
-                            }).bind()) {
-                            is Rose.MkRose -> it
-                            is Rose.IORose -> throw IllegalStateException("The impossible happened")
-                        }
+                        val reduced2 = !conj(roses.drop(1)) {
+                            addCallbacksAndCoverage(
+                                reduced.res,
+                                k(it)
+                            )
+                        }.runRose
                         when (reduced2.res.ok) {
-                            true.some() -> Rose.MkRose(
+                            true.some() -> RoseF(
                                 TestResult.optionOk.set(
                                     reduced2.res,
                                     none()
@@ -800,7 +841,7 @@ fun disjoin(props: Sequence<Eval<Property>>): Property =
                     }.promote(Eval.monad())
                 }.bind()
                 Prop(
-                    roses.foldRight(Eval.now(Rose.just(failed("")))) { r, acc ->
+                    roses.foldRight(Eval.now(Rose.just(IO.monad(), failed("")))) { r, acc ->
                         Eval.fx {
                             disj(r.fix().bind(), acc)
                         }
@@ -810,7 +851,7 @@ fun disjoin(props: Sequence<Eval<Property>>): Property =
         )
     )
 
-internal fun disj(p: Rose<TestResult>, q: Eval<Rose<TestResult>>): Rose<TestResult> = Rose.monad().fx.monad {
+internal fun disj(p: Rose<ForIO, TestResult>, q: Eval<Rose<ForIO, TestResult>>): Rose<ForIO, TestResult> = Rose.monad(IO.monad()).fx.monad {
     val res1 = p.bind()
     if (res1.expected.not())
         failed("expectFailure may not occur inside a disjunction")
@@ -855,16 +896,20 @@ internal fun disj(p: Rose<TestResult>, q: Eval<Rose<TestResult>>): Rose<TestResu
 internal fun addCoverage(r: TestResult, s: TestResult): TestResult =
     TestResult.requiredCoverage.modify(s) { r.requiredCoverage + it }
 
-fun <A>A.eqv(b: A, eqA: Eq<A> = Eq.any(), showA: Show<A> = Show.any()): Property =
+fun <A> A.eqv(b: A, eqA: Eq<A> = Eq.any(), showA: Show<A> = Show.any()): Property =
     counterexample(
-        { "Expected: ${showA.run { this@eqv.show() }} to be equal to:\n" +
-                "        : ${showA.run { b.show() }}" },
+        {
+            "Expected: ${showA.run { this@eqv.show() }} to be equal to:\n" +
+                    "        : ${showA.run { b.show() }}"
+        },
         eqA.run { this@eqv.eqv(b) }
     )
 
-fun <A>A.neqv(b: A, eqA: Eq<A> = Eq.any(), showA: Show<A> = Show.any()): Property =
+fun <A> A.neqv(b: A, eqA: Eq<A> = Eq.any(), showA: Show<A> = Show.any()): Property =
     counterexample(
-        { "Expected: ${showA.run { this@neqv.show() }} to not be equal to:\n" +
-                "        : ${showA.run { b.show() }}" },
+        {
+            "Expected: ${showA.run { this@neqv.show() }} to not be equal to:\n" +
+                    "        : ${showA.run { b.show() }}"
+        },
         eqA.run { this@neqv.neqv(b) }
     )

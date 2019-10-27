@@ -2,6 +2,7 @@ package propCheck
 
 import arrow.core.Eval
 import arrow.core.Tuple2
+import arrow.fx.ForIO
 import arrow.fx.IO
 import arrow.syntax.function.andThen
 import arrow.typeclasses.Show
@@ -14,7 +15,7 @@ fun mapResult(a: Boolean, f: (TestResult) -> TestResult): Property =
     mapResult(a.property(), f)
 fun mapTotalResult(a: Boolean, f: (TestResult) -> TestResult): Property =
     mapTotalResult(a.property(), f)
-fun mapRoseResult(a: Boolean, f: (Rose<TestResult>) -> Rose<TestResult>): Property =
+fun mapRoseResult(a: Boolean, f: (Rose<ForIO, TestResult>) -> Rose<ForIO, TestResult>): Property =
     mapRoseResult(a.property(), f)
 fun mapProp(a: Boolean, f: (Prop) -> Prop): Property = mapProp(a.property(), f)
 fun mapSize(a: Boolean, f: (Int) -> Int): Property = mapSize(a.property(), f)

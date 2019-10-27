@@ -2,15 +2,15 @@ package propCheck
 
 import arrow.Kind
 import arrow.core.*
+import arrow.core.extensions.id.traverse.traverse
 import arrow.core.extensions.list.foldable.sequence_
 import arrow.core.extensions.list.traverse.traverse
 import arrow.core.extensions.mapk.foldable.combineAll
 import arrow.core.extensions.mapk.semigroup.plus
 import arrow.core.extensions.mapk.semigroup.semigroup
 import arrow.core.extensions.monoid
-import arrow.core.extensions.option.traverse.traverse
 import arrow.core.extensions.semigroup
-import arrow.core.extensions.sequence.foldable.isEmpty
+import arrow.core.extensions.sequence.foldable.foldRight
 import arrow.extension
 import arrow.fx.ForIO
 import arrow.fx.IO
@@ -21,6 +21,7 @@ import arrow.fx.extensions.io.monad.monad
 import arrow.fx.extensions.io.monadDefer.monadDefer
 import arrow.fx.fix
 import arrow.optics.optics
+import arrow.recursion.AlgebraM
 import arrow.recursion.CoalgebraM
 import arrow.typeclasses.Monad
 import arrow.typeclasses.Traverse
@@ -31,6 +32,142 @@ import propCheck.arbitrary.fix
 import propCheck.arbitrary.gen.monad.monad
 import propCheck.testresult.testable.testable
 import kotlin.random.Random
+
+/**
+ * Running propcheck:
+ * initializing state: IO because of generating a randomseed
+ * runTest: R access to state
+ *  ^- doneTesting: RW access to state
+ *  ^- giveUpTesting: RW access to state
+ *  ^- runATest: IO to unpack ioRose, IO for callbacks, RW access to state, IO access because of runTest
+ *      ^- foundFailure
+ *          ^- localMin: R access to state
+ *              ^- _localMin: IO to unpack ioRose, IO for callbacks, RW access to state
+ *                  ^- localMinFound: RW access to state, IO for callbacks
+ * Everything else builds upon reduceRose to unpack the rose tree:
+ * Unpacking Property:
+ * Property
+ *  -> Gen<Prop> -> RandSeed + Size -> Prop
+ *      -> Rose<TestResult> -> reduceRose (flatten out io roses) ->
+ *          -> IO<MkRose<TestResult>> -> runIO (^-^)
+ *              -> MkRose<TestResult> // testresult + a lazy sequence of shrunk results
+ *
+ * That is, surprisingly, all the magic behind quickcheck. Which is damn simple!
+ *
+ * Changes:
+ * - Move IORose out of Rose and make all it's creators return and handle m Rose instead
+ *  - also make rose a base functor version and have the default tree contain nodes of type m Rose
+ *  - Or go the hedgehog route of TreeT and NodeT, see what works better...
+ * - Go for a monadic stack like hedgehog (ignore monadic generators for now, but everything else needs a good stack
+ *  - Error handling at the top and a writer for output. That should already help quite a bit.
+ *      - When bifunctor io is out switch to that for error handling
+ * - Pretty printer for output diffs
+ *  - This needs a custom pretty printer (which can and will be another library) (Might also be useful for arrow-meta guys to test and print code)
+ *  - Example: Diff User(y = 1, x = 10) User (y = 1, x = 11) => User(
+ *                                                                 y = 1,
+ *                                                              -  x = 10,
+ *                                                              +  x = 11,
+ *                                                              )
+ * All of the above changes will mean no changes to the api, but enable a much better user experience.
+ *  - These will have priority. Changing to integrated shrinking may come later.
+ *
+ * - Ranges instead of size? shrinking will invalidate this...
+ *
+ * Hedgehog:
+ * Property => PropertyT IO () -> TestT (GenT IO) () -> ExceptT err (WriterT out (GenT IO)) ()
+ *              -> ExceptT err (WriterT out (Seed -> Size -> TreeT (MaybeT IO))) ()
+ * This can be summed up as:
+ *  Error handling using ExceptT -> Output using WriterT -> Generating a TreeT (MaybeT IO)
+ *  This is very similar to quickcheck except that quickcheck is basically only IO Gen ()
+ *
+ * Hedgehog's integrated shrinking works by letting GenT generate shrunk values alongside it and providing very smart means
+ *  of mapping and flatMapping to shrink the new values with it. This has the obvious problem of not always shrinking the earlier parts of a monadic chain...
+ *
+ * apoM (runTest prop) (TestResult) : Sequence TestResult
+ * cataM compileResults // Monoid combine
+ *
+ * ==> hyloM (runTests prop) compileResults mempty // Or coelgot to short on a non-success result
+ *
+ * TestResultMonoid
+ *  -> mempty = Success with a few labels and shit
+ *  -> combine =
+ *      Succcess + Success = combine success
+ *      Success + Failure, Failure + Success = Failure
+ *      GiveUp/ExpectedFailure are Failure as well
+ *
+ * The above encodes the control flow of propCheck, but does not specify running tests at all yet
+ *
+ * runTest prop = generate a tree of test run results
+ *
+ * if run is successfull return a success result
+ * else => cataM shrinkFailure on the tree
+ *          ^- shrinkFailure: (Rose<Result>) -> OptionT<Result>
+ *              - This can be understood as, if its a fail run then return the result, else return None
+ *
+ *
+ * Now that all recursive shit is removed let's think about what state we need to carry and where:
+ *  - NumOfTests: Init 1 and increased by cata when combining (Also all numOf* things as well)
+ *  - Output: WriterT transformer over some log aggregation structure
+ *  - labels, tables: Combined with a monoid
+ *  - seed/size: StateT because it will be updated quite a bit
+ *  - coverage: confidence: ReaderT
+ *  - expected: ReaderT
+ *
+ *
+ * Unfolding:
+ *  - Start with a state =>
+ *      unfold to IO<ListF<State, State>>
+ *          where the first state is the one used to run a property and the second one is used to continue the fold
+ *      unfold then cares you continuing by checking everything and then returning either Cons or NilF
+ *  - then run cata which just takes the last state
+ *
+ * Start state -> runATest -> runATest ->
+ *                  ^- Done     ^- Done
+ *
+ * What I want:
+ * unfolder Seed: Sequence<RunnableTestCase> (RunnableTestCase = (State) -> IO<TestResult>)
+ */
+
+// TODO remove when https://github.com/arrow-kt/arrow/pull/1750 is merged and released
+/**
+ * Monadic version of coelgot
+ */
+fun <F, M, A, B> A.coelgotM(
+    f: (Tuple2<A, Eval<Kind<M, Kind<F, B>>>>) -> Kind<M, B>,
+    coalg: CoalgebraM<F, M, A>,
+    TF: Traverse<F>,
+    MM: Monad<M>
+): Kind<M, B> {
+    fun h(a: A): Kind<M, B> =
+        TF.run {
+            MM.run {
+                f(
+                    Tuple2(a, Eval.later { coalg(a).flatMap { it.map(::h).sequence(MM) } })
+                )
+            }
+        }
+
+    return h(this)
+}
+
+/**
+ * Monadic version of elgot
+ */
+fun <F, M, A, B> B.elgotM(
+    alg: AlgebraM<F, M, A>,
+    f: (B) -> Kind<M, Either<A, Kind<F, B>>>,
+    TF: Traverse<F>,
+    MM: Monad<M>
+): Kind<M, A> {
+    fun h(b: B): Kind<M, A> = MM.run {
+        f(b).flatMap {
+            it.fold(MM::just) { MM.run { TF.run { it.traverse(MM, ::h).flatMap(alg) } } }
+        }
+    }
+
+    return h(this)
+}
+// TODO remove the above when the pr gets merged
 
 /**
  * Datatype which describes the result of a test
@@ -145,7 +282,7 @@ data class Property(val unProperty: Gen<Prop>) {
     companion object
 }
 
-data class Prop(val unProp: Rose<TestResult>)
+data class Prop(val unProp: Rose<ForIO, TestResult>)
 
 /**
  * Base interface for testable data
@@ -175,6 +312,7 @@ interface TestResultTestable : Testable<TestResult> {
                 Prop(
                     protectResults(
                         Rose.just(
+                            IO.monad(),
                             this
                         )
                     )
@@ -265,27 +403,20 @@ internal fun failureMessage(result: Result): String = when (result) {
 
 fun runTest(args: Args, prop: Property): IO<Result> = IO.fx {
     val initState = !getInitialState(args)
-    !initState.coelgotM<ForOption, ForIO, State, Result>({ (state, next) ->
+    // elgotM with Id is isomorphic to elgotM with NonEmptyListF and an algebra that just returns the last element
+    !initState.elgotM({ IO.just(it.value()) }, { state ->
         // check current state if its fine
         if (state.numSuccessTests >= state.maxSuccess && state.coverageConfidence.isEmpty())
-            doneTesting(state)
+            doneTesting(state).map { it.left() }
         else if (state.numDiscardedTests >= state.maxDiscardRatio * Math.max(state.numSuccessTests, state.maxSuccess))
-            giveUpTesting(state)
-        else
-            state.abortWith.fold({
-                // eval next state if not
-                next.value().fix().map {
-                    it.fix().fold({
-                        throw IllegalStateException("Infinite unfold was finite?!")
-                    }, ::identity)
-                }
-            }, { IO.just(it) })
-    }, { state ->
-        // take a seed state and generate a new state (by running a test)
-        runTest(state, prop).map { newState ->
-            newState.some()
-        }
-    }, Option.traverse(), IO.monad())
+            giveUpTesting(state).map { it.left() }
+        else state.abortWith.fold({
+            // take a seed state and generate a new state (by running a test)
+            runTest(state, prop).map { newState ->
+                Id(newState).right()
+            }
+        }, { IO.just(it.left()) }) // abort with a result
+    }, Id.traverse(), IO.monad())
 }.fix()
 
 fun getInitialState(args: Args): IO<State> = IO.fx {
@@ -368,16 +499,13 @@ fun runTest(state: State, prop: Property): IO<State> = IO.fx {
     /**
      * run a test and unfold the rose structure
      */
-    val (res0, ts) = when (val it = protectRose(
-        reduceRose(
+    val (res0, ts) = protectRose(
+        IO.just(
             f_or_cov.unProperty.unGen(
                 rand1 toT size
             ).unProp
         )
-    ).bind()) {
-        is Rose.IORose -> throw IllegalStateException("Should not happen")
-        is Rose.MkRose -> it.res toT it.shrunk
-    }
+    ).bind().runRose.bind()
 
     val res = callbackPostTest(state, res0).bind()
 
@@ -539,55 +667,57 @@ fun giveUpTesting(state: State): IO<Result> = IO.fx {
     )
 }
 
+data class ShrinkState(
+    val numSuccessShrinks: Int,
+    val numFailedShrinks: Int,
+    val numLastFailed: Int,
+    val optTestResult: Option<TestResult>
+)
+
 typealias FailureResult = IO<Tuple4<Int, Int, Int, TestResult>>
 
 /**
  * handle a failure, will try to shrink failure case
+ *
  */
-fun foundFailure(state: State, res: TestResult, ts: Sequence<Rose<TestResult>>): FailureResult =
-    localMin(
-        State.numTryShrinks.set(state, 0),
-        res, ts
-    )
-
-/**
- * shrink failure down or stop at some min value
- */
-fun localMin(state: State, res: TestResult, ts: Sequence<Rose<TestResult>>): FailureResult =
-    if (state.numSuccessShrinks + state.numTotTryShrinks >= state.maxShrinks)
-        localMinFound(state, res)
-    else
-        _localMin(state, res, ts)
-
-/**
- * test a single shrunk value and if recurse with localMin
- */
-internal fun _localMin(state: State, res: TestResult, ts: Sequence<Rose<TestResult>>): FailureResult =
-    when (ts.isEmpty()) {
-        true -> localMinFound(state, res)
-        else -> IO.fx {
-            val (nRes0, nTs) = when (val it = protectRose(reduceRose(ts.first()))
-                .bind()) {
-                is Rose.IORose -> throw IllegalStateException("Should never happen")
-                is Rose.MkRose -> it.res toT it.shrunk
-            }
-
-            val nRes = callbackPostTest(state, nRes0).bind()
-
-            if (nRes.ok == false.some())
-                localMin(
-                    State.numTryShrinks.set(
-                        State.numSuccessShrinks.modify(state) { it + 1 }, 0
-                    ), nRes, nTs
-                ).bind()
+fun foundFailure(state: State, res: TestResult, ts: Sequence<Rose<ForIO, TestResult>>): FailureResult =
+    (Tuple3(state, res, ts))
+        .elgotM({ IO.just(it.fix().value()) }, { (currState, currRes, remainingShrunk) ->
+            if (state.numSuccessShrinks + state.numTotTryShrinks >= state.maxShrinks)
+                localMinFound(currState, currRes).map { it.left() }
             else
-                localMin(
-                    State.numTryShrinks.modify(
-                        State.numTotTryShrinks.modify(state) { it + 1 }
-                    ) { it + 1 }, res, ts.drop(1)
-                ).bind()
-        }.fix()
-    }
+                remainingShrunk
+                    // Type parameters... Kotlin should be able to infer this, but it doesn't!
+                    .foldRight<Rose<ForIO, TestResult>, Function1<State, IO<Either<Tuple4<Int, Int, Int, TestResult>, Id<Tuple3<State, TestResult, Sequence<Rose<ForIO, TestResult>>>>>>>>(
+                        Eval.now(Function1 { s -> localMinFound(s, currRes).map { it.left() } }) // sequence is empty
+                    ) { v, acc ->
+                        Eval.later {
+                            Function1 { s: State ->
+                                IO.fx {
+                                    val (nRes0, nShrunk) = !v.runRose
+                                    val nRes = !callbackPostTest(s, nRes0)
+
+                                    if (nRes.ok == false.some())
+                                        Id(
+                                            Tuple3(
+                                                State.numTryShrinks.set(
+                                                    State.numSuccessShrinks.modify(s) { it + 1 }, 0
+                                                ),
+                                                nRes,
+                                                nShrunk
+                                            )
+                                        ).right()
+                                    else
+                                        !acc.value().f(
+                                            State.numTryShrinks.modify(
+                                                State.numTotTryShrinks.modify(s) { it + 1 }
+                                            ) { it + 1 }
+                                        )
+                                }.fix()
+                            }
+                        }
+                    }.value().f(currState)
+        }, Id.traverse(), IO.monad()).fix()
 
 /**
  * Done shrinking, append output. Back to runATest to finish up
