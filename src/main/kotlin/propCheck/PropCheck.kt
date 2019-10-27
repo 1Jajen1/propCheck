@@ -2,6 +2,7 @@ package propCheck
 
 import arrow.Kind
 import arrow.core.*
+import arrow.core.extensions.fx
 import arrow.core.extensions.id.traverse.traverse
 import arrow.core.extensions.list.foldable.sequence_
 import arrow.core.extensions.list.traverse.traverse
@@ -11,19 +12,28 @@ import arrow.core.extensions.mapk.semigroup.semigroup
 import arrow.core.extensions.monoid
 import arrow.core.extensions.semigroup
 import arrow.core.extensions.sequence.foldable.foldRight
+import arrow.core.extensions.sequencek.monoid.monoid
+import arrow.core.extensions.sequencek.semigroup.semigroup
 import arrow.extension
 import arrow.fx.ForIO
 import arrow.fx.IO
-import arrow.fx.Ref
 import arrow.fx.extensions.fx
 import arrow.fx.extensions.io.applicative.applicative
+import arrow.fx.extensions.io.functor.functor
 import arrow.fx.extensions.io.monad.monad
-import arrow.fx.extensions.io.monadDefer.monadDefer
 import arrow.fx.fix
+import arrow.mtl.WriterT
+import arrow.mtl.WriterTPartialOf
+import arrow.mtl.extensions.fx
+import arrow.mtl.extensions.writert.functor.unit
+import arrow.mtl.extensions.writert.monad.monad
+import arrow.mtl.fix
+import arrow.mtl.value
 import arrow.optics.optics
 import arrow.recursion.AlgebraM
 import arrow.recursion.CoalgebraM
 import arrow.typeclasses.Monad
+import arrow.typeclasses.MonadSyntax
 import arrow.typeclasses.Traverse
 import org.apache.commons.math3.special.Erf
 import propCheck.arbitrary.Gen
@@ -181,8 +191,7 @@ sealed class Result {
         val classes: MapK<String, Int>, // Test case classes
         val tables: MapK<String, MapK<String, Int>>, // Test case tables
         val numTests: Int, // Number of successful tests
-        val numDiscardedTests: Int, // Number of discarded tests
-        val output: String // The entire string output gathered during the test
+        val numDiscardedTests: Int // Number of discarded tests
     ) : Result()
 
     /**
@@ -197,7 +206,6 @@ sealed class Result {
         val numShrinks: Int, // Number of successful shrinks
         val numShrinkTries: Int, // Number of failed shrinks
         val numShrinkFinal: Int, // Number of failed shrinks after the last successful one
-        val output: String, // Output gathered
         val reason: String, // Reason the test failed
         val exception: Option<Throwable>, // Exception that the test threw
         val failingTestCase: List<String>, // failing test case
@@ -213,8 +221,7 @@ sealed class Result {
         val classes: MapK<String, Int>, // Test case classes
         val tables: MapK<String, MapK<String, Int>>, // Test case tables
         val numTests: Int, // Number of successful tests
-        val numDiscardedTests: Int, // Number of discarded tests
-        val output: String // output gathered
+        val numDiscardedTests: Int // Number of discarded tests
     ) : Result()
 
     /**
@@ -223,7 +230,6 @@ sealed class Result {
     data class GivenUp(
         val numTests: Int, // Number of successful tests
         val numDiscardedTests: Int, // Number of discarded tests
-        val output: String, // output gathered
         val classes: MapK<String, Int>, // Test case classes
         val labels: MapK<String, Int>, // Test case labels
         val tables: MapK<String, MapK<String, Int>> // Test case tables
@@ -248,7 +254,6 @@ data class Args(
 @optics
 data class State(
     val abortWith: Option<Result>,
-    val output: Ref<ForIO, String>, // mutable ref for writing output
     val maxSuccess: Int,
     val coverageConfidence: Option<Confidence>,
     val maxDiscardRatio: Int,
@@ -337,17 +342,11 @@ fun propCheckIO(
     args: Args = Args(),
     f: () -> Property
 ): IO<Result> = IO.fx {
-    runTest(args, f()).bind().also {
-        if (args.verbose)
-            println(
-                when (it) {
-                    is Result.Success -> it.output
-                    is Result.Failure -> it.output
-                    is Result.NoExpectedFailure -> it.output
-                    is Result.GivenUp -> it.output
-                }
-            )
-    }
+    val (logs, res) = !runTest(args, f()).value()
+
+    !IO { println(renderLog(logs)) }
+
+    res
 }
 
 /**
@@ -401,10 +400,41 @@ internal fun failureMessage(result: Result): String = when (result) {
     else -> throw IllegalStateException("Never")
 }
 
-fun runTest(args: Args, prop: Property): IO<Result> = IO.fx {
-    val initState = !getInitialState(args)
+typealias Log = SequenceK<LogEntry>
+
+// Soon to be expanded with richer debug options
+data class LogEntry(val text: String)
+// TODO make actual newtypes later on?
+typealias PropCheck<A> = PropCheckT<ForIO, A>
+
+typealias PropCheckT<M, A> = WriterT<M, Log, A>
+
+// Helpers to circumvent the terrible type inference
+fun writeLogEntry(l: LogEntry): PropCheck<Unit> = WriterT.tell(IO.applicative(), sequenceOf(l).k())
+
+fun writeText(t: String): PropCheck<Unit> = writeLogEntry(LogEntry(t))
+
+fun <A> liftIO(io: IO<A>): PropCheck<A> = WriterT.liftF(io, SequenceK.monoid(), IO.applicative())
+fun <A> propCheckFx(f: suspend MonadSyntax<WriterTPartialOf<ForIO, Log>>.() -> A): PropCheck<A> =
+    WriterT.fx(IO.monad(), SequenceK.monoid(), f)
+
+fun propCheckMonad(): Monad<WriterTPartialOf<ForIO, Log>> = WriterT.monad(IO.monad(), SequenceK.monoid())
+
+fun renderLog(l: Log): String =
+    l.foldRight(Eval.now("")) { v, acc ->
+        Eval.fx {
+            val prev = !acc
+            // newlines everywhere except for the last entry
+            if (prev != "") prev + "\n" + v.text
+            else prev + v.text
+        }
+    }.value()
+
+fun runTest(args: Args, prop: Property): PropCheck<Result> = propCheckFx {
+    val initState = !liftIO(getInitialState(args))
+    // TODO: Split this into pieces
     // elgotM with Id is isomorphic to elgotM with NonEmptyListF and an algebra that just returns the last element
-    !initState.elgotM({ IO.just(it.value()) }, { state ->
+    !initState.elgotM({ liftIO(IO.just(it.value())) }, { state ->
         // check current state if its fine
         if (state.numSuccessTests >= state.maxSuccess && state.coverageConfidence.isEmpty())
             doneTesting(state).map { it.left() }
@@ -412,11 +442,11 @@ fun runTest(args: Args, prop: Property): IO<Result> = IO.fx {
             giveUpTesting(state).map { it.left() }
         else state.abortWith.fold({
             // take a seed state and generate a new state (by running a test)
-            runTest(state, prop).map { newState ->
+            runTest(state, prop).map(IO.functor()) { newState ->
                 Id(newState).right()
             }
-        }, { IO.just(it.left()) }) // abort with a result
-    }, Id.traverse(), IO.monad())
+        }, { liftIO(IO.just(it.left())) }) // abort with a result
+    }, Id.traverse(), propCheckMonad())
 }.fix()
 
 fun getInitialState(args: Args): IO<State> = IO.fx {
@@ -475,14 +505,16 @@ fun getInitialState(args: Args): IO<State> = IO.fx {
         numSuccessShrinks = 0,
         numTotTryShrinks = 0,
         randomSeed = randSeed,
-        requiredCoverage = emptyMap<Tuple2<Option<String>, String>, Double>().k(),
-        output = Ref(IO.monadDefer(), "").bind()
+        requiredCoverage = emptyMap<Tuple2<Option<String>, String>, Double>().k()
     )
 }
 
-fun runTest(state: State, prop: Property): IO<State> = IO.fx {
+fun runTest(state: State, prop: Property): PropCheck<State> = propCheckFx {
     val (rand1, rand2) = state.randomSeed.split()
 
+    /**
+     * add a coverage check if needed
+     */
     /**
      * add a coverage check if needed
      */
@@ -499,16 +531,26 @@ fun runTest(state: State, prop: Property): IO<State> = IO.fx {
     /**
      * run a test and unfold the rose structure
      */
-    val (res0, ts) = protectRose(
-        IO.just(
-            f_or_cov.unProperty.unGen(
-                rand1 toT size
-            ).unProp
-        )
-    ).bind().runRose.bind()
+    /**
+     * run a test and unfold the rose structure
+     */
+    val (res0, ts) = liftIO(
+        liftIO(
+            protectRose(
+                IO.just(
+                    f_or_cov.unProperty.unGen(
+                        rand1 toT size
+                    ).unProp
+                )
+            )
+        ).bind().runRose.fix()
+    ).bind()
 
     val res = callbackPostTest(state, res0).bind()
 
+    /**
+     * compute a new state by adding the current result
+     */
     /**
      * compute a new state by adding the current result
      */
@@ -538,14 +580,13 @@ fun runTest(state: State, prop: Property): IO<State> = IO.fx {
         numSuccessTests = state.numSuccessTests,
         computeSize = state.computeSize,
         maxDiscardRatio = state.maxDiscardRatio,
-        randomSeed = state.randomSeed,
-        output = state.output
+        randomSeed = state.randomSeed
     )
 
-    fun cont(nState: State, br: (State) -> IO<Result>): IO<State> = if (res.abort)
-        br(nState).map { State.abortWith.set(nState, it) }
+    fun cont(nState: State, br: (State) -> PropCheck<Result>): PropCheck<State> = if (res.abort)
+        br(nState).map(IO.functor()) { State.abortWith.set(nState, it) }
     else
-        IO.just(nState)
+        liftIO(IO.just(nState))
 
     when (res.ok) {
         true.some() -> {
@@ -560,14 +601,12 @@ fun runTest(state: State, prop: Property): IO<State> = IO.fx {
             )
         }
         false.some() -> {
-            IO.fx {
+            propCheckFx {
                 val (numShrinks, totFailed, lastFailed, nRes) = foundFailure(newState, res, ts).bind()
-                val output = newState.output.get().bind()
                 val res = if (nRes.expected.not())
                     Result.Success(
                         numTests = newState.numSuccessTests + 1,
                         numDiscardedTests = newState.numDiscardedTests,
-                        output = output,
                         tables = newState.tables,
                         labels = newState.labels,
                         classes = newState.classes
@@ -575,7 +614,6 @@ fun runTest(state: State, prop: Property): IO<State> = IO.fx {
                 else
                     Result.Failure(
                         usedSeed = newState.randomSeed,
-                        output = output,
                         numDiscardedTests = newState.numDiscardedTests,
                         numTests = newState.numSuccessTests + 1,
                         exception = nRes.exception,
@@ -607,94 +645,78 @@ fun runTest(state: State, prop: Property): IO<State> = IO.fx {
 /**
  * Done testing, construct result and add some output
  */
-fun doneTesting(state: State): IO<Result> = IO.fx {
+fun doneTesting(state: State): PropCheck<Result> =
     if (state.expected) {
-        state.output.update {
-            it + "+++ OK, passed ${showTestCount(state)}"
-        }.bind()
+        propCheckFx {
+            !writeText("+++ OK, passed ${showTestCount(state)}")
+            !writeText(getSuccessStr(state))
 
-        putSuccessStr(state).bind()
-
-        val output = state.output.get().bind()
-
-        Result.Success(
-            numTests = state.numSuccessTests,
-            numDiscardedTests = state.numDiscardedTests,
-            output = output,
-            classes = state.classes,
-            labels = state.labels,
-            tables = state.tables
-        )
+            Result.Success(
+                numTests = state.numSuccessTests,
+                numDiscardedTests = state.numDiscardedTests,
+                classes = state.classes,
+                labels = state.labels,
+                tables = state.tables
+            )
+        }
     } else {
-        state.output.updateAndGet {
-            it + "*** Failed! Passed ${showTestCount(state)} (expected Failure)"
-        }.bind()
+        propCheckFx {
+            !writeText("*** Failed! Passed ${showTestCount(state)} (expected Failure)")
+            !writeText(getSuccessStr(state))
 
-        putSuccessStr(state).bind()
-
-        val output = state.output.get().bind()
-
-        Result.NoExpectedFailure(
-            numTests = state.numSuccessTests,
-            numDiscardedTests = state.numDiscardedTests,
-            output = output,
-            classes = state.classes,
-            labels = state.labels,
-            tables = state.tables
-        )
+            Result.NoExpectedFailure(
+                numTests = state.numSuccessTests,
+                numDiscardedTests = state.numDiscardedTests,
+                classes = state.classes,
+                labels = state.labels,
+                tables = state.tables
+            )
+        }
     }
-}
 
 /**
  * Give up testing because of a high discard ratio. Add some output and construct result
  */
-fun giveUpTesting(state: State): IO<Result> = IO.fx {
-    state.output.updateAndGet {
-        it + "*** Gave up! Passed only ${showTestCount(state)}"
-    }.bind()
-
-    putSuccessStr(state).bind()
-
-    val output = state.output.get().bind()
+fun giveUpTesting(state: State): PropCheck<Result> = propCheckFx {
+    !writeText("*** Gave up! Passed only ${showTestCount(state)}")
+    !writeText(getSuccessStr(state))
 
     Result.GivenUp(
         numTests = state.numSuccessTests,
         numDiscardedTests = state.numDiscardedTests,
-        output = output,
         classes = state.classes,
         labels = state.labels,
         tables = state.tables
     )
 }
 
-data class ShrinkState(
-    val numSuccessShrinks: Int,
-    val numFailedShrinks: Int,
-    val numLastFailed: Int,
-    val optTestResult: Option<TestResult>
-)
-
-typealias FailureResult = IO<Tuple4<Int, Int, Int, TestResult>>
+typealias FailureResult = PropCheck<Tuple4<Int, Int, Int, TestResult>>
 
 /**
  * handle a failure, will try to shrink failure case
  *
+ * TODO: Split this into pieces
  */
 fun foundFailure(state: State, res: TestResult, ts: Sequence<Rose<ForIO, TestResult>>): FailureResult =
     (Tuple3(state, res, ts))
-        .elgotM({ IO.just(it.fix().value()) }, { (currState, currRes, remainingShrunk) ->
+        .elgotM({ liftIO(IO.just(it.fix().value())) }, { (currState, currRes, remainingShrunk) ->
             if (state.numSuccessShrinks + state.numTotTryShrinks >= state.maxShrinks)
-                localMinFound(currState, currRes).map { it.left() }
+                localMinFound(currState, currRes).map(IO.functor()) { it.left() }
             else
                 remainingShrunk
                     // Type parameters... Kotlin should be able to infer this, but it doesn't!
-                    .foldRight<Rose<ForIO, TestResult>, Function1<State, IO<Either<Tuple4<Int, Int, Int, TestResult>, Id<Tuple3<State, TestResult, Sequence<Rose<ForIO, TestResult>>>>>>>>(
-                        Eval.now(Function1 { s -> localMinFound(s, currRes).map { it.left() } }) // sequence is empty
+                    .foldRight<Rose<ForIO, TestResult>, Function1<State, PropCheck<Either<Tuple4<Int, Int, Int, TestResult>, Id<Tuple3<State, TestResult, Sequence<Rose<ForIO, TestResult>>>>>>>>(
+                        Eval.now(Function1 { s ->
+                            localMinFound(
+                                s,
+                                currRes
+                            ).map(IO.functor()) { it.left() }
+                        }) // sequence is empty
                     ) { v, acc ->
                         Eval.later {
                             Function1 { s: State ->
-                                IO.fx {
-                                    val (nRes0, nShrunk) = !v.runRose
+                                propCheckFx {
+                                    val (nRes0, nShrunk) = !liftIO(v.runRose.fix())
                                     val nRes = !callbackPostTest(s, nRes0)
 
                                     if (nRes.ok == false.some())
@@ -717,36 +739,36 @@ fun foundFailure(state: State, res: TestResult, ts: Sequence<Rose<ForIO, TestRes
                             }
                         }
                     }.value().f(currState)
-        }, Id.traverse(), IO.monad()).fix()
+        }, Id.traverse(), propCheckMonad()).fix()
 
 /**
  * Done shrinking, append output. Back to runATest to finish up
  */
-fun localMinFound(state: State, res: TestResult): FailureResult = IO.fx {
-    failureReason(state, res).reversed().map { s ->
-        state.output.update {
-            "$it$s\n"
-        }
-    }.sequence_(IO.applicative()).bind()
+fun localMinFound(state: State, res: TestResult): FailureResult = propCheckFx {
+    !failureReason(state, res).reversed().map { s ->
+        writeText(s)
+    }.sequence_(propCheckMonad())
+
     callbackPostFinalFailure(state, res).bind()
+
     Tuple4(state.numSuccessShrinks, state.numTotTryShrinks - state.numTryShrinks, state.numTryShrinks, res)
 }
 
 /**
  * call all post test callbacks
  */
-fun callbackPostTest(state: State, res: TestResult): IO<TestResult> =
-    res.callbacks.filter { it is Callback.PostTest }.traverse(IO.applicative()) {
+fun callbackPostTest(state: State, res: TestResult): PropCheck<TestResult> =
+    res.callbacks.filter { it is Callback.PostTest }.traverse(propCheckMonad()) {
         (it as Callback.PostTest).fn(state, res)
-    }.fix().followedBy(IO.just(res))
+    }.fix().flatMap(IO.monad(), SequenceK.semigroup()) { liftIO(IO.just(res)) }
 
 /**
  * call all post final failure callbacks
  */
-fun callbackPostFinalFailure(state: State, res: TestResult): IO<Unit> =
-    res.callbacks.filter { it is Callback.PostFinalFailure }.traverse(IO.applicative()) {
+fun callbackPostFinalFailure(state: State, res: TestResult): PropCheck<Unit> =
+    res.callbacks.filter { it is Callback.PostFinalFailure }.traverse(propCheckMonad()) {
         (it as Callback.PostFinalFailure).fn(state, res)
-    }.fix().followedBy(IO.unit)
+    }.fix().unit(IO.functor())
 
 // ----------------- Text utility functions for showing results
 fun showTestCount(state: State): String =
@@ -792,16 +814,14 @@ fun String.short(n: Int): String {
 
 fun String.oneLine(): String = split("\n").joinToString(" ")
 
-fun putSuccessStr(state: State): IO<Unit> {
+fun getSuccessStr(state: State): String {
     val res = labelsAndTables(state)
     val (short, long) = when {
         res.a.size == 1 -> listOf(" (${res.a.first().dropWhile { it.isWhitespace() }}).") toT res.b
         res.a.isEmpty() -> listOf(".") toT res.b
         else -> (listOf(":") + res.a) toT res.b
     }
-    return state.output.update {
-        it + listOf(short, long).filter { it.isNotEmpty() }.joinToString("\n") { it.joinToString("\n") } + "\n"
-    }.fix()
+    return listOf(short, long).filter { it.isNotEmpty() }.joinToString("\n") { it.joinToString("\n") }
 }
 
 fun labelsAndTables(state: State): Tuple2<List<String>, List<String>> {

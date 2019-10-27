@@ -39,8 +39,8 @@ import propCheck.testresult.testable.testable
  * Callbacks. Can perform io based on state and results
  */
 sealed class Callback {
-    class PostTest(val kind: CallbackKind, val fn: (State, TestResult) -> IO<Unit>) : Callback()
-    class PostFinalFailure(val kind: CallbackKind, val fn: (State, TestResult) -> IO<Unit>) : Callback()
+    class PostTest(val kind: CallbackKind, val fn: (State, TestResult) -> PropCheck<Unit>) : Callback()
+    class PostFinalFailure(val kind: CallbackKind, val fn: (State, TestResult) -> PropCheck<Unit>) : Callback()
 }
 
 sealed class CallbackKind {
@@ -388,9 +388,7 @@ fun noShrinking(a: Property): Property =
 fun counterexample(s: () -> String, a: Property): Property =
     mapTotalResult(
         callback(Callback.PostFinalFailure(CallbackKind.Counterexample) { st, _ ->
-            st.output.update {
-                it + s() + "\n"
-            }.fix()
+            writeText(s())
         }, a)
     ) { res ->
         TestResult.testCase.modify(res) { listOf(s()) + it }
@@ -524,7 +522,7 @@ fun whenFail(a: Property, f: () -> Unit): Property =
  * execute some io code when a test fails
  */
 fun whenFailIO(a: Property, f: IO<Unit>): Property =
-    callback(Callback.PostFinalFailure(CallbackKind.NoCounterexample) { _, _ -> f }, a)
+    callback(Callback.PostFinalFailure(CallbackKind.NoCounterexample) { _, _ -> liftIO(f) }, a)
 
 /**
  * execute some code on every failure (not just the last one)
@@ -537,8 +535,8 @@ fun whenFailEvery(a: Property, f: () -> Unit): Property =
  */
 fun whenFailEveryIO(a: Property, f: IO<Unit>): Property =
     callback(Callback.PostTest(CallbackKind.NoCounterexample) { _, res ->
-        if (res.ok == false.some()) f
-        else IO.unit
+        if (res.ok == false.some()) liftIO(f)
+        else liftIO(IO.unit)
     }, a)
 
 /**
@@ -558,17 +556,14 @@ internal fun status(res: TestResult): String = when (res.ok) {
 
 internal fun newCb(cbs: List<Callback>): Callback =
     Callback.PostTest(CallbackKind.Counterexample) { st, res ->
-        IO.fx {
-            st.output.update {
-                it + status(res) + ": " + res.testCase.joinToString() + "\n"
-            }.bind()
-            cbs.filter { it is Callback.PostFinalFailure && it.kind == CallbackKind.Counterexample }
-                .traverse(IO.applicative()) {
+        propCheckFx {
+            !writeText(status(res) + ": " + res.testCase.joinToString())
+
+            !cbs.filter { it is Callback.PostFinalFailure && it.kind == CallbackKind.Counterexample }
+                .traverse(propCheckMonad()) {
                     (it as Callback.PostFinalFailure).fn(st, res)
-                }.bind()
-            st.output.update {
-                it + "\n"
-            }.bind()
+                }
+            Unit
         }
     }
 
@@ -583,19 +578,17 @@ fun verboseShrinking(a: Property): Property =
 internal fun newCb2(cbs: List<Callback>): Callback =
     Callback.PostTest(CallbackKind.Counterexample) { st, res ->
         if (res.ok == false.some())
-            IO.fx {
-                st.output.update {
-                    it + "Failed: " + res.testCase.joinToString() + "\n"
-                }.bind()
-                cbs.filter { it is Callback.PostFinalFailure && it.kind == CallbackKind.Counterexample }
-                    .traverse(IO.applicative()) {
+            propCheckFx {
+                !writeText("Failed: " + res.testCase.joinToString())
+
+                !cbs.filter { it is Callback.PostFinalFailure && it.kind == CallbackKind.Counterexample }
+                    .traverse(propCheckMonad()) {
                         (it as Callback.PostFinalFailure).fn(st, res)
-                    }.bind()
-                st.output.update {
-                    it + "\n"
-                }.bind()
+                    }
+
+                Unit
             }
-        else IO.unit
+        else liftIO(IO.unit)
     }
 
 /**
@@ -876,14 +869,7 @@ internal fun disj(p: Rose<ForIO, TestResult>, q: Eval<Rose<ForIO, TestResult>>):
                             classes = emptyList(),
                             tables = emptyList(),
                             requiredCoverage = emptyList(),
-                            callbacks = res1.callbacks +
-                                    (if (res1.callbacks.size + res2.callbacks.size > 0) listOf(
-                                        Callback.PostFinalFailure(
-                                            CallbackKind.Counterexample
-                                        ) { st, _ ->
-                                            st.output.update { it + "\n" }.fix()
-                                        }) else emptyList()) +
-                                    res2.callbacks,
+                            callbacks = res1.callbacks + res2.callbacks,
                             testCase = res1.testCase + res2.testCase
                         )
                         else -> res2
