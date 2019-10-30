@@ -35,7 +35,7 @@ repositories {
 }
 
 dependencies {
-    testImplementation: 'propCheck:propCheck-kt:0.9.6'
+    testImplementation 'propCheck:propCheck-kt:0.9.6'
 }
 ```
 

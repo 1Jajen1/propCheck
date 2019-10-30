@@ -23,8 +23,7 @@ class GenSpec : LawSpec() {
         "Gens with same seed and size should return the same values" {
             propCheck {
                 forAll { (l, s): Pair<Long, NonNegative<Int>> ->
-                    (arbitrarySizedInt().unGen(RandSeed(l) toT s.a) == arbitrarySizedInt().unGen(RandSeed(l) toT s.a))
-                        .property()
+                    arbitrarySizedInt().unGen(RandSeed(l) toT s.a).eqv(arbitrarySizedInt().unGen(RandSeed(l) toT s.a))
                 }
             }
         }
@@ -33,7 +32,7 @@ class GenSpec : LawSpec() {
             propCheck {
                 forAll { (i): NonNegative<Int> ->
                     idempotentIOProperty(
-                        Gen.getSize().resize(i).generate().map { it == i }
+                        Gen.getSize().resize(i).generate().map { it.eqv(i) }
                     )
                 }
             }
@@ -45,7 +44,7 @@ class GenSpec : LawSpec() {
                 forAll { (iP, jP): Tuple2<NonNegative<Int>, NonNegative<Int>> ->
                     val (i) = iP; val (j) = jP
                     idempotentIOProperty(
-                        Gen.getSize().scale { it + j }.resize(i).generate().map { it == i + j }
+                        Gen.getSize().scale { it + j }.resize(i).generate().map { it.eqv(i + j) }
                     )
                 }
             }
@@ -100,7 +99,7 @@ class GenSpec : LawSpec() {
             propCheck {
                 forAll { (i): NonNegative<Int> ->
                     idempotentIOProperty(
-                        arbitrarySizedByte().vectorOf(i).generate().map { it.size == i }
+                        arbitrarySizedByte().vectorOf(i).generate().map { it.size.eqv(i) }
                     )
                 }
             }
@@ -110,7 +109,7 @@ class GenSpec : LawSpec() {
             propCheck {
                 forAll { (i): NonNegative<Int> ->
                     idempotentIOProperty(
-                        Gen.sized { Gen.getSize().resize(it) }.resize(i).generate().map { it == i }
+                        Gen.sized { Gen.getSize().resize(it) }.resize(i).generate().map { it.eqv(i) }
                     )
                 }
             }
@@ -120,7 +119,7 @@ class GenSpec : LawSpec() {
             propCheck {
                 forAll { (i): NonNegative<Int> ->
                     idempotentIOProperty(
-                        Gen.getSize().resize(i).generate().map { it == i }
+                        Gen.getSize().resize(i).generate().map { it.eqv(i) }
                     )
                 }
             }

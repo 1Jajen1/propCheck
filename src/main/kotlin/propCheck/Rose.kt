@@ -13,16 +13,10 @@ import arrow.extension
 import arrow.fx.ForIO
 import arrow.fx.IO
 import arrow.fx.extensions.fx
-import arrow.fx.extensions.io.applicative.applicative
 import arrow.fx.extensions.io.applicativeError.handleError
 import arrow.fx.extensions.io.monad.monad
 import arrow.fx.fix
-import arrow.mtl.typeclasses.ComposedFunctor
-import arrow.mtl.typeclasses.Nested
-import arrow.mtl.typeclasses.nest
-import arrow.mtl.typeclasses.unnest
 import arrow.optics.optics
-import arrow.recursion.typeclasses.Birecursive
 import arrow.typeclasses.*
 import propCheck.arbitrary.Arbitrary
 import propCheck.arbitrary.Gen
@@ -30,9 +24,9 @@ import propCheck.arbitrary.fix
 import propCheck.arbitrary.gen.applicative.applicative
 import propCheck.arbitrary.gen.monad.flatMap
 import propCheck.arbitrary.gen.monad.monad
+import propCheck.pretty.diff
 import propCheck.property.testable.testable
 import propCheck.rose.monad.monad
-import propCheck.rosef.functor.functor
 import propCheck.testresult.testable.testable
 
 /**
@@ -884,9 +878,9 @@ internal fun addCoverage(r: TestResult, s: TestResult): TestResult =
 
 fun <A> A.eqv(b: A, eqA: Eq<A> = Eq.any(), showA: Show<A> = Show.any()): Property =
     counterexample(
-        {
-            "Expected: ${showA.run { this@eqv.show() }} to be equal to:\n" +
-                    "        : ${showA.run { b.show() }}"
+        { // COLOR
+            "\nFailed (${"- lhs".red()} != ${"+ rhs".green()})\n" +
+                    showA.run { this@eqv.show() diff b.show() }
         },
         eqA.run { this@eqv.eqv(b) }
     )
@@ -899,3 +893,6 @@ fun <A> A.neqv(b: A, eqA: Eq<A> = Eq.any(), showA: Show<A> = Show.any()): Proper
         },
         eqA.run { this@neqv.neqv(b) }
     )
+
+fun String.red() = "\u001b[31m$this\u001b[0m"
+fun String.green() = "\u001b[32m$this\u001b[0m"

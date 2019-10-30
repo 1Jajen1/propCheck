@@ -223,6 +223,7 @@ internal fun <S, A, R, SUT, PROP> _execPar(
 
             counterexample(
                 {
+                    // TODO create a custom value diff here (or figure out how to make a KValue from this) and use pretty printing!
                     "No possible interleaving found for: \n" +
                             (if (prefix.isNotEmpty()) "Prefix: " + prefixResult.joinToString { "${it.a} -> ${it.b}" } + "\n" else "") +
                             pathResults.filter { it.firstOrNull() != null }.withIndex().joinToString("\n") { (i, v) ->

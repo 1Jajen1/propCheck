@@ -6,12 +6,15 @@ import arrow.core.extensions.fx
 import arrow.core.extensions.id.traverse.traverse
 import arrow.core.extensions.list.foldable.sequence_
 import arrow.core.extensions.list.traverse.traverse
+import arrow.core.extensions.listk.monoid.monoid
+import arrow.core.extensions.listk.semigroup.semigroup
 import arrow.core.extensions.mapk.foldable.combineAll
 import arrow.core.extensions.mapk.semigroup.plus
 import arrow.core.extensions.mapk.semigroup.semigroup
 import arrow.core.extensions.monoid
 import arrow.core.extensions.semigroup
 import arrow.core.extensions.sequence.foldable.foldRight
+import arrow.core.extensions.sequence.foldable.isEmpty
 import arrow.core.extensions.sequencek.monoid.monoid
 import arrow.core.extensions.sequencek.semigroup.semigroup
 import arrow.extension
@@ -28,7 +31,6 @@ import arrow.mtl.extensions.fx
 import arrow.mtl.extensions.writert.functor.unit
 import arrow.mtl.extensions.writert.monad.monad
 import arrow.mtl.fix
-import arrow.mtl.value
 import arrow.optics.optics
 import arrow.recursion.AlgebraM
 import arrow.recursion.CoalgebraM
@@ -46,10 +48,10 @@ import kotlin.random.Random
 /**
  * Running propcheck:
  * initializing state: IO because of generating a randomseed
- * runTest: R access to state
+ * runATest: R access to state
  *  ^- doneTesting: RW access to state
  *  ^- giveUpTesting: RW access to state
- *  ^- runATest: IO to unpack ioRose, IO for callbacks, RW access to state, IO access because of runTest
+ *  ^- runATest: IO to unpack ioRose, IO for callbacks, RW access to state, IO access because of runATest
  *      ^- foundFailure
  *          ^- localMin: R access to state
  *              ^- _localMin: IO to unpack ioRose, IO for callbacks, RW access to state
@@ -68,6 +70,7 @@ import kotlin.random.Random
  * - Move IORose out of Rose and make all it's creators return and handle m Rose instead
  *  - also make rose a base functor version and have the default tree contain nodes of type m Rose
  *  - Or go the hedgehog route of TreeT and NodeT, see what works better...
+ *      - For now Rose<M, A> seems fine
  * - Go for a monadic stack like hedgehog (ignore monadic generators for now, but everything else needs a good stack
  *  - Error handling at the top and a writer for output. That should already help quite a bit.
  *      - When bifunctor io is out switch to that for error handling
@@ -92,50 +95,6 @@ import kotlin.random.Random
  *
  * Hedgehog's integrated shrinking works by letting GenT generate shrunk values alongside it and providing very smart means
  *  of mapping and flatMapping to shrink the new values with it. This has the obvious problem of not always shrinking the earlier parts of a monadic chain...
- *
- * apoM (runTest prop) (TestResult) : Sequence TestResult
- * cataM compileResults // Monoid combine
- *
- * ==> hyloM (runTests prop) compileResults mempty // Or coelgot to short on a non-success result
- *
- * TestResultMonoid
- *  -> mempty = Success with a few labels and shit
- *  -> combine =
- *      Succcess + Success = combine success
- *      Success + Failure, Failure + Success = Failure
- *      GiveUp/ExpectedFailure are Failure as well
- *
- * The above encodes the control flow of propCheck, but does not specify running tests at all yet
- *
- * runTest prop = generate a tree of test run results
- *
- * if run is successfull return a success result
- * else => cataM shrinkFailure on the tree
- *          ^- shrinkFailure: (Rose<Result>) -> OptionT<Result>
- *              - This can be understood as, if its a fail run then return the result, else return None
- *
- *
- * Now that all recursive shit is removed let's think about what state we need to carry and where:
- *  - NumOfTests: Init 1 and increased by cata when combining (Also all numOf* things as well)
- *  - Output: WriterT transformer over some log aggregation structure
- *  - labels, tables: Combined with a monoid
- *  - seed/size: StateT because it will be updated quite a bit
- *  - coverage: confidence: ReaderT
- *  - expected: ReaderT
- *
- *
- * Unfolding:
- *  - Start with a state =>
- *      unfold to IO<ListF<State, State>>
- *          where the first state is the one used to run a property and the second one is used to continue the fold
- *      unfold then cares you continuing by checking everything and then returning either Cons or NilF
- *  - then run cata which just takes the last state
- *
- * Start state -> runATest -> runATest ->
- *                  ^- Done     ^- Done
- *
- * What I want:
- * unfolder Seed: Sequence<RunnableTestCase> (RunnableTestCase = (State) -> IO<TestResult>)
  */
 
 // TODO remove when https://github.com/arrow-kt/arrow/pull/1750 is merged and released
@@ -343,9 +302,7 @@ fun propCheckIO(
     f: () -> Property
 ): IO<Result> = IO.fx {
     val (logs, res) = !runTest(args, f()).value()
-
     !IO { println(renderLog(logs)) }
-
     res
 }
 
@@ -400,7 +357,7 @@ internal fun failureMessage(result: Result): String = when (result) {
     else -> throw IllegalStateException("Never")
 }
 
-typealias Log = SequenceK<LogEntry>
+typealias Log = ListK<LogEntry>
 
 // Soon to be expanded with richer debug options
 data class LogEntry(val text: String)
@@ -410,15 +367,15 @@ typealias PropCheck<A> = PropCheckT<ForIO, A>
 typealias PropCheckT<M, A> = WriterT<M, Log, A>
 
 // Helpers to circumvent the terrible type inference
-fun writeLogEntry(l: LogEntry): PropCheck<Unit> = WriterT.tell(IO.applicative(), sequenceOf(l).k())
+fun writeLogEntry(l: LogEntry): PropCheck<Unit> = WriterT.tell(IO.applicative(), listOf(l).k())
 
 fun writeText(t: String): PropCheck<Unit> = writeLogEntry(LogEntry(t))
 
-fun <A> liftIO(io: IO<A>): PropCheck<A> = WriterT.liftF(io, SequenceK.monoid(), IO.applicative())
+fun <A> liftIO(io: IO<A>): PropCheck<A> = WriterT.liftF(io, ListK.monoid(), IO.applicative())
 fun <A> propCheckFx(f: suspend MonadSyntax<WriterTPartialOf<ForIO, Log>>.() -> A): PropCheck<A> =
-    WriterT.fx(IO.monad(), SequenceK.monoid(), f)
+    WriterT.fx(IO.monad(), ListK.monoid(), f)
 
-fun propCheckMonad(): Monad<WriterTPartialOf<ForIO, Log>> = WriterT.monad(IO.monad(), SequenceK.monoid())
+fun propCheckMonad(): Monad<WriterTPartialOf<ForIO, Log>> = WriterT.monad(IO.monad(), ListK.monoid())
 
 fun renderLog(l: Log): String =
     l.foldRight(Eval.now("")) { v, acc ->
@@ -442,7 +399,7 @@ fun runTest(args: Args, prop: Property): PropCheck<Result> = propCheckFx {
             giveUpTesting(state).map { it.left() }
         else state.abortWith.fold({
             // take a seed state and generate a new state (by running a test)
-            runTest(state, prop).map(IO.functor()) { newState ->
+            runATest(state, prop).map(IO.functor()) { newState ->
                 Id(newState).right()
             }
         }, { liftIO(IO.just(it.left())) }) // abort with a result
@@ -509,7 +466,7 @@ fun getInitialState(args: Args): IO<State> = IO.fx {
     )
 }
 
-fun runTest(state: State, prop: Property): PropCheck<State> = propCheckFx {
+fun runATest(state: State, prop: Property): PropCheck<State> = propCheckFx {
     val (rand1, rand2) = state.randomSeed.split()
 
     /**
@@ -602,7 +559,7 @@ fun runTest(state: State, prop: Property): PropCheck<State> = propCheckFx {
         }
         false.some() -> {
             propCheckFx {
-                val (numShrinks, totFailed, lastFailed, nRes) = foundFailure(newState, res, ts).bind()
+                val (numShrinks, totFailed, lastFailed, nRes) = !foundFailure(newState, res, ts)
                 val res = if (nRes.expected.not())
                     Result.Success(
                         numTests = newState.numSuccessTests + 1,
@@ -700,45 +657,31 @@ typealias FailureResult = PropCheck<Tuple4<Int, Int, Int, TestResult>>
 fun foundFailure(state: State, res: TestResult, ts: Sequence<Rose<ForIO, TestResult>>): FailureResult =
     (Tuple3(state, res, ts))
         .elgotM({ liftIO(IO.just(it.fix().value())) }, { (currState, currRes, remainingShrunk) ->
-            if (state.numSuccessShrinks + state.numTotTryShrinks >= state.maxShrinks)
+            if (currState.numSuccessShrinks + currState.numTotTryShrinks >= currState.maxShrinks || remainingShrunk.isEmpty())
                 localMinFound(currState, currRes).map(IO.functor()) { it.left() }
-            else
-                remainingShrunk
-                    // Type parameters... Kotlin should be able to infer this, but it doesn't!
-                    .foldRight<Rose<ForIO, TestResult>, Function1<State, PropCheck<Either<Tuple4<Int, Int, Int, TestResult>, Id<Tuple3<State, TestResult, Sequence<Rose<ForIO, TestResult>>>>>>>>(
-                        Eval.now(Function1 { s ->
-                            localMinFound(
-                                s,
-                                currRes
-                            ).map(IO.functor()) { it.left() }
-                        }) // sequence is empty
-                    ) { v, acc ->
-                        Eval.later {
-                            Function1 { s: State ->
-                                propCheckFx {
-                                    val (nRes0, nShrunk) = !liftIO(v.runRose.fix())
-                                    val nRes = !callbackPostTest(s, nRes0)
-
-                                    if (nRes.ok == false.some())
-                                        Id(
-                                            Tuple3(
-                                                State.numTryShrinks.set(
-                                                    State.numSuccessShrinks.modify(s) { it + 1 }, 0
-                                                ),
-                                                nRes,
-                                                nShrunk
-                                            )
-                                        ).right()
-                                    else
-                                        !acc.value().f(
-                                            State.numTryShrinks.modify(
-                                                State.numTotTryShrinks.modify(s) { it + 1 }
-                                            ) { it + 1 }
-                                        )
-                                }.fix()
-                            }
-                        }
-                    }.value().f(currState)
+            else propCheckFx {
+                val (nRes0, nShrunk) = !liftIO(remainingShrunk.first().runRose.fix())
+                val nRes = !callbackPostTest(currState, nRes0)
+                if (nRes.ok == false.some())
+                    Id(
+                        Tuple3(
+                            State.numTryShrinks.set(
+                                State.numSuccessShrinks.modify(currState) { it + 1 }, 0
+                            ),
+                            nRes, nShrunk
+                        )
+                    ).right()
+                else
+                    Id(
+                        Tuple3(
+                            State.numTryShrinks.modify(
+                                State.numTotTryShrinks.modify(currState) { it + 1 }
+                            ) { it + 1 },
+                            currRes,
+                            remainingShrunk.drop(1)
+                        )
+                    ).right()
+            }
         }, Id.traverse(), propCheckMonad()).fix()
 
 /**
@@ -749,7 +692,7 @@ fun localMinFound(state: State, res: TestResult): FailureResult = propCheckFx {
         writeText(s)
     }.sequence_(propCheckMonad())
 
-    callbackPostFinalFailure(state, res).bind()
+    !callbackPostFinalFailure(state, res)
 
     Tuple4(state.numSuccessShrinks, state.numTotTryShrinks - state.numTryShrinks, state.numTryShrinks, res)
 }
@@ -760,7 +703,7 @@ fun localMinFound(state: State, res: TestResult): FailureResult = propCheckFx {
 fun callbackPostTest(state: State, res: TestResult): PropCheck<TestResult> =
     res.callbacks.filter { it is Callback.PostTest }.traverse(propCheckMonad()) {
         (it as Callback.PostTest).fn(state, res)
-    }.fix().flatMap(IO.monad(), SequenceK.semigroup()) { liftIO(IO.just(res)) }
+    }.fix().flatMap(IO.monad(), ListK.semigroup()) { liftIO(IO.just(res)) }
 
 /**
  * call all post final failure callbacks
