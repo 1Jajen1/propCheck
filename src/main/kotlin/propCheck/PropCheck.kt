@@ -45,83 +45,7 @@ import propCheck.arbitrary.gen.monad.monad
 import propCheck.testresult.testable.testable
 import kotlin.random.Random
 
-/**
- * Running propcheck:
- * initializing state: IO because of generating a randomseed
- * runATest: R access to state
- *  ^- doneTesting: RW access to state
- *  ^- giveUpTesting: RW access to state
- *  ^- runATest: IO to unpack ioRose, IO for callbacks, RW access to state, IO access because of runATest
- *      ^- foundFailure
- *          ^- localMin: R access to state
- *              ^- _localMin: IO to unpack ioRose, IO for callbacks, RW access to state
- *                  ^- localMinFound: RW access to state, IO for callbacks
- * Everything else builds upon reduceRose to unpack the rose tree:
- * Unpacking Property:
- * Property
- *  -> Gen<Prop> -> RandSeed + Size -> Prop
- *      -> Rose<TestResult> -> reduceRose (flatten out io roses) ->
- *          -> IO<MkRose<TestResult>> -> runIO (^-^)
- *              -> MkRose<TestResult> // testresult + a lazy sequence of shrunk results
- *
- * That is, surprisingly, all the magic behind quickcheck. Which is damn simple!
- *
- * Changes:
- * - Move IORose out of Rose and make all it's creators return and handle m Rose instead
- *  - also make rose a base functor version and have the default tree contain nodes of type m Rose
- *  - Or go the hedgehog route of TreeT and NodeT, see what works better...
- *      - For now Rose<M, A> seems fine
- * - Go for a monadic stack like hedgehog (ignore monadic generators for now, but everything else needs a good stack
- *  - Error handling at the top and a writer for output. That should already help quite a bit.
- *      - When bifunctor io is out switch to that for error handling
- * - Pretty printer for output diffs
- *  - This needs a custom pretty printer (which can and will be another library) (Might also be useful for arrow-meta guys to test and print code)
- *  - Example: Diff User(y = 1, x = 10) User (y = 1, x = 11) => User(
- *                                                                 y = 1,
- *                                                              -  x = 10,
- *                                                              +  x = 11,
- *                                                              )
- * All of the above changes will mean no changes to the api, but enable a much better user experience.
- *  - These will have priority. Changing to integrated shrinking may come later.
- *
- * - Ranges instead of size? shrinking will invalidate this...
- *
- * Hedgehog:
- * Property => PropertyT IO () -> TestT (GenT IO) () -> ExceptT err (WriterT out (GenT IO)) ()
- *              -> ExceptT err (WriterT out (Seed -> Size -> TreeT (MaybeT IO))) ()
- * This can be summed up as:
- *  Error handling using ExceptT -> Output using WriterT -> Generating a TreeT (MaybeT IO)
- *  This is very similar to quickcheck except that quickcheck is basically only IO Gen ()
- *
- * Hedgehog's integrated shrinking works by letting GenT generate shrunk values alongside it and providing very smart means
- *  of mapping and flatMapping to shrink the new values with it. This has the obvious problem of not always shrinking the earlier parts of a monadic chain...
- */
-
 // TODO remove when https://github.com/arrow-kt/arrow/pull/1750 is merged and released
-/**
- * Monadic version of coelgot
- */
-fun <F, M, A, B> A.coelgotM(
-    f: (Tuple2<A, Eval<Kind<M, Kind<F, B>>>>) -> Kind<M, B>,
-    coalg: CoalgebraM<F, M, A>,
-    TF: Traverse<F>,
-    MM: Monad<M>
-): Kind<M, B> {
-    fun h(a: A): Kind<M, B> =
-        TF.run {
-            MM.run {
-                f(
-                    Tuple2(a, Eval.later { coalg(a).flatMap { it.map(::h).sequence(MM) } })
-                )
-            }
-        }
-
-    return h(this)
-}
-
-/**
- * Monadic version of elgot
- */
 fun <F, M, A, B> B.elgotM(
     alg: AlgebraM<F, M, A>,
     f: (B) -> Kind<M, Either<A, Kind<F, B>>>,
@@ -688,9 +612,10 @@ fun foundFailure(state: State, res: TestResult, ts: Sequence<Rose<ForIO, TestRes
  * Done shrinking, append output. Back to runATest to finish up
  */
 fun localMinFound(state: State, res: TestResult): FailureResult = propCheckFx {
-    !failureReason(state, res).reversed().map { s ->
-        writeText(s)
-    }.sequence_(propCheckMonad())
+    !failureReason(state, res)
+        .reversed()
+        .map { s -> writeText(s) }
+        .sequence_(propCheckMonad())
 
     !callbackPostFinalFailure(state, res)
 
@@ -701,8 +626,8 @@ fun localMinFound(state: State, res: TestResult): FailureResult = propCheckFx {
  * call all post test callbacks
  */
 fun callbackPostTest(state: State, res: TestResult): PropCheck<TestResult> =
-    res.callbacks.filter { it is Callback.PostTest }.traverse(propCheckMonad()) {
-        (it as Callback.PostTest).fn(state, res)
+    res.callbacks.filterIsInstance<Callback.PostTest>().traverse(propCheckMonad()) {
+        it.fn(state, res)
     }.fix().flatMap(IO.monad(), ListK.semigroup()) { liftIO(IO.just(res)) }
 
 /**
