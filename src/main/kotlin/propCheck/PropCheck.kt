@@ -35,6 +35,9 @@ import pretty.*
 import propCheck.arbitrary.RandSeed
 import propCheck.property.*
 import propCheck.property.testresult.testable.testable
+import kotlin.math.exp
+import kotlin.math.ln
+import kotlin.math.pow
 import kotlin.math.sqrt
 import kotlin.random.Random
 
@@ -128,8 +131,6 @@ data class Args(
  */
 @optics
 data class State(
-    // I'd like to get rid of this. Explicit control flow in the state sucks
-    val abortWith: Option<Result>,
     val maxSuccess: Int,
     val coverageConfidence: Option<Confidence>,
     val maxDiscardRatio: Int,
@@ -155,7 +156,7 @@ data class State(
  * Confidence used with checkCoverage to determine wether or not a test is sufficiently covered
  */
 data class Confidence(
-    val certainty: Long = Math.pow(10.0, 9.0).toLong(),
+    val certainty: Long = 10.0.pow(9.0).toLong(),
     val tolerance: Double = 0.9
 )
 
@@ -197,32 +198,41 @@ internal fun createAssertionError(res: Result): AssertionError = AssertionError(
 }
 
 internal fun usedSeed(seed: RandSeed, size: Int): Doc<Nothing> =
-    "used seed".text<Nothing>() spaced
+    "Used seed".text<Nothing>() spaced
             seed.seed.doc<Nothing>() +
-            (if (seed.gamma != RandSeed.GOLDEN_GAMMA) space<Nothing>() + "with gamma:".text() + seed.gamma.doc() else nil()) spaced
+            (if (seed.gamma != RandSeed.GOLDEN_GAMMA) space<Nothing>() + "with gamma".text() spaced seed.gamma.doc() else nil()) spaced
             "and with size".text() spaced
             size.doc()
 
 internal fun failureMessage(result: Result): String = when (result) {
-    is Result.Failure -> "Failed:".text<Nothing>() spaced result.reason.doc<Nothing>() +
+    is Result.Failure -> "Failed:".text<Nothing>() line result.reason.doc<Nothing>() +
             (if (result.failingTestCase.isNotEmpty())
-                result.failingTestCase.map { it.doc<Nothing>() }.sep().enclose(hardLine(), hardLine())
+                result.failingTestCase
+                    .map { it.doc<Nothing>() }
+                    .foldDoc { a, b -> a + hardLine() + b }
+                    .enclose(hardLine(), hardLine())
             else nil()) +
             "after".text<Nothing>() spaced result.numTests.number<Nothing>("test".text(), "s".text()) +
             (if (result.numDiscardedTests > 0)
-                space<Nothing>() + "discarded".text() spaced result.numDiscardedTests.doc()
+                dot<Nothing>() + space() + "Discarded".text() spaced result.numDiscardedTests.doc()
             else nil()) +
             (if (result.numShrinks > 0)
-                space<Nothing>() + "shrunk".text() spaced result.numShrinks.number("time".text(), "s".text())
-            else nil()) + usedSeed(result.usedSeed, result.usedSize)
-    is Result.GivenUp -> "Gave up".text<Nothing>() spaced "after".text() spaced result.numTests.number<Nothing>("test".text(), "s".text()) +
+                dot<Nothing>() + space() + "Shrunk".text() spaced result.numShrinks.number("time".text(), "s".text())
+            else nil()) + dot() spaced usedSeed(result.usedSeed, result.usedSize)
+    is Result.GivenUp -> "Gave up".text<Nothing>() spaced "after".text() spaced result.numTests.number<Nothing>(
+        "test".text(),
+        "s".text()
+    ) +
             (if (result.numDiscardedTests > 0)
-                space<Nothing>() + "discarded".text() spaced result.numDiscardedTests.doc()
-            else nil())
-    is Result.NoExpectedFailure -> "No expected failure".text<Nothing>() spaced "after".text() spaced result.numTests.number<Nothing>("test".text(), "s".text()) +
+                dot<Nothing>() + space() + "Discarded".text() spaced result.numDiscardedTests.doc()
+            else dot())
+    is Result.NoExpectedFailure -> "No expected failure".text<Nothing>() spaced "after".text() spaced result.numTests.number<Nothing>(
+        "test".text(),
+        "s".text()
+    ) +
             (if (result.numDiscardedTests > 0)
-                space<Nothing>() + "discarded".text() spaced result.numDiscardedTests.doc()
-            else nil())
+                dot<Nothing>() + space() + "Discarded".text() spaced result.numDiscardedTests.doc()
+            else dot())
     else -> throw IllegalStateException("Never")
 }.renderPretty().renderString()
 
@@ -230,7 +240,7 @@ typealias Log = ListK<LogEntry>
 
 // Soon to be expanded with richer debug options
 data class LogEntry(val doc: Doc<Nothing>)
-// TODO make actual newtypes later on?
+
 typealias PropCheck<A> = PropCheckT<ForIO, A>
 
 typealias PropCheckT<M, A> = WriterT<M, Log, A>
@@ -258,20 +268,14 @@ fun renderLog(l: Log): String =
 
 fun runTest(args: Args, prop: Property): PropCheck<Result> = propCheckFx {
     val initState = !liftIO(getInitialState(args))
-    // TODO: Split this into pieces
     // elgotM with Id is isomorphic to elgotM with NonEmptyListF and an algebra that just returns the last element
     !initState.elgotM({ liftIO(IO.just(it.value())) }, { state ->
         // check current state if its fine
         if (state.numSuccessTests >= state.maxSuccess && state.coverageConfidence.isEmpty())
             doneTesting(state).map { it.left() }
-        else if (state.numDiscardedTests >= state.maxDiscardRatio * Math.max(state.numSuccessTests, state.maxSuccess))
+        else if (state.numDiscardedTests >= state.maxDiscardRatio * state.numSuccessTests.coerceAtLeast(state.maxSuccess))
             giveUpTesting(state).map { it.left() }
-        else state.abortWith.fold({
-            // take a seed state and generate a new state (by running a test)
-            runATest(state, prop).map(IO.functor()) { newState ->
-                Id(newState).right()
-            }
-        }, { liftIO(IO.just(it.left())) }) // abort with a result
+        else runATest(state, prop).map(IO.functor()) { it.map(::Id) }
     }, Id.traverse(), propCheckMonad())
 }.fix()
 
@@ -305,7 +309,6 @@ fun getInitialState(args: Args): IO<State> = IO.fx {
     }
 
     State(
-        abortWith = none(),
         maxSuccess = args.maxSuccess,
         coverageConfidence = none(),
         maxDiscardRatio = args.maxDiscardRatio,
@@ -330,7 +333,7 @@ fun getInitialState(args: Args): IO<State> = IO.fx {
     )
 }
 
-fun runATest(state: State, prop: Property): PropCheck<State> = propCheckFx {
+fun runATest(state: State, prop: Property): PropCheck<Either<Result, State>> = propCheckFx {
     val (rand1, rand2) = state.randomSeed.split()
 
     /**
@@ -377,7 +380,6 @@ fun runATest(state: State, prop: Property): PropCheck<State> = propCheckFx {
      * compute a new state by adding the current result
      */
     val newState = State(
-        abortWith = none(),
         coverageConfidence = res.optionCheckCoverage.or(state.coverageConfidence),
         maxSuccess = res.optionNumOfTests.getOrElse { state.maxSuccess },
         tables = res.tables.foldRight(state.tables) { (k, l), acc ->
@@ -397,7 +399,7 @@ fun runATest(state: State, prop: Property): PropCheck<State> = propCheckFx {
         requiredCoverage = res.requiredCoverage
             .foldRight(state.requiredCoverage) { (key, value, p), acc ->
                 val alreadyThere = acc[key toT value] ?: Double.MIN_VALUE
-                (acc + mapOf((key toT value) to Math.max(alreadyThere, p))).k()
+                (acc + mapOf((key toT value) to alreadyThere.coerceAtLeast(p))).k()
             },
         // keep rest
         numTotTryShrinks = state.numTotTryShrinks,
@@ -412,11 +414,10 @@ fun runATest(state: State, prop: Property): PropCheck<State> = propCheckFx {
         randomSeed = state.randomSeed
     )
 
-    // todo replace with either in return type to indicate how to proceed
-    fun cont(nState: State, br: (State) -> PropCheck<Result>): PropCheck<State> = if (res.abort)
-        br(nState).map(IO.functor()) { State.abortWith.set(nState, it) }
+    fun cont(nState: State, br: (State) -> PropCheck<Result>): PropCheck<Either<Result, State>> = if (res.abort)
+        br(nState).map(IO.functor()) { it.left() }
     else
-        liftIO(IO.just(nState))
+        liftIO(IO.just(nState.right()))
 
     !when (res.ok) {
         true.some() -> {
@@ -433,14 +434,14 @@ fun runATest(state: State, prop: Property): PropCheck<State> = propCheckFx {
         false.some() -> {
             propCheckFx {
                 val (numShrinks, totFailed, lastFailed, nRes) = !foundFailure(newState, res, ts)
-                val res = if (nRes.expected.not())
+                if (nRes.expected.not())
                     Result.Success(
                         numTests = newState.numSuccessTests + 1,
                         numDiscardedTests = newState.numDiscardedTests,
                         tables = newState.tables,
                         labels = newState.labels,
                         classes = newState.classes
-                    )
+                    ).left()
                 else
                     Result.Failure(
                         usedSeed = newState.randomSeed,
@@ -455,8 +456,7 @@ fun runATest(state: State, prop: Property): PropCheck<State> = propCheckFx {
                         numShrinks = numShrinks,
                         numShrinkTries = totFailed,
                         usedSize = size
-                    )
-                State.abortWith.set(newState, res)
+                    ).left()
             }
         }
         None -> {
@@ -529,8 +529,6 @@ typealias FailureResult = PropCheck<Tuple4<Int, Int, Int, TestResult>>
 
 /**
  * handle a failure, will try to shrink failure case
- *
- * TODO: Split this into pieces
  */
 fun foundFailure(state: State, res: TestResult, ts: Sequence<Rose<ForIO, TestResult>>): FailureResult =
     (Tuple3(state, res, ts))
@@ -540,25 +538,22 @@ fun foundFailure(state: State, res: TestResult, ts: Sequence<Rose<ForIO, TestRes
             else propCheckFx {
                 val (nRes0, nShrunk) = !liftIO(remainingShrunk.first().runRose.fix())
                 val nRes = !callbackPostTest(currState, nRes0)
-                if (nRes.ok == false.some())
-                    Id(
-                        Tuple3(
-                            State.numTryShrinks.set(
-                                State.numSuccessShrinks.modify(currState) { it + 1 }, 0
-                            ),
-                            nRes, nShrunk
-                        )
-                    ).right()
+                val newSeed = if (nRes.ok == false.some())
+                    Tuple3(
+                        State.numTryShrinks.set(
+                            State.numSuccessShrinks.modify(currState) { it + 1 }, 0
+                        ),
+                        nRes, nShrunk
+                    )
                 else
-                    Id(
-                        Tuple3(
-                            State.numTryShrinks.modify(
-                                State.numTotTryShrinks.modify(currState) { it + 1 }
-                            ) { it + 1 },
-                            currRes,
-                            remainingShrunk.drop(1)
-                        )
-                    ).right()
+                    Tuple3(
+                        State.numTryShrinks.modify(
+                            State.numTotTryShrinks.modify(currState) { it + 1 }
+                        ) { it + 1 },
+                        currRes,
+                        remainingShrunk.drop(1)
+                    )
+                Id(newSeed).right()
             }
         }, Id.traverse(), propCheckMonad()).fix()
 
@@ -585,8 +580,8 @@ fun callbackPostTest(state: State, res: TestResult): PropCheck<TestResult> =
  * call all post final failure callbacks
  */
 fun callbackPostFinalFailure(state: State, res: TestResult): PropCheck<Unit> =
-    res.callbacks.filter { it is Callback.PostFinalFailure }.traverse(propCheckMonad()) {
-        (it as Callback.PostFinalFailure).fn(state, res)
+    res.callbacks.filterIsInstance<Callback.PostFinalFailure>().traverse(propCheckMonad()) {
+        it.fn(state, res)
     }.fix().unit(IO.functor())
 
 // ----------------- Text utility functions for showing results
@@ -655,9 +650,16 @@ fun labelsAndTables(state: State): Tuple2<List<Doc<Nothing>>, List<Doc<Nothing>>
                 )
             }.map { (optTable, label, tot, n, p) ->
                 listOf(
-                    optTable.fold({
-                        "Only".text<Nothing>() + space()
-                    }, { "Table".text<Nothing>() spaced it.doc<Nothing>().enclose(sQuote(), sQuote()) spaced "had only".text<Nothing>() + space() }) +
+                    optTable.fold(
+                        {
+                            "Only".text<Nothing>() + space()
+                        },
+                        {
+                            "Table".text<Nothing>() spaced it.doc<Nothing>().enclose(
+                                sQuote(),
+                                sQuote()
+                            ) spaced "had only".text<Nothing>() + space()
+                        }) +
                             n.toPercentage(tot).text() + "%".text() spaced label.doc<Nothing>() + comma() spaced "but expected".text() spaced (p * 100).doc<Nothing>() + "%".text()
                 ).vSep()
             }))
@@ -666,7 +668,11 @@ fun labelsAndTables(state: State): Tuple2<List<Doc<Nothing>>, List<Doc<Nothing>>
 }
 
 fun showTable(k: Int, tableName: Option<String>, table: Map<String, Int>): List<Doc<Nothing>> =
-    listOf(tableName.fold({ nil<Nothing>() }, { it.doc<Nothing>() spaced (k.doc<Nothing>() spaced "in total".text()).enclose(lParen(), rParen()) })) +
+    listOf(
+        tableName.fold(
+            { nil<Nothing>() },
+            { it.doc<Nothing>() spaced (k.doc<Nothing>() spaced "in total".text()).enclose(lParen(), rParen()) })
+    ) +
             table.entries.sortedBy { it.key }.reversed().sortedBy { it.value }
                 .reversed().map { it.value.toPercentage(k).doc<Nothing>() + "%".text() spaced it.key.text() }
 
@@ -700,8 +706,8 @@ fun invnormcdf(d: Double): Double = when (d) {
     1.0 -> Double.POSITIVE_INFINITY
     else -> {
         val x = inorm(d)
-        val e = 0.5 * Erf.erfc(-x / Math.sqrt(2.0)) - d
-        val u = e * Math.sqrt(2 * Math.PI) * Math.exp(x * x / 2)
+        val e = 0.5 * Erf.erfc(-x / sqrt(2.0)) - d
+        val u = e * sqrt(2 * Math.PI) * exp(x * x / 2)
         x - u / (1 + x * u / 2)
     }
 }
@@ -742,7 +748,7 @@ fun inorm(d: Double): Double {
         d < 0 -> Double.NaN
         d == 0.0 -> Double.NEGATIVE_INFINITY
         d < dLow -> {
-            val q = Math.sqrt(-2 * Math.log(d))
+            val q = sqrt(-2 * ln(d))
             (((((c1 * q + c2) * q + c3) * q + c4) * q + c5) * q + c6) /
                     ((((d1 * q + d2) * q + d3) * q + d4) * q + 1)
         }
@@ -765,7 +771,7 @@ fun addCoverageCheck(confidence: Confidence, state: State, prop: Property): Prop
                     confidence,
                     tot, n, p
                 )
-            }.fold(true) { acc, v -> acc && v } -> propCheck.property.once(prop)
+            }.fold(true) { acc, v -> acc && v } -> once(prop)
             allCov.map { (_, _, tot, n, p) ->
                 insufficientlyCovered(
                     confidence.certainty.some(),
@@ -778,7 +784,7 @@ fun addCoverageCheck(confidence: Confidence, state: State, prop: Property): Prop
                         failed("Insufficient coverage".text())
                             .property()
                     }) { v, acc ->
-                        propCheck.property.counterexample({ v }, acc)
+                        counterexample({ v }, acc)
                     }
             }
             else -> prop
