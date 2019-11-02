@@ -1,32 +1,91 @@
-package propCheck
+package propCheck.property
 
-import arrow.Kind
 import arrow.core.*
 import arrow.core.extensions.eval.monad.monad
 import arrow.core.extensions.fx
 import arrow.core.extensions.list.traverse.traverse
-import arrow.core.extensions.sequence.foldable.foldLeft
-import arrow.core.extensions.sequence.foldable.foldRight
 import arrow.core.extensions.sequence.traverse.traverse
 import arrow.core.extensions.sequencek.foldable.foldRight
 import arrow.extension
 import arrow.fx.ForIO
 import arrow.fx.IO
 import arrow.fx.extensions.fx
-import arrow.fx.extensions.io.applicativeError.handleError
 import arrow.fx.extensions.io.monad.monad
 import arrow.fx.fix
-import arrow.optics.optics
-import arrow.typeclasses.*
+import arrow.typeclasses.Eq
+import arrow.typeclasses.Show
+import propCheck.*
 import propCheck.arbitrary.Arbitrary
 import propCheck.arbitrary.Gen
 import propCheck.arbitrary.fix
 import propCheck.arbitrary.gen.applicative.applicative
 import propCheck.arbitrary.gen.monad.flatMap
 import propCheck.arbitrary.gen.monad.monad
-import propCheck.property.testable.testable
-import propCheck.rose.monad.monad
-import propCheck.testresult.testable.testable
+import propCheck.property.property.testable.testable
+import propCheck.property.rose.monad.monad
+import propCheck.property.testresult.testable.testable
+
+data class Property(val unProperty: Gen<Prop>) {
+    companion object
+}
+
+data class Prop(val unProp: Rose<ForIO, TestResult>)
+
+/**
+ * Base interface for testable data
+ */
+interface Testable<A> {
+    fun A.property(): Property
+}
+
+interface BooleanTestable : Testable<Boolean> {
+    override fun Boolean.property(): Property = TestResult.testable().run {
+        liftBoolean(this@property).property()
+    }
+}
+
+fun Boolean.property(): Property = TestResult.testable().run {
+    liftBoolean(this@property).property()
+}
+
+fun Boolean.Companion.testable(): Testable<Boolean> = object : BooleanTestable {}
+
+@extension
+interface TestResultTestable : Testable<TestResult> {
+    override fun TestResult.property(): Property =
+        Property(
+            Gen.monad().just(
+                Prop(
+                    protectResults(
+                        Rose.just(
+                            IO.monad(),
+                            this
+                        )
+                    )
+                )
+            ).fix()
+        )
+}
+
+@extension
+interface PropertyTestable : Testable<Property> {
+    override fun Property.property(): Property = Property(
+        Gen.monad().fx.monad {
+            this@property.unProperty.bind()
+        }.fix()
+    )
+}
+
+@extension
+interface OptionTestable<A> : Testable<Option<A>> {
+    fun TA(): Testable<A>
+
+    override fun Option<A>.property(): Property = fold({
+        TestResult.testable().run { rejected().property() }
+    }, {
+        TA().run { it.property() }
+    })
+}
 
 /**
  * Callbacks. Can perform io based on state and results
@@ -41,261 +100,8 @@ sealed class CallbackKind {
     object NoCounterexample : CallbackKind()
 }
 
-/**
- * A single tests result
- */
-@optics
-data class TestResult(
-    val ok: Option<Boolean>, // Some(true) => success, Some(false) => failure and None => discarded
-    val expected: Boolean, // expected outcome
-    val reason: String, // failure reason
-    val exception: Option<Throwable>, // thrown exception
-    val abort: Boolean, // if true aborts testing hereafter
-    val optionNumOfTests: Option<Int>,
-    val optionCheckCoverage: Option<Confidence>,
-    val labels: List<String>,
-    val classes: List<String>,
-    val tables: List<Tuple2<String, String>>,
-    val requiredCoverage: List<Tuple3<Option<String>, String, Double>>,
-    val testCase: List<String>,
-    val callbacks: List<Callback>
-) {
-    companion object {
-        fun toTuple(res: TestResult) = res.run {
-            Tuple13(
-                ok,
-                expected,
-                reason,
-                exception,
-                abort,
-                optionNumOfTests,
-                optionCheckCoverage,
-                labels,
-                classes,
-                tables,
-                requiredCoverage,
-                testCase,
-                callbacks
-            )
-        }
 
-        fun fromTuple(tup: Tuple13<Option<Boolean>, Boolean, String, Option<Throwable>, Boolean, Option<Int>, Option<Confidence>, List<String>, List<String>, List<Tuple2<String, String>>, List<Tuple3<Option<String>, String, Double>>, List<String>, List<Callback>>) =
-            TestResult(
-                tup.a,
-                tup.b,
-                tup.c,
-                tup.d,
-                tup.e,
-                tup.f,
-                tup.g,
-                tup.h,
-                tup.i,
-                tup.j,
-                tup.k,
-                tup.l,
-                tup.m
-            )
-    }
-}
-
-// @higherkind boilerplate
-class ForRose private constructor() {
-    companion object
-}
-typealias RoseOf<M, A> = arrow.Kind<RosePartialOf<M>, A>
-typealias RosePartialOf<M> = arrow.Kind<ForRose, M>
-
-@Suppress("UNCHECKED_CAST", "NOTHING_TO_INLINE")
-inline fun <M, A> RoseOf<M, A>.fix(): Rose<M, A> =
-    this as Rose<M, A>
-
-data class Rose<M, A>(val runRose: Kind<M, RoseF<A, Rose<M, A>>>) : RoseOf<M, A> {
-
-    fun <B> map(FM: Functor<M>, f: (A) -> B): Rose<M, B> = FM.run {
-        Rose(runRose.map { RoseF(f(it.res), it.shrunk.map { it.map(FM, f) }) })
-    }
-
-    fun <B> flatMap(MM: Monad<M>, f: (A) -> Rose<M, B>): Rose<M, B> = Rose(
-        MM.fx.monad {
-            val rose1 = !runRose
-            val rose2 = !f(rose1.res).runRose
-            RoseF(
-                rose2.res,
-                rose1.shrunk.map { it.flatMap(MM, f) } + rose2.shrunk
-            )
-        }
-    )
-
-    companion object {
-        fun <M, A> just(AM: Applicative<M>, a: A): Rose<M, A> = Rose(AM.just(RoseF(a, emptySequence())))
-    }
-}
-
-class ForRoseF private constructor()
-typealias RoseFOf<A, F> = arrow.Kind<RoseFPartialOf<A>, F>
-typealias RoseFPartialOf<A> = arrow.Kind<ForRoseF, A>
-
-@Suppress("UNCHECKED_CAST", "NOTHING_TO_INLINE")
-inline fun <A, F> RoseFOf<A, F>.fix(): RoseF<A, F> =
-    this as RoseF<A, F>
-
-/**
- * Recursive data structure.
- * At every level keeps both the current tested value and (lazily) the shrunk values
- */
-data class RoseF<A, F>(val res: A, val shrunk: Sequence<F>) : RoseFOf<A, F> {
-    fun <B> map(f: (F) -> B): RoseF<A, B> = RoseF(res, shrunk.map(f))
-
-    companion object
-}
-
-@extension
-interface RoseFFunctor<C> : Functor<RoseFPartialOf<C>> {
-    override fun <A, B> Kind<RoseFPartialOf<C>, A>.map(f: (A) -> B): Kind<RoseFPartialOf<C>, B> =
-        fix().map(f)
-}
-
-@extension
-interface RoseFTraverse<C> : Traverse<RoseFPartialOf<C>> {
-    override fun <A, B> Kind<RoseFPartialOf<C>, A>.foldLeft(b: B, f: (B, A) -> B): B =
-        fix().shrunk.foldLeft(b, f)
-
-    override fun <A, B> Kind<RoseFPartialOf<C>, A>.foldRight(lb: Eval<B>, f: (A, Eval<B>) -> Eval<B>): Eval<B> =
-        fix().shrunk.foldRight(lb, f)
-
-    override fun <G, A, B> Kind<RoseFPartialOf<C>, A>.traverse(
-        AP: Applicative<G>,
-        f: (A) -> Kind<G, B>
-    ): Kind<G, Kind<RoseFPartialOf<C>, B>> = AP.run {
-        fix().shrunk.traverse(AP, f).map {
-            RoseF(fix().res, it.fix())
-        }
-    }
-}
-
-@extension
-interface RoseFunctor<M> : Functor<RosePartialOf<M>> {
-    fun FM(): Functor<M>
-
-    override fun <A, B> Kind<RosePartialOf<M>, A>.map(f: (A) -> B): Kind<RosePartialOf<M>, B> =
-        fix().map(FM(), f)
-}
-
-@extension
-interface RoseApplicative<M> : Applicative<RosePartialOf<M>> {
-    fun MM(): Monad<M>
-
-    override fun <A> just(a: A): Kind<RosePartialOf<M>, A> = Rose.just(MM(), a)
-
-    override fun <A, B> Kind<RosePartialOf<M>, A>.ap(ff: Kind<RosePartialOf<M>, (A) -> B>): Kind<RosePartialOf<M>, B> =
-        fix().flatMap(MM()) { a -> ff.fix().map(MM()) { f -> f(a) } }
-}
-
-@extension
-interface RoseMonad<M> : Monad<RosePartialOf<M>> {
-    fun MM(): Monad<M>
-
-    override fun <A, B> Kind<RosePartialOf<M>, A>.flatMap(f: (A) -> Kind<RosePartialOf<M>, B>): Kind<RosePartialOf<M>, B> =
-        fix().flatMap(MM()) { f(it).fix() }
-
-    override fun <A> just(a: A): Kind<RosePartialOf<M>, A> = Rose.just(MM(), a)
-
-    override fun <A, B> tailRecM(a: A, f: (A) -> Kind<RosePartialOf<M>, Either<A, B>>): Kind<RosePartialOf<M>, B> =
-        f(a).flatMap {
-            it.fold({
-                tailRecM(it, f)
-            }, {
-                just(it)
-            })
-        }
-}
-
-/**
- * wrap an IO with results safely
- */
-fun ioRose(rose: IO<Rose<ForIO, TestResult>>): Rose<ForIO, TestResult> =
-    Rose(
-        protectRose(rose).flatMap { it.runRose }
-    )
-
-/**
- * catch exceptions in io code and fail the test if necessary
- */
-fun protectRose(rose: IO<Rose<ForIO, TestResult>>): IO<Rose<ForIO, TestResult>> = rose.handleError {
-    Rose.just(
-        IO.monad(),
-        failed(
-            reason = "Exception",
-            exception = it.some()
-        )
-    )
-}
-
-/**
- * apply a function on a roses content
- */
-fun <A> onRose(rose: Rose<ForIO, A>, f: (A, Sequence<Rose<ForIO, A>>) -> Rose<ForIO, A>): Rose<ForIO, A> =
-    Rose(
-        IO.fx {
-            val (res, shrunk) = !rose.runRose
-            !f(res, shrunk).runRose
-        }.fix()
-    )
-
-/**
- * catch exceptions in io code and fail if necessary
- */
-fun protectResult(io: IO<TestResult>): IO<TestResult> = io.handleError {
-    failed(
-        reason = "Exception",
-        exception = it.some()
-    )
-}
-
-/**
- * wrap internal roses with ioRose and install error handlers
- */
-fun protectResults(rose: Rose<ForIO, TestResult>): Rose<ForIO, TestResult> =
-    onRose(rose) { x, rs ->
-        Rose(
-            IO.fx {
-                val y = protectResult(IO.just(x)).bind()
-                RoseF(y, rs.map(::protectResults))
-            }
-        )
-    }
-
-internal fun defaultRes(): TestResult = TestResult(
-    ok = none(),
-    expected = true,
-    reason = "",
-    classes = emptyList(),
-    labels = emptyList(),
-    abort = false,
-    exception = none(),
-    optionCheckCoverage = none(),
-    optionNumOfTests = none(),
-    requiredCoverage = emptyList(),
-    testCase = emptyList(),
-    tables = emptyList(),
-    callbacks = emptyList()
-)
-
-fun succeeded(): TestResult = TestResult.ok.set(defaultRes(), true)
-
-fun failed(reason: String, exception: Option<Throwable> = none()): TestResult =
-    TestResult.optionException.set(
-        TestResult.reason.set(
-            TestResult.ok.set(defaultRes(), false), reason
-        ), exception
-    )
-
-fun rejected(): TestResult = TestResult.optionOk.set(defaultRes(), none())
-
-fun liftBoolean(bool: Boolean): TestResult = if (bool) succeeded() else failed(
-    reason = "Falsifiable"
-)
-
+// Combinators for building properties
 /**
  * Map over the test result of a property and protect the results with error handlers
  */
@@ -515,7 +321,11 @@ fun whenFail(a: Property, f: () -> Unit): Property =
  * execute some io code when a test fails
  */
 fun whenFailIO(a: Property, f: IO<Unit>): Property =
-    callback(Callback.PostFinalFailure(CallbackKind.NoCounterexample) { _, _ -> liftIO(f) }, a)
+    callback(Callback.PostFinalFailure(CallbackKind.NoCounterexample) { _, _ ->
+        liftIO(
+            f
+        )
+    }, a)
 
 /**
  * execute some code on every failure (not just the last one)
@@ -650,7 +460,8 @@ fun <A, B> forAllShrinkBlind(
     again(
         Property(
             Gen.monad().fx.monad {
-                shrinking(shrinkerB, genB.bind(), testA.run { prop.andThen { it.property() } }).unProperty.bind()
+                shrinking(shrinkerB, genB.bind(), testA.run { prop.andThen { it.property() } })
+                    .unProperty.bind()
             }.fix()
         )
     )
@@ -751,11 +562,17 @@ internal fun conj(roses: Sequence<Eval<Rose<ForIO, TestResult>>>, k: (TestResult
         IO.fx {
             val reduced = !roses.first().value().runRose
             if (reduced.res.expected.not())
-                RoseF(failed("expect failure may not be used inside a conjunction"), emptySequence())
+                RoseF(
+                    failed("expect failure may not be used inside a conjunction"),
+                    emptySequence()
+                )
             else
                 when (reduced.res.ok) {
                     true.some() -> !conj(roses.drop(1)) {
-                        addLabels(reduced.res, addCallbacksAndCoverage(reduced.res, k(it)))
+                        addLabels(
+                            reduced.res,
+                            addCallbacksAndCoverage(reduced.res, k(it))
+                        )
                     }.runRose
                     false.some() -> reduced
                     None -> IO.fx {
@@ -827,7 +644,14 @@ fun disjoin(props: Sequence<Eval<Property>>): Property =
                     }.promote(Eval.monad())
                 }.bind()
                 Prop(
-                    roses.foldRight(Eval.now(Rose.just(IO.monad(), failed("")))) { r, acc ->
+                    roses.foldRight(
+                        Eval.now(
+                            Rose.just(
+                                IO.monad(),
+                                failed("")
+                            )
+                        )
+                    ) { r, acc ->
                         Eval.fx {
                             disj(r.fix().bind(), acc)
                         }

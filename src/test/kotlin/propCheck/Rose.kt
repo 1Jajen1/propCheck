@@ -8,6 +8,9 @@ import arrow.fx.fix
 import arrow.test.laws.MonadLaws
 import arrow.test.laws.equalUnderTheLaw
 import arrow.typeclasses.Eq
+import propCheck.property.Rose
+import propCheck.property.RosePartialOf
+import propCheck.property.fix
 import propCheck.rose.monad.monad
 
 class RoseSpec : LawSpec() {

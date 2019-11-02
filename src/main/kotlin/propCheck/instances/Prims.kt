@@ -1,16 +1,13 @@
 package propCheck.instances
 
 import arrow.core.*
-import propCheck.Args
 import propCheck.arbitrary.*
 import propCheck.arbitrary.gen.monad.monad
 import propCheck.arbitrary.tuple2.func.func
-import propCheck.forAll
 import propCheck.instances.either.func.func
 import propCheck.instances.listk.arbitrary.arbitrary
 import propCheck.instances.listk.coarbitrary.coarbitrary
 import propCheck.instances.listk.func.func
-import propCheck.propCheck
 
 interface IntArbitrary : Arbitrary<Int> {
     override fun arbitrary(): Gen<Int> = arbitrarySizedInt()

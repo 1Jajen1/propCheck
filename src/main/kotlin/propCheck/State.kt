@@ -14,6 +14,10 @@ import arrow.mtl.extensions.fx
 import propCheck.arbitrary.*
 import propCheck.arbitrary.gen.applicative.applicative
 import propCheck.arbitrary.gen.monad.monad
+import propCheck.property.Property
+import propCheck.property.Testable
+import propCheck.property.forAllBlind
+import propCheck.property.testable
 import java.util.concurrent.Callable
 import java.util.concurrent.Executors
 
@@ -102,8 +106,8 @@ internal fun <S, A, R, PROP> checkResults(
         Eval.later { Boolean.testable().run { true.property() } } toT state
     ) { (prop, s), (a, r) ->
         Eval.later {
-            and(
-                and(
+            propCheck.property.and(
+                propCheck.property.and(
                     Boolean.testable().run { invariant(s).property() },
                     Eval.later { testable.run { postCondition(s, a, r).property() } }
                 ),
@@ -119,7 +123,7 @@ inline fun <S, A, R, SUT, reified PROP> execSeq(
 ): Property = forAllBlind(
     commandsArby(sm, sm.initialState)
 ) { cmds ->
-    idempotentIOProperty(
+    propCheck.property.idempotentIOProperty(
         IO.fx {
             val sut = sm.sut().bind()
             val results = executeActions(cmds, sut, sm.executeAction).bind()
@@ -197,7 +201,7 @@ internal fun <S, A, R, SUT, PROP> _execPar(
 ): Property = forAllBlind(
     parArby(sm, Math.max(maxThreads, 2))
 ) { (prefix, paths) ->
-    idempotentIOProperty(
+    propCheck.property.idempotentIOProperty(
         IO.fx {
             val sut = sm.sut().bind()
             val prefixResult = executeActions(prefix, sut, sm.executeAction).bind()
@@ -221,7 +225,7 @@ internal fun <S, A, R, SUT, PROP> _execPar(
                 }
             ).map { it.get() }
 
-            counterexample(
+            propCheck.property.counterexample(
                 {
                     // TODO create a custom value diff here (or figure out how to make a KValue from this) and use pretty printing!
                     "No possible interleaving found for: \n" +
@@ -230,7 +234,7 @@ internal fun <S, A, R, SUT, PROP> _execPar(
                                 "Path ${i + 1}: " + v.joinToString { "${it.a} -> ${it.b}" }
                             }
                 },
-                and(
+                propCheck.property.and(
                     prefixRes.value(),
                     Eval.later {
                         recurGo(pathResults, state, sm.invariant, sm.transition, testable, postCondition)
@@ -249,14 +253,14 @@ internal fun <S, A, R, PROP> recurGo(
     testable: Testable<PROP>,
     postCondition: PostCondition<S, A, R, PROP>
 ): Property = list.filter { it.firstOrNull() != null }.let {
-    or(
+    propCheck.property.or(
         Boolean.testable().run { it.isEmpty().property() },
         Eval.later {
             it.mapIndexed { i, _ ->
                 Eval.later { go(it, state, i, invariant, transition, testable, postCondition) }
             }.foldRight(Eval.now(Boolean.testable().run { false.property() })) { v, acc ->
                 Eval.fx {
-                    or(
+                    propCheck.property.or(
                         v.bind(),
                         acc
                     )
@@ -279,8 +283,8 @@ internal fun <S, A, R, PROP> go(
     else -> {
         val (a, r) = list[pos].first()
         val newState = transition(state, a)
-        and(
-            and(
+        propCheck.property.and(
+            propCheck.property.and(
                 Boolean.testable().run { invariant(newState).property() },
                 Eval.later { testable.run { postCondition(state, a, r).property() } }
             ),

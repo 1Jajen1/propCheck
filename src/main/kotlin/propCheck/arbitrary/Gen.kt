@@ -242,6 +242,11 @@ interface GenApplicative : Applicative<ForGen> {
         Gen { a }
 }
 
+/**
+ * This violates monad laws because every flatMap splits the rng. In practice that is not a problem
+ *  because the distribution of A's a Gen produces stays the same.
+ * This can however be problematic when using the unsafe methods [promote], [delay].
+ */
 @extension
 interface GenMonad : Monad<ForGen> {
     override fun <A, B> Kind<ForGen, A>.flatMap(f: (A) -> Kind<ForGen, B>): Kind<ForGen, B> =

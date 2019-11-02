@@ -5,7 +5,6 @@ import arrow.core.Tuple2
 import arrow.core.extensions.eq
 import arrow.core.extensions.listk.eq.eq
 import arrow.core.extensions.order
-import arrow.core.k
 import arrow.core.toT
 import arrow.test.laws.FunctorLaws
 import arrow.typeclasses.Eq
@@ -35,6 +34,10 @@ import propCheck.arbitrary.shrinking.arbitrary.arbitrary
 import propCheck.arbitrary.shrinking.functor.functor
 import propCheck.arbitrary.smart.functor.functor
 import propCheck.instances.arbitrary
+import propCheck.property.cover
+import propCheck.property.forAll
+import propCheck.property.idempotentIOProperty
+import propCheck.property.testable
 
 class BlindSpec : LawSpec() {
     init {
@@ -89,7 +92,7 @@ class OrderedListSpec : LawSpec() {
         "OrderedList arbitrary should only return ordered lists" {
             propCheck {
                 forAll(OrderedList.arbitrary(Int.order(), Int.arbitrary())) { (l) ->
-                    checkCoverage(
+                    propCheck.property.checkCoverage(
                         cover(85.0, l.size > 1, "non-trivial",
                             ListK.eq(Int.eq()).run {
                                 l.sorted().k().eqv(l.k())

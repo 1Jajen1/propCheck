@@ -4,7 +4,7 @@ import arrow.core.Tuple2
 import arrow.core.toT
 
 /**
- * Random typeclass similar to haskell and instances for primitive types
+ * Random typeclass, basically just contains primitives for generating ranged random data
  */
 interface Random<A> {
     fun randomR(range: Tuple2<A, A>, seed: RandSeed): Tuple2<A, RandSeed>

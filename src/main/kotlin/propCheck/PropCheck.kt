@@ -13,11 +13,7 @@ import arrow.core.extensions.mapk.semigroup.plus
 import arrow.core.extensions.mapk.semigroup.semigroup
 import arrow.core.extensions.monoid
 import arrow.core.extensions.semigroup
-import arrow.core.extensions.sequence.foldable.foldRight
 import arrow.core.extensions.sequence.foldable.isEmpty
-import arrow.core.extensions.sequencek.monoid.monoid
-import arrow.core.extensions.sequencek.semigroup.semigroup
-import arrow.extension
 import arrow.fx.ForIO
 import arrow.fx.IO
 import arrow.fx.extensions.fx
@@ -33,15 +29,13 @@ import arrow.mtl.extensions.writert.monad.monad
 import arrow.mtl.fix
 import arrow.optics.optics
 import arrow.recursion.AlgebraM
-import arrow.recursion.CoalgebraM
 import arrow.typeclasses.Monad
 import arrow.typeclasses.MonadSyntax
 import arrow.typeclasses.Traverse
 import org.apache.commons.math3.special.Erf
-import propCheck.arbitrary.Gen
 import propCheck.arbitrary.RandSeed
-import propCheck.arbitrary.fix
-import propCheck.arbitrary.gen.monad.monad
+import propCheck.property.*
+import propCheck.property.testresult.testable.testable
 import propCheck.testresult.testable.testable
 import kotlin.random.Random
 
@@ -60,7 +54,6 @@ fun <F, M, A, B> B.elgotM(
 
     return h(this)
 }
-// TODO remove the above when the pr gets merged
 
 /**
  * Datatype which describes the result of a test
@@ -140,7 +133,7 @@ data class State(
     val maxSuccess: Int,
     val coverageConfidence: Option<Confidence>,
     val maxDiscardRatio: Int,
-    val computeSize: (Int) -> (Int) -> Int,
+    val computeSize: (Int, Int) -> Int,
     val maxShrinks: Int,
     val numSuccessTests: Int,
     val numDiscardedTests: Int,
@@ -165,58 +158,6 @@ data class Confidence(
     val certainty: Long = Math.pow(10.0, 9.0).toLong(),
     val tolerance: Double = 0.9
 )
-
-data class Property(val unProperty: Gen<Prop>) {
-    companion object
-}
-
-data class Prop(val unProp: Rose<ForIO, TestResult>)
-
-/**
- * Base interface for testable data
- * Implemented by Boolean, TestResult, Property, Gen and Function1
- */
-interface Testable<A> {
-    fun A.property(): Property
-}
-
-interface BooleanTestable : Testable<Boolean> {
-    override fun Boolean.property(): Property = TestResult.testable().run {
-        liftBoolean(this@property).property()
-    }
-}
-
-fun Boolean.property(): Property = TestResult.testable().run {
-    liftBoolean(this@property).property()
-}
-
-fun Boolean.Companion.testable(): Testable<Boolean> = object : BooleanTestable {}
-
-@extension
-interface TestResultTestable : Testable<TestResult> {
-    override fun TestResult.property(): Property =
-        Property(
-            Gen.monad().just(
-                Prop(
-                    protectResults(
-                        Rose.just(
-                            IO.monad(),
-                            this
-                        )
-                    )
-                )
-            ).fix()
-        )
-}
-
-@extension
-interface PropertyTestable : Testable<Property> {
-    override fun Property.property(): Property = Property(
-        Gen.monad().fx.monad {
-            this@property.unProperty.bind()
-        }.fix()
-    )
-}
 
 /**
  * run property test on a given property and print the output
@@ -340,27 +281,23 @@ fun getInitialState(args: Args): IO<State> = IO.fx {
     /**
      * Special size function to later calculate different input sizes for the generator
      */
-    val computeSizeA: (Int) -> (Int) -> Int = { n ->
-        { d ->
-            if (
-                roundTo(n, args.maxSize) + args.maxSize <= args.maxSuccess ||
-                n >= args.maxSuccess || args.maxSuccess.rem(args.maxSize) == 0
+    val computeSizeA: (Int, Int) -> Int = { n, d ->
+        if (
+            roundTo(n, args.maxSize) + args.maxSize <= args.maxSuccess ||
+            n >= args.maxSuccess || args.maxSuccess.rem(args.maxSize) == 0
+        )
+            Math.min(n.rem(args.maxSize) + d / 10, args.maxSize)
+        else
+            Math.min(
+                (n.rem(args.maxSize) * args.maxSize / (args.maxSuccess.rem(args.maxSize)) + d / 10),
+                args.maxSize
             )
-                Math.min(n.rem(args.maxSize) + d / 10, args.maxSize)
-            else
-                Math.min(
-                    (n.rem(args.maxSize) * args.maxSize / (args.maxSuccess.rem(args.maxSize)) + d / 10),
-                    args.maxSize
-                )
-        }
     }
 
-    fun at0(f: (Int) -> (Int) -> Int, s: Int): (Int) -> (Int) -> Int = { n ->
-        { d ->
-            when (n toT d) {
-                Tuple2(0, 0) -> s
-                else -> f(n).invoke(d)
-            }
+    fun at0(f: (Int, Int) -> Int, s: Int): (Int, Int) -> Int = { n, d ->
+        when (n toT d) {
+            Tuple2(0, 0) -> s
+            else -> f(n, d)
         }
     }
 
@@ -407,7 +344,7 @@ fun runATest(state: State, prop: Property): PropCheck<State> = propCheckFx {
         else prop
     }.fold({ prop }, ::identity)
 
-    val size = state.computeSize(state.numSuccessTests)(state.numRecentlyDiscardedTests)
+    val size = state.computeSize(state.numSuccessTests, state.numRecentlyDiscardedTests)
 
     /**
      * run a test and unfold the rose structure
@@ -821,7 +758,7 @@ fun addCoverageCheck(confidence: Confidence, state: State, prop: Property): Prop
                     confidence,
                     tot, n, p
                 )
-            }.fold(true) { acc, v -> acc && v } -> once(prop)
+            }.fold(true) { acc, v -> acc && v } -> propCheck.property.once(prop)
             allCov.map { (_, _, tot, n, p) ->
                 insufficientlyCovered(
                     confidence.certainty.some(),
@@ -834,7 +771,7 @@ fun addCoverageCheck(confidence: Confidence, state: State, prop: Property): Prop
                         failed("Insufficient coverage")
                             .property()
                     }) { v, acc ->
-                        counterexample({ v }, acc)
+                        propCheck.property.counterexample({ v }, acc)
                     }
             }
             else -> prop

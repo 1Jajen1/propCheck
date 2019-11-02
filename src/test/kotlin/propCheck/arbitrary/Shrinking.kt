@@ -1,6 +1,9 @@
 package propCheck.arbitrary
 
 import propCheck.*
+import propCheck.property.Property
+import propCheck.property.counterexample
+import propCheck.property.forAll
 import propCheck.property.testable.testable
 
 class IntegralShrinkSpec : PropertySpec({

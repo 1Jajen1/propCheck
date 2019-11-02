@@ -2,25 +2,15 @@ package propCheck.arbitrary
 
 import arrow.Kind
 import arrow.core.*
-import arrow.core.extensions.show
 import arrow.extension
 import arrow.typeclasses.Functor
-import arrow.typeclasses.Monad
 import arrow.typeclasses.Show
-import propCheck.arbitrary.`fun`.arbitrary.arbitrary
-import propCheck.arbitrary.`fun`.show.show
 import propCheck.arbitrary.fn.arbitrary.arbitrary
 import propCheck.arbitrary.fn.functor.functor
 import propCheck.arbitrary.fn.functor.map
 import propCheck.arbitrary.gen.applicative.applicative
-import propCheck.delay
-import propCheck.forAll
-import propCheck.instances.arbitrary
-import propCheck.instances.func
 import propCheck.instances.function1.arbitrary.arbitrary
 import propCheck.instances.tuple2.arbitrary.arbitrary
-import propCheck.promote
-import propCheck.propCheck
 
 // @higherkind boilerplate
 class ForFun private constructor() {

@@ -8,6 +8,8 @@ import arrow.fx.IO
 import arrow.fx.extensions.io.applicativeError.attempt
 import arrow.fx.extensions.io.monadThrow.monadThrow
 import propCheck.arbitrary.*
+import propCheck.property.*
+import propCheck.property.property
 
 class TestableSpec : PropertySpec({
     "Boolean should be lifted correctly" {
@@ -50,7 +52,7 @@ class PropCheckSpec : PropertySpec({
     }
     "propCheck is the same as propCheckIOWithError.unsageRunSync()" {
         forAll { b: Boolean ->
-            ioProperty(
+            propCheck.property.ioProperty(
                 IO.monadThrow().fx.monadThrow {
                     propCheck(Args(replay = (RandSeed(0L) toT 0).some(), maxSuccess = 1)) {
                         Boolean.testable().run { b.property() }
@@ -73,7 +75,7 @@ class PropCheckSpec : PropertySpec({
                             Boolean.testable().run { b.property() }
                         }.attempt()
                             .unsafeRunSync().fold({
-                                counterexample(
+                                propCheck.property.counterexample(
                                     { "propCheck did not throw, but propCheckWithIOError did" },
                                     false.property()
                                 )
@@ -122,7 +124,7 @@ class PropCheckSpec : PropertySpec({
         forAll { (tup): Fixed<Tuple2<Long, Int>> ->
             val (l, s) = tup
             val seed = RandSeed(l)
-            ioProperty(
+            propCheck.property.ioProperty(
                 propCheckIO(Args(replay = (seed toT s).some())) {
                     forAll { b: Boolean -> b }
                 }.flatMap { res ->
@@ -135,9 +137,13 @@ class PropCheckSpec : PropertySpec({
     }
     "propCheckIO should respect the maxShrinks argument" {
         forAll { (i): Positive<Byte> ->
-            ioProperty(
+            propCheck.property.ioProperty(
                 propCheckIO(Args(maxShrinks = i.toInt())) {
-                    forAllShrink(arbitraryBoundedLong(), { shrinkLong(it) }, Boolean.testable()) { l: Long ->
+                    forAllShrink(
+                        arbitraryBoundedLong(),
+                        { shrinkLong(it) },
+                        Boolean.testable()
+                    ) { l: Long ->
                         Math.abs(l) < 20000
                     }
                 }.map {

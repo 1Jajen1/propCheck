@@ -100,7 +100,7 @@ class StateSpec : PropertySpec({
             }
         )
 
-        expectFailure(
+        propCheck.property.expectFailure(
             execPar(sm, 2) { s, a, r ->
                 when (a) {
                     is ACT.Get -> s == r
@@ -140,7 +140,7 @@ class StateSpec : PropertySpec({
             }
         )
 
-        and(
+        propCheck.property.and(
             execSeq(sm) { s, a, r ->
                 when (a) {
                     is ACT.Get -> s == r

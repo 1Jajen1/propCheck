@@ -3,8 +3,8 @@ package propCheck
 import arrow.core.Option
 import arrow.core.Tuple13
 import arrow.core.none
-import propCheck.TestResult.Companion.fromTuple
-import propCheck.TestResult.Companion.toTuple
+import propCheck.property.TestResult.Companion.fromTuple
+import propCheck.property.TestResult.Companion.toTuple
 import propCheck.arbitrary.Arbitrary
 import propCheck.arbitrary.Gen
 import propCheck.arbitrary.arbitraryASCIIString
@@ -13,6 +13,7 @@ import propCheck.instances.arbitrary
 import propCheck.instances.fromTup
 import propCheck.instances.option.arbitrary.arbitrary
 import propCheck.instances.tuple13.arbitrary.arbitrary
+import propCheck.property.TestResult
 
 object ThrowableArbitrary : Arbitrary<Throwable> {
     override fun arbitrary(): Gen<Throwable> = arbitraryASCIIString().map { Throwable(it) }

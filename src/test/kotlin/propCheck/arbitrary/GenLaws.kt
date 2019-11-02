@@ -7,6 +7,7 @@ import arrow.test.laws.MonadLaws
 import arrow.typeclasses.Eq
 import propCheck.*
 import propCheck.arbitrary.gen.monad.monad
+import propCheck.property.*
 import propCheck.property.testable.testable
 
 class GenSpec : LawSpec() {
@@ -31,7 +32,7 @@ class GenSpec : LawSpec() {
         "Gen.resize should work" {
             propCheck {
                 forAll { (i): NonNegative<Int> ->
-                    idempotentIOProperty(
+                    propCheck.property.idempotentIOProperty(
                         Gen.getSize().resize(i).generate().map { it.eqv(i) }
                     )
                 }
@@ -43,7 +44,7 @@ class GenSpec : LawSpec() {
             propCheck {
                 forAll { (iP, jP): Tuple2<NonNegative<Int>, NonNegative<Int>> ->
                     val (i) = iP; val (j) = jP
-                    idempotentIOProperty(
+                    propCheck.property.idempotentIOProperty(
                         Gen.getSize().scale { it + j }.resize(i).generate().map { it.eqv(i + j) }
                     )
                 }
@@ -98,7 +99,7 @@ class GenSpec : LawSpec() {
         "Gen.vectorOf should generate lists of size n" {
             propCheck {
                 forAll { (i): NonNegative<Int> ->
-                    idempotentIOProperty(
+                    propCheck.property.idempotentIOProperty(
                         arbitrarySizedByte().vectorOf(i).generate().map { it.size.eqv(i) }
                     )
                 }
@@ -108,7 +109,7 @@ class GenSpec : LawSpec() {
         "Gen.sized should work" {
             propCheck {
                 forAll { (i): NonNegative<Int> ->
-                    idempotentIOProperty(
+                    propCheck.property.idempotentIOProperty(
                         Gen.sized { Gen.getSize().resize(it) }.resize(i).generate().map { it.eqv(i) }
                     )
                 }
@@ -118,7 +119,7 @@ class GenSpec : LawSpec() {
         "Gen.getSize should work" {
             propCheck {
                 forAll { (i): NonNegative<Int> ->
-                    idempotentIOProperty(
+                    propCheck.property.idempotentIOProperty(
                         Gen.getSize().resize(i).generate().map { it.eqv(i) }
                     )
                 }
@@ -174,8 +175,8 @@ class GenSpec : LawSpec() {
                     Gen.choose(1 toT 3 + 1, Int.random()),
                     Property.testable()
                 ) {
-                    checkCoverage(
-                        coverTable(
+                    propCheck.property.checkCoverage(
+                        propCheck.property.coverTable(
                             "Data",
                             listOf(
                                 "1" toT 33.3,
@@ -198,8 +199,8 @@ class GenSpec : LawSpec() {
                     Gen.elements(1, 2, 3),
                     Property.testable()
                 ) {
-                    checkCoverage(
-                        coverTable(
+                    propCheck.property.checkCoverage(
+                        propCheck.property.coverTable(
                             "Data",
                             listOf(
                                 "1" toT 33.3,
@@ -226,8 +227,8 @@ class GenSpec : LawSpec() {
                     ),
                     Property.testable()
                 ) {
-                    checkCoverage(
-                        coverTable(
+                    propCheck.property.checkCoverage(
+                        propCheck.property.coverTable(
                             "Data",
                             listOf(
                                 "1" toT 33.3,

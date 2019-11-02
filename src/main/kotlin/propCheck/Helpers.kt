@@ -1,6 +1,7 @@
 package propCheck
 
 import propCheck.arbitrary.Gen
+import propCheck.property.Property
 
 // unsafe helpers for those who are not using arrow
 fun <A> Gen<A>.sample(): List<A> = sample().unsafeRunSync()

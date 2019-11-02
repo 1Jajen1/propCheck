@@ -2,6 +2,9 @@ package propCheck
 
 import arrow.core.Eval
 import propCheck.arbitrary.Fun
+import propCheck.property.cover
+import propCheck.property.discardIf
+import propCheck.property.forAll
 
 class FunctionSpec : PropertySpec({
     "a function outputs the same for the same input" {
@@ -17,7 +20,7 @@ class FunctionSpec : PropertySpec({
                 discardIf(
                     i == j,
                     Eval.later {
-                        checkCoverage(
+                        propCheck.property.checkCoverage(
                             cover(
                                 90.0,
                                 f(i) != f(j),

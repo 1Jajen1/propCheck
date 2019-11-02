@@ -3,6 +3,9 @@ package propCheck.arbitrary
 import arrow.core.Eval
 import arrow.core.toT
 import propCheck.*
+import propCheck.property.discardIf
+import propCheck.property.forAll
+import propCheck.property.property
 import java.util.*
 
 class RngSpec : PropertySpec({

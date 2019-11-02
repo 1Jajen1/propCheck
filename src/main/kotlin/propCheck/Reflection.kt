@@ -80,6 +80,10 @@ import propCheck.instances.tuple9.arbitrary.arbitrary
 import propCheck.instances.validated.arbitrary.arbitrary
 import propCheck.instances.validated.coarbitrary.coarbitrary
 import propCheck.instances.validated.func.func
+import propCheck.property.Property
+import propCheck.property.TestResult
+import propCheck.property.Testable
+import propCheck.property.testable
 import propCheck.property.testable.testable
 import propCheck.testresult.testable.testable
 import java.lang.reflect.ParameterizedType
