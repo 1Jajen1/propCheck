@@ -14,6 +14,7 @@ import arrow.fx.extensions.io.monad.monad
 import arrow.fx.fix
 import arrow.typeclasses.Eq
 import arrow.typeclasses.Show
+import pretty.*
 import propCheck.*
 import propCheck.arbitrary.Arbitrary
 import propCheck.arbitrary.Gen
@@ -187,7 +188,7 @@ fun noShrinking(a: Property): Property =
 fun counterexample(s: () -> String, a: Property): Property =
     mapTotalResult(
         callback(Callback.PostFinalFailure(CallbackKind.Counterexample) { st, _ ->
-            writeText(s())
+            writeDoc(s().doc())
         }, a)
     ) { res ->
         TestResult.testCase.modify(res) { listOf(s()) + it }
@@ -350,17 +351,17 @@ fun verbose(a: Property): Property =
         TestResult.callbacks.modify(res) { listOf(newCb(it)) + it }
     }
 
-internal fun status(res: TestResult): String = when (res.ok) {
+internal fun status(res: TestResult): Doc<Nothing> = when (res.ok) {
     true.some() -> "Passed"
     false.some() -> "Failed"
     None -> "Skipped (precondition false)"
     else -> throw IllegalStateException("Not possible")
-}
+}.text()
 
 internal fun newCb(cbs: List<Callback>): Callback =
     Callback.PostTest(CallbackKind.Counterexample) { st, res ->
         propCheckFx {
-            !writeText(status(res) + ": " + res.testCase.joinToString())
+            !writeDoc((status(res) + colon() + res.testCase.map { it.doc<Nothing>() }.punctuate(comma()).hCat()))
 
             !cbs.filter { it is Callback.PostFinalFailure && it.kind == CallbackKind.Counterexample }
                 .traverse(propCheckMonad()) {
@@ -382,7 +383,7 @@ internal fun newCb2(cbs: List<Callback>): Callback =
     Callback.PostTest(CallbackKind.Counterexample) { st, res ->
         if (res.ok == false.some())
             propCheckFx {
-                !writeText("Failed: " + res.testCase.joinToString())
+                !writeDoc(("Failed:".text<Nothing>() spaced  res.testCase.map { it.doc<Nothing>() }.punctuate(comma()).hSep()))
 
                 !cbs.filter { it is Callback.PostFinalFailure && it.kind == CallbackKind.Counterexample }
                     .traverse(propCheckMonad()) {
@@ -563,7 +564,7 @@ internal fun conj(roses: Sequence<Eval<Rose<ForIO, TestResult>>>, k: (TestResult
             val reduced = !roses.first().value().runRose
             if (reduced.res.expected.not())
                 RoseF(
-                    failed("expect failure may not be used inside a conjunction"),
+                    failed("expect failure may not be used inside a conjunction".text()),
                     emptySequence()
                 )
             else
@@ -648,7 +649,7 @@ fun disjoin(props: Sequence<Eval<Property>>): Property =
                         Eval.now(
                             Rose.just(
                                 IO.monad(),
-                                failed("")
+                                failed(nil())
                             )
                         )
                     ) { r, acc ->
@@ -664,20 +665,20 @@ fun disjoin(props: Sequence<Eval<Property>>): Property =
 internal fun disj(p: Rose<ForIO, TestResult>, q: Eval<Rose<ForIO, TestResult>>): Rose<ForIO, TestResult> = Rose.monad(IO.monad()).fx.monad {
     val res1 = p.bind()
     if (res1.expected.not())
-        failed("expectFailure may not occur inside a disjunction")
+        failed("expectFailure may not occur inside a disjunction".text())
     else
         when (res1.ok) {
             false.some() -> {
                 val res2 = q.value().bind()
                 if (res2.expected.not())
-                    failed("expectFailure may not occur inside a disjunction")
+                    failed("expectFailure may not occur inside a disjunction".text())
                 else
                     when (res2.ok) {
                         true.some() -> addCoverage(res1, res2)
                         false.some() -> TestResult(
                             ok = false.some(),
                             expected = true,
-                            reason = listOf(res1.reason, res2.reason).filter { it.isNotEmpty() }.joinToString(),
+                            reason = res1.reason + hardLine() + res2.reason,
                             exception = res1.exception.or(res2.exception),
                             abort = false,
                             optionNumOfTests = none(),

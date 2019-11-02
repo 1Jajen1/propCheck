@@ -2,6 +2,10 @@ package propCheck.property
 
 import arrow.core.*
 import arrow.optics.optics
+import pretty.Doc
+import pretty.doc
+import pretty.nil
+import pretty.text
 import propCheck.*
 
 /**
@@ -11,7 +15,7 @@ import propCheck.*
 data class TestResult(
     val ok: Option<Boolean>, // Some(true) => success, Some(false) => failure and None => discarded
     val expected: Boolean, // expected outcome
-    val reason: String, // failure reason
+    val reason: Doc<Nothing>, // failure reason
     val exception: Option<Throwable>, // thrown exception
     val abort: Boolean, // if true aborts testing hereafter
     val optionNumOfTests: Option<Int>,
@@ -29,7 +33,7 @@ data class TestResult(
 internal fun defaultRes(): TestResult = TestResult(
     ok = none(),
     expected = true,
-    reason = "",
+    reason = nil(),
     classes = emptyList(),
     labels = emptyList(),
     abort = false,
@@ -44,7 +48,7 @@ internal fun defaultRes(): TestResult = TestResult(
 
 fun succeeded(): TestResult = TestResult.ok.set(defaultRes(), true)
 
-fun failed(reason: String, exception: Option<Throwable> = none()): TestResult =
+fun failed(reason: Doc<Nothing>, exception: Option<Throwable> = none()): TestResult =
     TestResult.optionException.set(
         TestResult.reason.set(
             TestResult.ok.set(defaultRes(), false), reason
@@ -54,5 +58,5 @@ fun failed(reason: String, exception: Option<Throwable> = none()): TestResult =
 fun rejected(): TestResult = TestResult.optionOk.set(defaultRes(), none())
 
 fun liftBoolean(bool: Boolean): TestResult = if (bool) succeeded() else failed(
-    reason = "Falsifiable"
+    reason = "Falsifiable".text()
 )

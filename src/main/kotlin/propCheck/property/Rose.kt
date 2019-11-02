@@ -13,6 +13,7 @@ import arrow.fx.extensions.io.applicativeError.handleError
 import arrow.fx.extensions.io.monad.monad
 import arrow.fx.fix
 import arrow.typeclasses.*
+import pretty.text
 
 // @higherkind boilerplate
 class ForRose private constructor() {
@@ -146,7 +147,7 @@ fun protectRose(rose: IO<Rose<ForIO, TestResult>>): IO<Rose<ForIO, TestResult>> 
     Rose.just(
         IO.monad(),
         failed(
-            reason = "Exception",
+            reason = "Exception".text(),
             exception = it.some()
         )
     )
@@ -168,7 +169,7 @@ fun <A> onRose(rose: Rose<ForIO, A>, f: (A, Sequence<Rose<ForIO, A>>) -> Rose<Fo
  */
 fun protectResult(io: IO<TestResult>): IO<TestResult> = io.handleError {
     failed(
-        reason = "Exception",
+        reason = "Exception".text(),
         exception = it.some()
     )
 }

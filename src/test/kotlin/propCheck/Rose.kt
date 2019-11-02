@@ -11,7 +11,7 @@ import arrow.typeclasses.Eq
 import propCheck.property.Rose
 import propCheck.property.RosePartialOf
 import propCheck.property.fix
-import propCheck.rose.monad.monad
+import propCheck.property.rose.monad.monad
 
 class RoseSpec : LawSpec() {
     fun roseEq(): Eq<Kind<RosePartialOf<ForIO>, Int>> = Eq { a, b ->

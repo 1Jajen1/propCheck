@@ -8,7 +8,7 @@ import arrow.typeclasses.Eq
 import propCheck.*
 import propCheck.arbitrary.gen.monad.monad
 import propCheck.property.*
-import propCheck.property.testable.testable
+import propCheck.property.property.testable.testable
 
 class GenSpec : LawSpec() {
     init {

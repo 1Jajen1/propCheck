@@ -4,7 +4,7 @@ import propCheck.*
 import propCheck.property.Property
 import propCheck.property.counterexample
 import propCheck.property.forAll
-import propCheck.property.testable.testable
+import propCheck.property.property.testable.testable
 
 class IntegralShrinkSpec : PropertySpec({
     "shrinking ints should yield a sorted list of integers"(Args(maxSuccess = 10000)) {

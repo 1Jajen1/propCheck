@@ -83,9 +83,9 @@ import propCheck.instances.validated.func.func
 import propCheck.property.Property
 import propCheck.property.TestResult
 import propCheck.property.Testable
+import propCheck.property.property.testable.testable
 import propCheck.property.testable
-import propCheck.property.testable.testable
-import propCheck.testresult.testable.testable
+import propCheck.property.testresult.testable.testable
 import java.lang.reflect.ParameterizedType
 import java.lang.reflect.Type
 import java.lang.reflect.WildcardType

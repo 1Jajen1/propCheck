@@ -5,6 +5,7 @@ import arrow.core.Tuple2
 import arrow.core.extensions.eq
 import arrow.core.extensions.listk.eq.eq
 import arrow.core.extensions.order
+import arrow.core.k
 import arrow.core.toT
 import arrow.test.laws.FunctorLaws
 import arrow.typeclasses.Eq
