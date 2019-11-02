@@ -1,12 +1,15 @@
 package propCheck.arbitrary
 
-import arrow.core.Nel
-import arrow.core.Tuple2
-import arrow.core.toT
+import arrow.core.*
+import arrow.core.extensions.id.monad.monad
 import arrow.test.laws.MonadLaws
 import arrow.typeclasses.Eq
 import propCheck.*
 import propCheck.arbitrary.gen.monad.monad
+import propCheck.pretty.parse.ParsecT
+import propCheck.pretty.parse.fix
+import propCheck.pretty.parse.parsect.monad.monad
+import propCheck.pretty.parse.runParsecT
 import propCheck.property.testable.testable
 
 class GenSpec : LawSpec() {

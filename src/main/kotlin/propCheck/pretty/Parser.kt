@@ -82,15 +82,13 @@ fun valueParser(pred: (Char) -> Boolean): Parser<KValue> = parser().run {
         .orElse(recordParser())
         .orElse(signedDouble(double()).map { KValue.Rational(it) })
         .orElse(signedLong(decimal()).map { KValue.Decimal(it) }).fix()
-        .orElse(stringValueParser(pred)).fix()
+    // .orElse(stringValueParser(pred)).fix()
 }
 
 fun listParser(): Parser<KValue> = parser().run {
-    unit().fix().lazyFlatMap {
-        Eval.later {
-            valueParser { it != ',' && it != ']' }.withSeperator(',').between('[', ']')
-                .map { KValue.KList(it.toList()) }
-        }
+    unit().fix().flatMap {
+        valueParser { it != ',' && it != ']' }.withSeperator(',').between('[', ']')
+            .map { KValue.KList(it.toList()) }
     }.fix()
 }
 
@@ -115,7 +113,7 @@ fun propertyParser(): Parser<Tuple2<String, KValue>> = parser().run {
         val propName = !takeAtLeastOneWhile { it != '=' }
         val value = !char('=').fix()
             .flatMap { space().fix() }
-            .lazyFlatMap { Eval.later { valueParser { it != ',' && it != ')' } } }
+            .flatMap { valueParser { it != ',' && it != ')' } }
         propName toT value
     }.fix()
 }
@@ -143,11 +141,9 @@ fun stringValueParser(pred: (Char) -> Boolean): Parser<KValue> = parser().run {
 }
 
 fun tupleParser(): Parser<KValue> = parser().run {
-    unit().fix().lazyFlatMap {
-        Eval.later {
-            valueParser { it != ',' && it != ')' }.withSeperator(',').between('(', ')')
-                .map { KValue.KTuple(it.toList()) }
-        }
+    unit().fix().flatMap {
+        valueParser { it != ',' && it != ')' }.withSeperator(',').between('(', ')')
+            .map { KValue.KTuple(it.toList()) }
     }.fix()
 }
 

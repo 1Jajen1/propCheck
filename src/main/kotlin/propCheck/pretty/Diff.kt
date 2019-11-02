@@ -14,6 +14,7 @@ import arrow.typeclasses.Functor
 import pretty.*
 import propCheck.pretty.kvalue.eq.eq
 import propCheck.pretty.kvalue.show.show
+import propCheck.pretty.parse.State
 import propCheck.pretty.parse.runParsecT
 import propCheck.pretty.valuediff.birecursive.birecursive
 import propCheck.pretty.valuedifff.functor.functor
@@ -323,10 +324,10 @@ fun SimpleDoc<DiffType>.layoutColored(): String = cata<DiffType, (NonEmptyList<L
 
 // TODO simplify
 infix fun String.diff(str: String): String =
-    outputParser().runParsecT(this, Id.monad()).value().fold({
+    outputParser().runParsecT(State(this, 0), Id.monad()).value().fold({
         TODO()
     }, { a ->
-        outputParser().runParsecT(str, Id.monad()).value().fold({
+        outputParser().runParsecT(State(str, 0), Id.monad()).value().fold({
             TODO()
         }, { b ->
             (a toDiff b)

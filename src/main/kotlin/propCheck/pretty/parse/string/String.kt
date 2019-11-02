@@ -145,4 +145,3 @@ fun <E, I, CHUNK, M> MonadParsec<E, I, Char, CHUNK, M>.double(): Kind<M, Double>
         // I don't like this
         "$fst.$snd".toDouble()
     }
-
