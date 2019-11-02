@@ -24,7 +24,6 @@ import propCheck.arbitrary.fix
 import propCheck.arbitrary.gen.applicative.applicative
 import propCheck.arbitrary.gen.monad.flatMap
 import propCheck.arbitrary.gen.monad.monad
-import propCheck.pretty.diff
 import propCheck.property.testable.testable
 import propCheck.rose.monad.monad
 import propCheck.testresult.testable.testable
@@ -878,9 +877,9 @@ internal fun addCoverage(r: TestResult, s: TestResult): TestResult =
 
 fun <A> A.eqv(b: A, eqA: Eq<A> = Eq.any(), showA: Show<A> = Show.any()): Property =
     counterexample(
-        { // COLOR
-            "\nFailed (${"- lhs".red()} != ${"+ rhs".green()})\n" +
-                    showA.run { this@eqv.show() diff b.show() }
+        {
+            "Expected: ${showA.run { this@eqv.show() }} to be equal to:\n" +
+                    "        : ${showA.run { b.show() }}"
         },
         eqA.run { this@eqv.eqv(b) }
     )
@@ -893,6 +892,3 @@ fun <A> A.neqv(b: A, eqA: Eq<A> = Eq.any(), showA: Show<A> = Show.any()): Proper
         },
         eqA.run { this@neqv.neqv(b) }
     )
-
-fun String.red() = "\u001b[31m$this\u001b[0m"
-fun String.green() = "\u001b[32m$this\u001b[0m"
