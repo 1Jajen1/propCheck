@@ -2,15 +2,21 @@ package propCheck.arbitrary
 
 import arrow.Kind
 import arrow.core.*
+import arrow.core.extensions.id.monad.monad
+import arrow.core.extensions.list.monadFilter.filterMap
 import arrow.extension
+import arrow.mtl.OptionT
+import arrow.mtl.OptionTPartialOf
+import arrow.mtl.extensions.optiont.monad.monad
+import arrow.mtl.value
 import arrow.typeclasses.Functor
 import arrow.typeclasses.Show
-import propCheck.arbitrary.fn.arbitrary.arbitrary
 import propCheck.arbitrary.fn.functor.functor
 import propCheck.arbitrary.fn.functor.map
-import propCheck.arbitrary.gen.applicative.applicative
-import propCheck.instances.function1.arbitrary.arbitrary
-import propCheck.instances.tuple2.arbitrary.arbitrary
+import propCheck.arbitrary.gent.applicative.applicative
+import propCheck.property.Rose
+import propCheck.property.RoseF
+import propCheck.property.rose.birecursive.birecursive
 
 // @higherkind boilerplate
 class ForFun private constructor() {
@@ -24,17 +30,17 @@ typealias FunKindedJ<A, B> = arrow.HkJ2<ForFun, A, B>
 inline fun <A, B> FunOf<A, B>.fix(): Fun<A, B> =
     this as Fun<A, B>
 
-class Fun<A, B>(val fn: Fn<A, B>, val d: B, val shrunk: Boolean, val f: (A) -> B) : FunOf<A, B> {
-    operator fun component1(): (A) -> B = f
+class Fun<A, B>(val d: B, val fn: Fn<A, Rose<OptionTPartialOf<ForId>, B>>) : FunOf<A, B> {
+    operator fun component1(): (A) -> B = abstract(fn).f.andThen { opt ->
+        opt.fold(
+            { d },
+            {
+                it.runRose.value().value()
+                    .fold({ throw IllegalStateException("Empty generator in function") }, { it.res })
+            })
+    }
 
     companion object
-}
-
-@extension
-interface FunFunctor<C> : Functor<FunPartialOf<C>> {
-    override fun <A, B> Kind<FunPartialOf<C>, A>.map(f: (A) -> B): Kind<FunPartialOf<C>, B> = with(fix()) {
-        Fun(Fn.functor<C>().run { fn.map(f).fix() }, f(d), shrunk, this.f.andThen(f))
-    }
 }
 
 @extension
@@ -42,24 +48,17 @@ interface FunShow<A, B> : Show<Fun<A, B>> {
     fun SA(): Show<A>
     fun SB(): Show<B>
 
-    override fun Fun<A, B>.show(): String = if (shrunk) showFn(fn, d, SA(), SB()) else "<fun>"
+    override fun Fun<A, B>.show(): String = fn.table().let { ls ->
+        if (ls.isEmpty()) "_ -> " + SB().run { d.show() }
+        else ls.toList()
+            .filterMap { (k, v) -> v.runRose.value().value().map { k toT it.res } }
+            .joinToString("\n") { (k, v) ->
+                SA().run { k.show() } + " -> " + SB().run { v.show() }
+            } + "\n" + "_ -> " + SB().run { d.show() }
+    }
 }
 
-@extension
-interface FunArbitrary<A, B> : Arbitrary<Fun<A, B>> {
-    fun FA(): Func<A>
-    fun CA(): Coarbitrary<A>
-    fun AB(): Arbitrary<B>
-
-    override fun arbitrary(): Gen<Fun<A, B>> =
-        Gen.applicative().map(Fn.arbitrary(FA(), CA(), AB()).arbitrary(), AB().arbitrary()) { (fn, d) ->
-            Fun(fn, d, false, abstract(fn, d).f)
-        }.fix()
-
-    override fun shrink(fail: Fun<A, B>): Sequence<Fun<A, B>> = Tuple2.arbitrary(Fn.arbitrary(FA(), CA(), AB()), AB()).shrink(fail.fn toT fail.d).map { (fn, d) ->
-        Fun(fn, d, false, abstract(fn, d).f)
-    } + (if (!fail.shrunk) sequenceOf(Fun(fail.fn, fail.d, true, fail.f)) else emptySequence())
-}
+// Gen instance
 
 // @higherkind boilerplate
 class ForFn private constructor() {
@@ -83,8 +82,6 @@ sealed class Fn<A, B> : FnOf<A, B> {
 
     class PairFn<A, B, C>(val fn: Fn<A, Fn<B, C>>) : Fn<Tuple2<A, B>, C>()
 
-    class TableFn<A, B>(val m: Map<A, Eval<B>>) : Fn<A, B>()
-
     class MapFn<A, B, C>(val f: (A) -> B, val cF: (B) -> A, val g: Fn<B, C>) : Fn<A, C>()
 
     companion object
@@ -101,7 +98,6 @@ interface FnFunctor<C> : Functor<FnPartialOf<C>> {
             (t.r as Fn<C, A>).map(f).fix()
         ) as Fn<C, B>
         is Fn.PairFn<*, *, A> -> Fn.PairFn((t.fn as Fn<C, Fn<C, A>>).map { it.map(f).fix() }.fix()) as Fn<C, B>
-        is Fn.TableFn -> Fn.TableFn(t.m.mapValues { it.value.map(f) })
         is Fn.MapFn<*, *, A> -> Fn.MapFn(
             t.f as (Any?) -> C,
             t.cF as (C) -> Any?,
@@ -110,44 +106,36 @@ interface FnFunctor<C> : Functor<FnPartialOf<C>> {
     }
 }
 
-@extension
-interface FnArbitrary<A, B> : Arbitrary<Fn<A, B>> {
-    fun FA(): Func<A>
-    fun CA(): Coarbitrary<A>
-    fun AB(): Arbitrary<B>
-    override fun arbitrary(): Gen<Fn<A, B>> = FA().run {
-        Function1.arbitrary(CA(), AB()).arbitrary().map { function(it.f) }
-    }
-
-    override fun shrink(fail: Fn<A, B>): Sequence<Fn<A, B>> = shrinkFun(fail) { AB().shrink(it) }
-}
-
-fun <A, B> showFn(fn: Fn<A, B>, d: B, sA: Show<A>, sB: Show<B>): String =
-    (fn.table().entries.fold(emptyList<String>()) { acc, (k, v) ->
-        sA.run {
-            sB.run {
-                acc + listOf(k.show() + " -> " + v.show())
+// fn gen
+fun <A, B> Gen<B>.toFunction(AF: Func<A>, AC: Coarbitrary<A>): Gen<Fun<A, B>> =
+    Gen.applicative(Id.monad()).map(
+        this@toFunction,
+        Gen { (s, sz) ->
+            Rose.unfold(
+                OptionT.monad(Id.monad()),
+                AF.function { a -> AC.run { this@toFunction.coarbitrary(a) } }.map { it.runGen(s toT sz) }
+            ) {
+                shrinkFun(it) { it.runRose.value().value().fold({ emptySequence() }, { it.shrunk }) }
             }
         }
-    } + listOf("_ -> ${sB.run { d.show() }}")).toString()
+    ) { (d, fn) -> Fun(d, fn) }.fix()
 
-fun <A, B> abstract(fn: Fn<A, B>, d: B): Function1<A, B> = when (fn) {
-    is Fn.UnitFn -> Function1 { fn.b }
-    is Fn.NilFn -> Function1 { d }
+fun <A, B> abstract(fn: Fn<A, B>): Function1<A, Option<B>> = when (fn) {
+    is Fn.UnitFn -> Function1 { fn.b.some() }
+    is Fn.NilFn -> Function1 { None }
     is Fn.PairFn<*, *, B> -> Function1 { (x, y): Tuple2<Any?, Any?> ->
         Fn.functor<B>().run {
-            abstract(fn.fn.map { (abstract(it, d).f as (Any?) -> B)(y) }, d).f(x)
+            abstract(fn.fn.map { (abstract(it).f as (Any?) -> B)(y) }).f(x)
         }
-    } as Function1<A, B>
+    } as Function1<A, Option<B>>
     is Fn.EitherFn<*, *, B> -> Function1 { e: Either<Any?, Any?> ->
         e.fold({
-            (abstract(fn.l, d).f as (Any?) -> B)(it)
+            (abstract(fn.l).f as (Any?) -> Option<B>)(it)
         }, {
-            (abstract(fn.r, d).f as (Any?) -> B)(it)
+            (abstract(fn.r).f as (Any?) -> Option<B>)(it)
         })
-    } as Function1<A, B>
-    is Fn.MapFn<*, *, B> -> Function1 { (abstract(fn.g, d).f as (Any?) -> B)((fn.f as (A) -> Any?)(it)) }
-    is Fn.TableFn -> Function1 { fn.m.getOrDefault(it, Eval.now(d)).value() }
+    } as Function1<A, Option<B>>
+    is Fn.MapFn<*, *, B> -> Function1 { (abstract(fn.g).f as (Any?) -> Option<B>)((fn.f as (A) -> Any?)(it)) }
 }
 
 fun <A, B> Fn<A, B>.table(): Map<A, B> = when (this) {
@@ -157,7 +145,6 @@ fun <A, B> Fn<A, B>.table(): Map<A, B> = when (this) {
     is Fn.PairFn<*, *, B> -> fn.table().toList().flatMap { (k, q) ->
         q.table().toList().map { (k2, v) -> (k toT k2) to v }
     }.toMap() as Map<A, B>
-    is Fn.TableFn -> m.mapValues { it.value.value() }
     is Fn.MapFn<*, *, B> -> g.table().mapKeys { (cF as (Any?) -> A).invoke(it.key) }
 }
 
@@ -181,12 +168,6 @@ fun <A, B> shrinkFun(fn: Fn<A, B>, shrinkB: (B) -> Sequence<B>): Sequence<Fn<A, 
             else -> Fn.MapFn(fn.f, fn.cF as (Any?) -> A, it as Fn<Any?, B>)
         }
     }
-    is Fn.TableFn -> shrinkList(fn.m.toList()) { (a, evalB) ->
-        sequenceOf(Unit).flatMap { evalB.map(shrinkB).value().map { a to Eval.now(it) } }
-    }.map {
-        if (it.isEmpty()) Fn.NilFn<A, B>()
-        else Fn.TableFn(it.toMap())
-    }
 }
 
 private fun <A, B, C> combineFn(l: Fn<A, C>, r: Fn<B, C>): Fn<Either<A, B>, C> =
@@ -209,8 +190,7 @@ fun <A, B, C> funPair(fA: Func<A>, fB: Func<B>, f: (Tuple2<A, B>) -> C): Fn<Tupl
     }
 }
 
-private fun <A, B, C> ((Tuple2<A, B>) -> C).curry(): ((A) -> ((B) -> C)) =
-    { a -> { b -> this(a toT b) } }
+private fun <A, B, C> ((Tuple2<A, B>) -> C).curry(): ((A) -> ((B) -> C)) = { a -> { b -> this(a toT b) } }
 
 fun <A, B, C> funEither(fA: Func<A>, fB: Func<B>, f: (Either<A, B>) -> C): Fn<Either<A, B>, C> =
     Fn.EitherFn(
@@ -218,16 +198,11 @@ fun <A, B, C> funEither(fA: Func<A>, fB: Func<B>, f: (Either<A, B>) -> C): Fn<Ei
         fB.run { function { f(it.right()) } }
     )
 
+// instances
+// Func
 fun unitFunc(): Func<Unit> = object : Func<Unit> {
     override fun <B> function(f: (Unit) -> B): Fn<Unit, B> = Fn.UnitFn(f(Unit))
 }
-
-inline fun <reified A : Enum<A>, B> funEnum(noinline f: (A) -> B): Fn<A, B> =
-    funList(enumValues<A>().toList(), f)
-
-fun <A, B> funList(vals: Collection<A>, f: (A) -> B): Fn<A, B> =
-    Fn.TableFn(vals.map { it toT Eval.later { f(it) } }.toMap())
-
 
 // Keep that here because I don't want to write other instances for Tuple3+ in the autogen file
 @extension
@@ -237,3 +212,21 @@ interface Tuple2Func<A, B> : Func<Tuple2<A, B>> {
 
     override fun <C> function(f: (Tuple2<A, B>) -> C): Fn<Tuple2<A, B>, C> = funPair(AF(), BF(), f)
 }
+
+@extension
+interface EitherFunc<L, R> : Func<Either<L, R>> {
+    fun LF(): Func<L>
+    fun RF(): Func<R>
+
+    override fun <B> function(f: (Either<L, R>) -> B): Fn<Either<L, R>, B> = funEither(LF(), RF(), f)
+}
+
+interface BooleanFunc : Func<Boolean> {
+    override fun <B> function(f: (Boolean) -> B): Fn<Boolean, B> = TODO()
+}
+
+// go straight to a list of single bit's encoded as boolean
+interface LongFunc : Func<Long> {
+    override fun <B> function(f: (Long) -> B): Fn<Long, B> = TODO()
+}
+

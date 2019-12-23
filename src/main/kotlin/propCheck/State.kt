@@ -1,186 +1,139 @@
 package propCheck
 
-import arrow.core.Eval
-import arrow.core.Option
-import arrow.core.Tuple2
-import arrow.core.extensions.fx
+import arrow.Kind
+import arrow.core.*
+import arrow.core.extensions.id.monad.monad
 import arrow.core.extensions.list.foldable.foldLeft
 import arrow.core.extensions.list.foldable.foldRight
-import arrow.core.toT
-import arrow.fx.IO
-import arrow.fx.extensions.fx
-import arrow.mtl.StateT
-import arrow.mtl.extensions.fx
-import propCheck.arbitrary.*
-import propCheck.arbitrary.gen.applicative.applicative
-import propCheck.arbitrary.gen.monad.monad
-import propCheck.property.Property
-import propCheck.property.Testable
-import propCheck.property.forAllBlind
-import propCheck.property.testable
-import java.util.concurrent.Callable
+import arrow.fx.typeclasses.Concurrent
+import arrow.typeclasses.Monad
+import propCheck.arbitrary.Gen
+import propCheck.arbitrary.GenT
+import propCheck.arbitrary.fix
+import propCheck.arbitrary.monadGen
+import propCheck.property.*
+import propCheck.property.propertyt.applicative.applicative
+import propCheck.property.propertyt.monad.monad
+import propCheck.property.propertyt.monadTest.failure
+import propCheck.property.propertyt.monadTest.succeeded
 import java.util.concurrent.Executors
+import kotlin.math.max
 
+/**
+ * State machine testing rework:
+ * Keep current api, it's decent
+ * Turn PROP into PropertyT<M, Unit> -- !
+ * Parameterize by M -- !
+ * Rework gen to hold invariants but also shrink ?? most difficult part here
+ * Checking results needs to be rewritten to return PropertyT<M, Unit> -- !
+ * Same for results in parallel
+ * Syntax sugar for building PropertyM where M is fixed to IO or maybe just fix it all to IO?
+ */
 
 typealias PreCondition<S, A> = (S, A) -> Boolean
-typealias PostCondition<S, A, R, PROP> = (S, A, R) -> PROP
+
+typealias PostCondition<S, A, R, M> = (S, A, R) -> PropertyT<M, Unit>
 typealias Invariant<S> = (S) -> Boolean
 typealias Transition<S, A> = (S, A) -> S
 
-data class StateMachine<S, A, R, SUT>(
+data class StateMachine<M, S, A, R, SUT>(
     val initialState: S,
     val cmdGen: (S) -> Gen<Option<A>>,
     val preCondition: PreCondition<S, A>,
     val invariant: Invariant<S>,
     val transition: Transition<S, A>,
-    val executeAction: (A, SUT) -> IO<R>,
-    val sut: () -> IO<SUT>
+    val executeAction: (A, SUT) -> Kind<M, R>,
+    val sut: () -> Kind<M, SUT>
 )
 
-@PublishedApi
-internal fun <S, A, R, SUT> commandsArby(
-    sm: StateMachine<S, A, R, SUT>,
-    initialState: S,
-    shrinker: (A) -> Sequence<A> = { emptySequence() }
-) =
-    Arbitrary(
-        Gen.sized {
-            generateCmds(it, sm.cmdGen, sm.preCondition, sm.transition, sm.invariant)
-                .runA(Gen.monad(), initialState)
-                .fix()
+internal fun <M, S, A, R, SUT> commandGen(
+    sm: StateMachine<M, S, A, R, SUT>,
+    currState: S
+): Gen<List<A>> = GenT.monadGen(Id.monad()).run {
+    sized { sz ->
+        if (sz == 0) GenT.just(Id.monad(), emptyList())
+        else fx.monad {
+            val (optCommands) = sm.cmdGen(currState).fromGenT().filter {
+                it.fold({ true }, { sm.preCondition(currState, it) && sm.invariant(sm.transition(currState, it)) })
+            }
+            optCommands.fold({ emptyList<A>() }, {
+                listOf(it) + commandGen(sm, sm.transition(currState, it)).fromGenT().resize(sz - 1).bind()
+            })
         }
-    ) { fail ->
-        shrinkList(fail) { shrinker(it) }.map {
-            it.foldLeft(true toT sm.initialState) { (b, s), v ->
-                (b && sm.preCondition(s, v) && sm.invariant(s)) toT sm.transition(s, v)
-            }.a toT it
-        }.filter { it.a }.map { it.b }
-    }
-
-@PublishedApi
-internal fun <S, A> generateCmds(
-    size: Int,
-    cmdGen: (S) -> Gen<Option<A>>,
-    preCondition: PreCondition<S, A>,
-    transition: Transition<S, A>,
-    invariant: Invariant<S>
-): StateT<ForGen, S, List<A>> = StateT.fx(Gen.monad()) {
-    if (size == 0) emptyList()
-    else {
-        val currState: S = StateT.get<ForGen, S>(Gen.applicative()).bind()
-        StateT.liftF<ForGen, S, Option<A>>(Gen.applicative(), cmdGen(currState).suchThat { optCmd ->
-            optCmd.fold({ true }, { preCondition(currState, it) && invariant(transition(currState, it)) })
-        }).bind().fold({
-            emptyList<A>()
-        }, {
-            StateT.set(Gen.applicative(), transition(currState, it)).bind()
-            listOf(it) + generateCmds(size - 1, cmdGen, preCondition, transition, invariant).bind()
-        })
-    }
+    }.fix()
 }
 
-@PublishedApi
-internal fun <A, R, SUT> executeActions(
+internal fun <M, A, R, SUT> executeActions(
     actions: List<A>,
     sut: SUT,
-    executeAction: (A, SUT) -> IO<R>
-): IO<List<Tuple2<A, R>>> =
-    actions.foldLeft(IO.just(emptyList())) { accIO, v ->
-        accIO.flatMap {
-            executeAction(v, sut).map { r ->
-                it + listOf(Tuple2(v, r))
+    MM: Monad<M>,
+    executeAction: (A, SUT) -> Kind<M, R>
+): Kind<M, List<Tuple2<A, R>>> =
+    actions.foldLeft(MM.just(emptyList())) { accIO, v ->
+        MM.run {
+            accIO.flatMap {
+                executeAction(v, sut).map { r ->
+                    it + listOf(Tuple2(v, r))
+                }
             }
         }
     }
 
-@PublishedApi
-internal fun <S, A, R, PROP> checkResults(
+// TODO rewrite inner fold using StateT?
+internal fun <M, S, A, R> checkResults(
     res: List<Tuple2<A, R>>,
     state: S,
-    postCondition: PostCondition<S, A, R, PROP>,
+    postCondition: PostCondition<S, A, R, M>,
     invariant: Invariant<S>,
-    testable: Testable<PROP>,
-    transition: Transition<S, A>
-): Tuple2<Eval<Property>, S> =
+    transition: Transition<S, A>,
+    MM: Monad<M>
+): Tuple2<PropertyT<M, Unit>, S> =
     res.foldLeft(
-        Eval.later { Boolean.testable().run { true.property() } } toT state
+        PropertyT.monad(MM).just(Unit).fix() toT state
     ) { (prop, s), (a, r) ->
-        Eval.later {
-            propCheck.property.and(
-                propCheck.property.and(
-                    Boolean.testable().run { invariant(s).property() },
-                    Eval.later { testable.run { postCondition(s, a, r).property() } }
-                ),
-                prop
-            )
-        } toT transition(s, a)
+        PropertyT.monad(MM).fx.monad {
+            prop.bind()
+            // check invariant
+            if (invariant(state)) succeeded(MM).bind()
+            // check post condition
+            postCondition(s, a, r).bind()
+        }.fix() toT transition(s, a)
     }
 
-inline fun <S, A, R, SUT, reified PROP> execSeq(
-    sm: StateMachine<S, A, R, SUT>,
-    testable: Testable<PROP> = defTestable(),
-    noinline postCondition: PostCondition<S, A, R, PROP>
-): Property = forAllBlind(
-    commandsArby(sm, sm.initialState)
-) { cmds ->
-    propCheck.property.idempotentIOProperty(
-        IO.fx {
-            val sut = sm.sut().bind()
-            val results = executeActions(cmds, sut, sm.executeAction).bind()
+fun <M, S, A, R, SUT> execSeq(
+    sm: StateMachine<M, S, A, R, SUT>,
+    MM: Monad<M>,
+    postCondition: PostCondition<S, A, R, M>
+): PropertyT<M, Unit> = PropertyT.propertyTestM(MM).fx.monad {
+    val (cmds) = forAll(commandGen(sm, sm.initialState), MM)
 
-            checkResults(results, sm.initialState, postCondition, sm.invariant, testable, sm.transition).a.value()
-        }
-    )
-}
+    val (sut) = PropertyT.lift(MM, sm.sut())
+
+    val (results) = PropertyT.lift(MM, executeActions(cmds, sut, MM, sm.executeAction))
+
+    checkResults(results, sm.initialState, postCondition, sm.invariant, sm.transition, MM).a.bind()
+}.fix()
 
 // ------------ parallel
-fun <S, A, R, SUT> parArby(sm: StateMachine<S, A, R, SUT>, maxThreads: Int) = commandsArby(
-    sm,
-    sm.initialState
-).let { preArb ->
-    Arbitrary(
-        Gen.monad().fx.monad {
-            val prefix = preArb.arbitrary().bind()
-            val s = prefix.foldLeft(sm.initialState) { s, a -> sm.transition(s, a) }
-            val pathArb = commandsArby(sm, s)
-            val threads = Gen.choose(2 toT maxThreads, Int.random()).bind()
-            Tuple2(
-                prefix,
-                (0 until threads).map {
-                    pathArb.arbitrary().resize(
-                        Gen.choose(
-                            0 toT Gen.getSize().bind(),
-                            Int.random()
-                        ).bind() / threads
-                    )
-                        .bind()
-                }
-            )
-        }.fix()
-    ) { (pre, a) ->
-        (sequenceOf(Tuple2(Tuple2(true, sm.initialState), emptyList<A>())) + preArb.shrink(pre).map {
-            it.foldLeft(true toT sm.initialState) { (b, s), v ->
-                (b && sm.preCondition(s, v) && sm.invariant(s)) toT sm.transition(s, v)
-            } toT it
-        }).filter { it.a.a }.flatMap { (state, shrunkPre) ->
-            val (_, preS) = state
-            shrinkList(a) { preArb.shrink(it) }.map {
-                it.filter {
-                    it.foldLeft(true toT preS) { (b, s), v ->
-                        (b && sm.preCondition(s, v) && sm.invariant(s)) toT sm.transition(s, v)
-                    }.a
-                }
-            }.map { Tuple2(shrunkPre, it) }
+fun <M, S, A, R, SUT> parGen(sm: StateMachine<M, S, A, R, SUT>, maxThreads: Int) =
+    commandGen(sm, sm.initialState).let { prefixGen ->
+        GenT.monadGen(Id.monad()).run {
+            fx.monad {
+                val (prefix) = prefixGen.fromGenT()
+                val s = prefix.foldLeft(sm.initialState) { s, a -> sm.transition(s, a) }
+                val pathGen = commandGen(sm, s)
+                val (threads) = int(2..maxThreads)
+                Tuple2(
+                    prefix,
+                    (0 until threads).map {
+                        pathGen.resize( // TODO short hand for sized(::identity)
+                            int(0..sized { Gen.just(Id.monad(), it) }.bind()).bind() / threads
+                        ).bind()
+                    }
+                )
+            }
         }
-    }
-}
-
-inline fun <S, A, R, SUT, reified PROP> execPar(
-    sm: StateMachine<S, A, R, SUT>,
-    maxThreads: Int = 2,
-    testable: Testable<PROP> = defTestable(),
-    noinline postCondition: PostCondition<S, A, R, PROP>
-) = _execPar(sm, maxThreads, testable, postCondition)
+    }.fix()
 
 private val pool = Executors.newCachedThreadPool { r ->
     Executors.defaultThreadFactory().newThread(r).apply {
@@ -188,116 +141,82 @@ private val pool = Executors.newCachedThreadPool { r ->
     }
 }
 
-/*
-Using this directly as an inline function fucked up the compiler
-TODO try again when I update kotlin
- */
-@PublishedApi
-internal fun <S, A, R, SUT, PROP> _execPar(
-    sm: StateMachine<S, A, R, SUT>,
+fun <M, S, A, R, SUT> execPar(
+    sm: StateMachine<M, S, A, R, SUT>,
     maxThreads: Int = 2,
-    testable: Testable<PROP>,
-    postCondition: PostCondition<S, A, R, PROP>
-): Property = forAllBlind(
-    parArby(sm, Math.max(maxThreads, 2))
-) { (prefix, paths) ->
-    propCheck.property.idempotentIOProperty(
-        IO.fx {
-            val sut = sm.sut().bind()
-            val prefixResult = executeActions(prefix, sut, sm.executeAction).bind()
+    MM: Concurrent<M>,
+    postCondition: PostCondition<S, A, R, M>
+): PropertyT<M, Unit> = PropertyT.propertyTestM(MM).fx.monad {
+    val (prefix, paths) = forAll(parGen(sm, max(maxThreads, 2)), MM).bind()
 
-            val (prefixRes, state) = checkResults(
-                prefixResult,
-                sm.initialState,
-                postCondition,
-                sm.invariant,
-                testable,
-                sm.transition
-            )
+    val (sut) = PropertyT.lift(MM, sm.sut())
+    val (prefixResult) = PropertyT.lift(MM, executeActions(prefix, sut, MM, sm.executeAction))
 
-            // I don't really like this next bit, however I could not force IO to start in different threads
-            //  before and I really need them to execute in parallel
-            val pathResults = pool.invokeAll(
-                paths.map { list ->
-                    Callable {
-                        executeActions(list, sut, sm.executeAction).unsafeRunSync().asSequence()
-                    }
-                }
-            ).map { it.get() }
+    val (prefixRes, state) = checkResults(
+        prefixResult, sm.initialState, postCondition,
+        sm.invariant, sm.transition, MM
+    )
 
-            propCheck.property.counterexample(
-                {
-                    // TODO create a custom value diff here (or figure out how to make a KValue from this) and use pretty printing!
-                    "No possible interleaving found for: \n" +
-                            (if (prefix.isNotEmpty()) "Prefix: " + prefixResult.joinToString { "${it.a} -> ${it.b}" } + "\n" else "") +
-                            pathResults.filter { it.firstOrNull() != null }.withIndex().joinToString("\n") { (i, v) ->
-                                "Path ${i + 1}: " + v.joinToString { "${it.a} -> ${it.b}" }
-                            }
-                },
-                propCheck.property.and(
-                    prefixRes.value(),
-                    Eval.later {
-                        recurGo(pathResults, state, sm.invariant, sm.transition, testable, postCondition)
-                    }
-                )
-            )
+    // check prefix
+    prefixRes.bind()
+
+    // check parallel actions
+    // TODO check if this is actually parallel for IO, for other Concurrent instances idc, their responsibility
+    val (pathResults) = PropertyT.lift(
+        MM, MM.run {
+            paths.parTraverse {
+                executeActions(it, sut, MM, sm.executeAction).map { it.asSequence() }
+            }
         }
     )
-}
 
-internal fun <S, A, R, PROP> recurGo(
+    // TODO annotate failures properly, probably needs to be done inside recurGo
+    recurGo(pathResults, state, sm.invariant, sm.transition, postCondition, MM).bind()
+}.fix()
+
+// TODO where is the recursion scheme?!
+internal fun <M, S, A, R> recurGo(
     list: List<Sequence<Tuple2<A, R>>>,
     state: S,
     invariant: Invariant<S>,
     transition: Transition<S, A>,
-    testable: Testable<PROP>,
-    postCondition: PostCondition<S, A, R, PROP>
-): Property = list.filter { it.firstOrNull() != null }.let {
-    propCheck.property.or(
-        Boolean.testable().run { it.isEmpty().property() },
-        Eval.later {
-            it.mapIndexed { i, _ ->
-                Eval.later { go(it, state, i, invariant, transition, testable, postCondition) }
-            }.foldRight(Eval.now(Boolean.testable().run { false.property() })) { v, acc ->
-                Eval.fx {
-                    propCheck.property.or(
-                        v.bind(),
-                        acc
-                    )
+    postCondition: PostCondition<S, A, R, M>,
+    MM: Monad<M>
+): PropertyT<M, Unit> = list.filter { it.firstOrNull() != null }.let {
+    // TODO How lazy is this? // test if stuff gets needlessly evaluated by checking if failure().flatMap(throw) throws
+    PropertyT.monad(MM).fx.monad {
+        if (it.isEmpty()) succeeded(MM).bind()
+        else it.mapIndexed { i, _ -> go(it, state, i, invariant, transition, postCondition, MM) }
+            .foldRight(Eval.now(failure(MM).fix())) { v, acc ->
+                acc.map {
+                    PropertyT.applicative(MM).tupled(v, it).map { Unit }.fix()
                 }
-            }.value()
-        }
-    )
+            }.value().bind()
+    }.fix()
 }
 
-internal fun <S, A, R, PROP> go(
+internal fun <S, A, R, M> go(
     list: List<Sequence<Tuple2<A, R>>>,
     state: S,
     pos: Int,
     invariant: Invariant<S>,
     transition: Transition<S, A>,
-    testable: Testable<PROP>,
-    postCondition: PostCondition<S, A, R, PROP>
-): Property = when {
-    list[pos].firstOrNull() == null -> Boolean.testable().run { true.property() }
+    postCondition: PostCondition<S, A, R, M>,
+    MM: Monad<M>
+): PropertyT<M, Unit> = when {
+    list[pos].firstOrNull() == null -> succeeded(MM)
     else -> {
         val (a, r) = list[pos].first()
         val newState = transition(state, a)
-        propCheck.property.and(
-            propCheck.property.and(
-                Boolean.testable().run { invariant(newState).property() },
-                Eval.later { testable.run { postCondition(state, a, r).property() } }
-            ),
-            Eval.later {
-                recurGo(
-                    list.mapIndexed { i, s -> if (i == pos) s.drop(1) else s },
-                    newState,
-                    invariant,
-                    transition,
-                    testable,
-                    postCondition
-                )
-            }
-        )
+        PropertyT.monad(MM).fx.monad {
+            // TODO annotate failure with better messages as to what exactly failed
+            if (invariant(newState)) failure(MM).bind()
+            postCondition(state, a, r).bind()
+            recurGo(
+                list.mapIndexed { i, s -> if (i == pos) s.drop(1) else s },
+                newState, invariant, transition,
+                postCondition, MM
+            ).bind()
+        }.fix()
     }
 }

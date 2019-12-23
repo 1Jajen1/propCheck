@@ -2,18 +2,18 @@ package propCheck.property
 
 import arrow.Kind
 import arrow.core.*
+import arrow.core.extensions.fx
 import arrow.core.extensions.sequence.foldable.foldLeft
 import arrow.core.extensions.sequence.foldable.foldRight
 import arrow.core.extensions.sequence.traverse.traverse
 import arrow.extension
-import arrow.fx.ForIO
-import arrow.fx.IO
-import arrow.fx.extensions.fx
-import arrow.fx.extensions.io.applicativeError.handleError
-import arrow.fx.extensions.io.monad.monad
-import arrow.fx.fix
+import arrow.mtl.typeclasses.ComposedFunctor
+import arrow.mtl.typeclasses.Nested
+import arrow.mtl.typeclasses.nest
+import arrow.mtl.typeclasses.unnest
+import arrow.recursion.typeclasses.Birecursive
 import arrow.typeclasses.*
-import pretty.text
+import propCheck.property.rosef.functor.functor
 
 // @higherkind boilerplate
 class ForRose private constructor() {
@@ -29,9 +29,25 @@ inline fun <M, A> RoseOf<M, A>.fix(): Rose<M, A> =
 data class Rose<M, A>(val runRose: Kind<M, RoseF<A, Rose<M, A>>>) :
     RoseOf<M, A> {
 
-    fun <B> map(FM: Functor<M>, f: (A) -> B): Rose<M, B> = FM.run {
-        Rose(runRose.map { RoseF(f(it.res), it.shrunk.map { it.map(FM, f) }) })
+    fun <B> map(MF: Functor<M>, f: (A) -> B): Rose<M, B> = MF.run {
+        Rose(runRose.map { RoseF(f(it.res), it.shrunk.map { it.map(MF, f) }) })
     }
+
+    fun <B> ap(MA: Applicative<M>, ff: Rose<M, (A) -> B>): Rose<M, B> = MA.run {
+        Rose(
+            MA.map(runRose, ff.runRose) { (a, f) ->
+                RoseF(
+                    f.res(a.res),
+                    f.shrunk
+                        .map { it.map(MA) { it(a.res) } } +
+                            a.shrunk
+                                .map { it.ap(MA, ff) }
+
+                )
+            }
+        )
+    }
+
 
     fun <B> flatMap(MM: Monad<M>, f: (A) -> Rose<M, B>): Rose<M, B> =
         Rose(
@@ -45,9 +61,46 @@ data class Rose<M, A>(val runRose: Kind<M, RoseF<A, Rose<M, A>>>) :
             }
         )
 
+    fun expand(MM: Monad<M>, f: (A) -> Sequence<A>): Rose<M, A> = MM.run {
+        Rose(
+            runRose.flatMap { r ->
+                just(
+                    RoseF(
+                        r.res,
+                        r.shrunk.map { it.expand(MM, f) } +
+                                unfoldForest(MM, r.res, f)
+                    )
+                )
+            }
+        )
+    }
+
+    fun prune(MM: Monad<M>, n: Int): Rose<M, A> =
+        if (n <= 0) Rose(
+            MM.run { runRose.map { RoseF(it.res, emptySequence<Rose<M, A>>()) } }
+        )
+        else Rose(
+            MM.run { runRose.map { RoseF(it.res, it.shrunk.map { it.prune(MM, n - 1) }) } }
+        )
+
     companion object {
         fun <M, A> just(AM: Applicative<M>, a: A): Rose<M, A> =
             Rose(AM.just(RoseF(a, emptySequence())))
+
+        fun <M, A> lift(FF: Functor<M>, fa: Kind<M, A>): Rose<M, A> = FF.run {
+            Rose(fa.map { RoseF<A, Rose<M, A>>(it, emptySequence()) })
+        }
+
+
+
+        fun <M, A> unfold(MM: Monad<M>, a: A, f: (A) -> Sequence<A>): Rose<M, A> = Rose(
+            MM.just(
+                RoseF(a, unfoldForest(MM, a, f))
+            )
+        )
+
+        fun <M, A> unfoldForest(MM: Monad<M>, a: A, f: (A) -> Sequence<A>): Sequence<Rose<M, A>> =
+            f(a).map { unfold(MM, it, f) }
     }
 }
 
@@ -103,13 +156,14 @@ interface RoseFunctor<M> : Functor<RosePartialOf<M>> {
 
 @extension
 interface RoseApplicative<M> : Applicative<RosePartialOf<M>> {
-    fun MM(): Monad<M>
+    fun MA(): Applicative<M>
 
     override fun <A> just(a: A): Kind<RosePartialOf<M>, A> =
-        Rose.just(MM(), a)
+        Rose.just(MA(), a)
 
     override fun <A, B> Kind<RosePartialOf<M>, A>.ap(ff: Kind<RosePartialOf<M>, (A) -> B>): Kind<RosePartialOf<M>, B> =
-        fix().flatMap(MM()) { a -> ff.fix().map(MM()) { f -> f(a) } }
+        fix().ap(MA(), ff.fix())
+
 }
 
 @extension
@@ -132,57 +186,74 @@ interface RoseMonad<M> : Monad<RosePartialOf<M>> {
         }
 }
 
-/**
- * wrap an IO with results safely
- */
-fun ioRose(rose: IO<Rose<ForIO, TestResult>>): Rose<ForIO, TestResult> =
-    Rose(
-        protectRose(rose).flatMap { it.runRose }
-    )
+@extension
+interface RoseAlternative<M> : Alternative<RosePartialOf<M>>, RoseApplicative<M> {
+    fun AM(): Alternative<M>
+    override fun MA(): Applicative<M> = AM()
 
-/**
- * catch exceptions in io code and fail the test if necessary
- */
-fun protectRose(rose: IO<Rose<ForIO, TestResult>>): IO<Rose<ForIO, TestResult>> = rose.handleError {
-    Rose.just(
-        IO.monad(),
-        failed(
-            reason = "Exception".text(),
-            exception = it.some()
-        )
-    )
+    override fun <A> empty(): Kind<RosePartialOf<M>, A> = Rose.lift(AM(), AM().empty<A>())
+
+    override fun <A> Kind<RosePartialOf<M>, A>.orElse(b: Kind<RosePartialOf<M>, A>): Kind<RosePartialOf<M>, A> =
+        AM().run {
+            Rose(fix().runRose.orElse(b.fix().runRose))
+        }
+
+    override fun <A> Kind<RosePartialOf<M>, A>.combineK(y: Kind<RosePartialOf<M>, A>): Kind<RosePartialOf<M>, A> =
+        fix().orElse(y.fix())
 }
 
-/**
- * apply a function on a roses content
- */
-fun <A> onRose(rose: Rose<ForIO, A>, f: (A, Sequence<Rose<ForIO, A>>) -> Rose<ForIO, A>): Rose<ForIO, A> =
-    Rose(
-        IO.fx {
-            val (res, shrunk) = !rose.runRose
-            !f(res, shrunk).runRose
-        }.fix()
-    )
+@extension
+interface RoseBirecursive<M, A>: Birecursive<Rose<M, A>, Nested<M, RoseFPartialOf<A>>> {
+    fun MM(): Monad<M>
+    override fun FF(): Functor<Nested<M, RoseFPartialOf<A>>> =
+        ComposedFunctor(MM(), RoseF.functor())
 
-/**
- * catch exceptions in io code and fail if necessary
- */
-fun protectResult(io: IO<TestResult>): IO<TestResult> = io.handleError {
-    failed(
-        reason = "Exception".text(),
-        exception = it.some()
-    )
+    override fun Kind<Nested<M, RoseFPartialOf<A>>, Rose<M, A>>.embedT(): Rose<M, A> =
+        Rose(MM().run { unnest().map { it.fix() } })
+
+    override fun Rose<M, A>.projectT(): Kind<Nested<M, RoseFPartialOf<A>>, Rose<M, A>> =
+        runRose.nest()
 }
 
-/**
- * wrap internal roses with ioRose and install error handlers
- */
-fun protectResults(rose: Rose<ForIO, TestResult>): Rose<ForIO, TestResult> =
-    onRose(rose) { x, rs ->
+fun <M, N, A> Rose<M, A>.hoist(f: FunctionK<M, N>, MF: Functor<M>): Rose<N, A> = Rose(
+    MF.run {
+        f(runRose.map { RoseF(it.res, it.shrunk.map { it.hoist(f, MF) }) })
+    }
+)
+
+fun <A> Sequence<A>.splits(): Sequence<Tuple3<Sequence<A>, A, Sequence<A>>> =
+    firstOrNull().toOption().fold({
+        emptySequence()
+    }, { x ->
+        sequenceOf(Tuple3(emptySequence<A>(), x, drop(1)))
+                // flatMap for added laziness
+            .flatMap {
+                sequenceOf(it) + drop(1).splits().map { (a, b, c) ->
+                    Tuple3(sequenceOf(x) + a, b, c)
+                }
+            }
+    })
+
+fun <M, A> Sequence<RoseF<A, Rose<M, A>>>.dropOne(MM: Monad<M>): Sequence<Rose<M, Sequence<A>>> =
+    SequenceK.fx {
+        val (xs, _, zs) = !splits().k()
+        Rose(MM.just((xs + zs).interleave(MM)))
+    }
+
+fun <M, A> Sequence<RoseF<A, Rose<M, A>>>.shrinkOne(MM: Monad<M>): Sequence<Rose<M, Sequence<A>>> =
+    SequenceK.fx {
+        val (xs, y, zs) = !splits().k()
+        val y1 = !y.shrunk.k()
         Rose(
-            IO.fx {
-                val y = protectResult(IO.just(x)).bind()
-                RoseF(y, rs.map(::protectResults))
+            MM.run {
+                y1.runRose.map { (xs + sequenceOf(it) + zs).interleave(MM) }
             }
         )
     }
+
+fun <M, A> Sequence<RoseF<A, Rose<M, A>>>.interleave(MM: Monad<M>): RoseF<Sequence<A>, Rose<M, Sequence<A>>> =
+    RoseF(
+        this.map { it.res },
+        dropOne(MM) + shrinkOne(MM)
+    )
+

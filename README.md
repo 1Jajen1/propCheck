@@ -4,8 +4,7 @@
 [![License](https://img.shields.io/badge/License-BSD%203--Clause-blue.svg)](https://opensource.org/licenses/BSD-3-Clause)
 [![Download](https://api.bintray.com/packages/jannis/propCheck-kt/propCheck-kt/images/download.svg) ](https://bintray.com/jannis/propCheck-kt/propCheck-kt/_latestVersion)
 
-> A small library built upon kotlintest that aims to adopt haskell [Quickcheck's](https://github.com/nick8325/quickcheck) functionality.
-It started out as a straight port of quickcheck and was adapted slightly to work better with kotlin
+> Never write test data by hand again. Generate it!
 
 ## Table of contents
 

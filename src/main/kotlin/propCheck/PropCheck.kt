@@ -3,15 +3,10 @@ package propCheck
 import arrow.Kind
 import arrow.core.*
 import arrow.core.extensions.id.traverse.traverse
-import arrow.core.extensions.list.traverse.traverse
-import arrow.core.extensions.listk.monoid.monoid
-import arrow.core.extensions.listk.semigroup.semigroup
-import arrow.core.extensions.mapk.foldable.combineAll
-import arrow.core.extensions.mapk.semigroup.plus
-import arrow.core.extensions.mapk.semigroup.semigroup
-import arrow.core.extensions.monoid
-import arrow.core.extensions.semigroup
-import arrow.core.extensions.sequence.foldable.isEmpty
+import arrow.core.extensions.list.foldable.traverse_
+import arrow.core.extensions.option.monad.flatten
+import arrow.core.extensions.sequence.foldable.firstOption
+import arrow.core.extensions.sequence.traverse.traverse
 import arrow.fx.ForIO
 import arrow.fx.IO
 import arrow.fx.extensions.fx
@@ -19,44 +14,209 @@ import arrow.fx.extensions.io.applicative.applicative
 import arrow.fx.extensions.io.functor.functor
 import arrow.fx.extensions.io.monad.monad
 import arrow.fx.fix
-import arrow.mtl.WriterT
-import arrow.mtl.WriterTPartialOf
-import arrow.mtl.extensions.fx
-import arrow.mtl.extensions.writert.functor.unit
-import arrow.mtl.extensions.writert.monad.monad
-import arrow.mtl.fix
-import arrow.optics.optics
+import arrow.mtl.OptionT
+import arrow.mtl.OptionTPartialOf
+import arrow.mtl.value
 import arrow.recursion.AlgebraM
+import arrow.recursion.elgotM
+import arrow.recursion.hyloC
 import arrow.typeclasses.Monad
-import arrow.typeclasses.MonadSyntax
 import arrow.typeclasses.Traverse
-import org.apache.commons.math3.special.Erf
-import pretty.*
 import propCheck.arbitrary.RandSeed
+import propCheck.arbitrary.fix
+import propCheck.arbitrary.printTree
+import propCheck.arbitrary.toFunction
 import propCheck.property.*
-import propCheck.property.testresult.testable.testable
-import kotlin.math.exp
-import kotlin.math.ln
-import kotlin.math.pow
-import kotlin.math.sqrt
+import propCheck.property.Failure
+import propCheck.property.rosef.functor.functor
 import kotlin.random.Random
 
-// TODO remove when https://github.com/arrow-kt/arrow/pull/1750 is merged and released
-fun <F, M, A, B> B.elgotM(
-    alg: AlgebraM<F, M, A>,
-    f: (B) -> Kind<M, Either<A, Kind<F, B>>>,
-    TF: Traverse<F>,
-    MM: Monad<M>
-): Kind<M, A> {
-    fun h(b: B): Kind<M, A> = MM.run {
-        f(b).flatMap {
-            it.fold(MM::just) { MM.run { TF.run { it.traverse(MM, ::h).flatMap(alg) } } }
-        }
-    }
+/**
+ * Grand plan:
+ * 1. Finish state machine testing + Function instances
+ * 2. Better interop with kotlin ranges
+ * 3. Polish api with syntax sugar
+ * 4.1 Gradle test runner
+ * 4.2 Test framework integration (kotlintest, spek etc)
+ * 5. Write tests for propcheck itself
+ * 6. Write ank checked documentation
+ * 6.1. Have docs switchable between syntax sugar/fx/flatMap
+ * 7. Polish and prepare release notes
+ *
+ * Somewhere after 6. publish release candidate in arrow channels
+ * After 7 release 1.0
+ *
+ * Problems that need to be solved:
+ * - Autobinding syntax sugar
+ * - Gradle test runner won't be too easy to get right I think
+ * - running ank automatically? maybe add a lambda function to compile and run kotlin code?
+ *
+ * Schedule:
+ * 1. 24.11
+ * 2. 25.11
+ * 3. 27.11
+ * 4.1. research 30.11 + new goal when thats done
+ * 5.2. 8.12
+ * 5. 15.12
+ * 6. 29.12
+ * 7. 6.1.20
+ */
 
-    return h(this)
+fun main() {
+    propCheckIO(
+        property {
+            // TODO implement Range.linear and use that for ranges instead
+            //  Or even better, interpret ranges as a function max(start + step * size, end)
+            val (l, r) = !forAll {
+                tupled(int(0..10), int(0..10))
+            }
+
+            !l.eqv(r)
+        },
+        property {
+            val i = !forAll {
+                int(0..100)
+            }
+
+            if (i >= 5) !discard<Unit>()
+
+            if (i < 5) !succeeded()
+            else !failure()
+        },
+        property {
+            // TODO
+        }
+    ).unsafeRunSync()
 }
 
+fun propCheckIO(vararg props: Property): IO<Unit> = IO.fx {
+    // execute every prop
+    !props.toList().traverse_(IO.applicative(), ::check)
+
+    TODO()
+}
+
+fun check(prop: Property): IO<Report> = IO.fx {
+    val seed = !IO { RandSeed(Random.nextLong()) }
+    val rep = !runProperty(0, seed, prop)
+
+    println(renderReport(rep))
+
+    rep
+}
+
+fun recheck(size: Int, seed: RandSeed, prop: Property): IO<Unit> = IO.fx {
+    val report = !runProperty(size, seed, prop)
+}
+
+data class State(
+    val numTests: Int,
+    val numDiscards: Int,
+    val size: Int,
+    val seed: RandSeed
+)
+
+fun runProperty(initialSize: Int, initialSeed: RandSeed, prop: Property): IO<Report> =
+    State(0, 0, initialSize, initialSeed).elgotM({ IO.just(it.value()) }, { (numTests, numDiscards, size, seed) ->
+        when {
+            numTests >= prop.config.testLimit ->
+                IO.just(Report(numTests, numDiscards, Result.Success).left())
+            size > 99 ->
+                IO.just(Id(State(numTests, numDiscards, 0, seed)).right())
+            numDiscards >= prop.config.maxDiscardRatio * numTests.coerceAtLeast(prop.config.testLimit) ->
+                IO.just(Report(numTests, numDiscards, Result.GivenUp).left())
+            else -> seed.split().let { (s1, s2) ->
+                IO.fx {
+                    val res = !prop.prop.unPropertyT.runTestT
+                        .value() // EitherT
+                        .value().fix() // WriterT
+                        .runGen(s1 toT size)
+                        .runRose
+                        .value() // OptionT
+
+                    res.fold({
+                        // discard
+                        Id(State(numTests, numDiscards + 1, size + 1, s2)).right()
+                    }, { node ->
+                        node.res.let { (_, result) ->
+                            // shrink failure
+                            result.fold({
+                                val summary = !shrinkResult(
+                                    size,
+                                    seed,
+                                    prop.config.shrinkLimit,
+                                    prop.config.shrinkRetries,
+                                    Rose(OptionT.just(IO.applicative(), node))
+                                )
+
+                                Report(
+                                    numTests + 1,
+                                    numDiscards,
+                                    Result.Failure(
+                                        summary
+                                    )
+                                ).left()
+                            }, {
+                                // test success
+                                Id(State(numTests + 1, numDiscards, size + 1, s2)).right()
+                            })
+                        }
+                    })
+                }
+            }
+        }
+    }, Id.traverse(), IO.monad()).fix()
+
+fun shrinkResult(
+    size: Int,
+    seed: RandSeed,
+    shrinkLimit: Int,
+    shrinkRetries: Int, // TODO
+    node: Rose<OptionTPartialOf<ForIO>, Tuple2<ListK<JournalEntry>, Either<Failure, Unit>>>
+): IO<FailureSummary> = node.hyloC<ForIO, RoseFPartialOf<Option<Tuple2<ListK<JournalEntry>, Either<Failure, Unit>>>>, Rose<OptionTPartialOf<ForIO>, Tuple2<ListK<JournalEntry>, Either<Failure, Unit>>>, (Int) -> IO<Option<FailureSummary>>>({ io ->
+    { numShrinks: Int ->
+        IO.fx {
+            val (res, shrinks) = io.bind().fix()
+
+            val a = res.filterMap { (logs, result) ->
+                result.swap().toOption().map { logs toT it }
+            }.map { (logs, result) ->
+                FailureSummary(
+                    size, seed, numShrinks,
+                    result.message,
+                    logs.filterMap { if (it is JournalEntry.Annotate) it.text().some() else None },
+                    logs.filterMap { if (it is JournalEntry.Footnote) it.text().some() else None }
+                )
+            }
+
+            if (numShrinks >= shrinkLimit) a
+            else shrinks.map { it(numShrinks + 1) }.lazyTakeFirst { it.isDefined() }.bind().flatten().or(a)
+        }
+    }
+}, {
+    // unfold Rose<OptionT<IO>, *> to Rose<IO, Option<*>> lazily
+    it.runRose
+        .value().fix()
+        .map {
+            it.fold({
+                RoseF<Option<Tuple2<ListK<JournalEntry>, Either<Failure, Unit>>>, Rose<OptionTPartialOf<ForIO>, Tuple2<ListK<JournalEntry>, Either<Failure, Unit>>>>(
+                    None,
+                    emptySequence()
+                )
+            }, {
+                RoseF(it.res.some(), it.shrunk)
+            })
+        }.fix()
+}, IO.functor(), RoseF.functor()).invoke(0).map { it.orNull()!! /* Safe because the first one is a failure anyway, we are guaranteed at least one good result */ }
+
+// traverse and firstOption is not available because both evaluate every element of the sequence
+fun <A>Sequence<IO<A>>.lazyTakeFirst(f: (A) -> Boolean): IO<Option<A>> =
+    when {
+        firstOrNull() != null -> first().flatMap { if (f(it)) IO.just(it.some()) else drop(1).lazyTakeFirst(f) }
+        else -> IO.just(None)
+    }
+
+/*
 /**
  * Datatype which describes the result of a test
  */
@@ -236,22 +396,22 @@ internal fun failureMessage(result: Result): String = when (result) {
     else -> throw IllegalStateException("Never")
 }.renderPretty().renderString()
 
-typealias Log = ListK<LogEntry>
+typealias Log = ListK<JournalEntry>
 
 // Soon to be expanded with richer debug options
-data class LogEntry(val doc: Doc<Nothing>)
+data class JournalEntry(val doc: Doc<Nothing>)
 
 typealias PropCheck<A> = PropCheckT<ForIO, A>
 
 typealias PropCheckT<M, A> = WriterT<M, Log, A>
 
 // Helpers to circumvent the terrible type inference
-fun writeLogEntry(l: LogEntry): PropCheck<Unit> = WriterT.tell(IO.applicative(), listOf(l).k())
+fun writeLogEntry(l: JournalEntry): PropCheck<Unit> = WriterT.tell(IO.applicative(), listOf(l).k())
 
-@Deprecated("Use writeDoc instead", ReplaceWith("writeDoc(t.doc())", "propCheck.LogEntry", "pretty.doc"))
-fun writeText(t: String): PropCheck<Unit> = writeLogEntry(LogEntry(t.doc()))
+@Deprecated("Use writeDoc instead", ReplaceWith("writeDoc(t.doc())", "propCheck.JournalEntry", "pretty.doc"))
+fun writeText(t: String): PropCheck<Unit> = writeLogEntry(JournalEntry(t.doc()))
 
-fun writeDoc(t: Doc<Nothing>): PropCheck<Unit> = writeLogEntry(LogEntry(t))
+fun writeDoc(t: Doc<Nothing>): PropCheck<Unit> = writeLogEntry(JournalEntry(t))
 
 fun <A> liftIO(io: IO<A>): PropCheck<A> = WriterT.liftF(io, ListK.monoid(), IO.applicative())
 fun <A> propCheckFx(f: suspend MonadSyntax<WriterTPartialOf<ForIO, Log>>.() -> A): PropCheck<A> =
@@ -362,7 +522,7 @@ fun runATest(state: State, prop: Property): PropCheck<Either<Result, State>> = p
         liftIO(
             protectRose(
                 IO.just(
-                    f_or_cov.unProperty.unGen(
+                    f_or_cov.unProperty.runGen(
                         rand1 toT size
                     ).unProp
                 )
@@ -810,3 +970,4 @@ fun allCoverage(state: State): List<Tuple5<Option<String>, String, Int, Int, Dou
 
         Tuple5(key, value, tot, n, p)
     }
+*/
