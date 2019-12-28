@@ -1,15 +1,13 @@
 package propCheck.pretty
 
 import arrow.core.*
+import arrow.core.extensions.id.monad.monad
 import arrow.extension
 import arrow.typeclasses.Eq
 import arrow.typeclasses.Show
 import pretty.*
-import propCheck.pretty.parse.ParsecT
-import propCheck.pretty.parse.fix
-import propCheck.pretty.parse.monadParsec
+import propCheck.pretty.parse.*
 import propCheck.pretty.parse.string.*
-import propCheck.pretty.parse.takeRemaining
 
 sealed class KValue {
     data class RawString(val s: String) : KValue()
@@ -53,6 +51,17 @@ sealed class KValue {
     companion object
 }
 
+data class Test(val l : Int, val r: Double, val e: List<Test>)
+
+fun main() {
+    val c = Test(50, 0.75, emptyList())
+    val b = Test(30, 0.5, listOf(c, c, c))
+    val a = Test(10, 0.10, listOf(b, b, b, b)).toString().also(::println)
+
+    outputParser().runParsecT(State(a, 0)).fix().value()
+        .also(::println)
+}
+
 @extension
 interface KValueShow : Show<KValue> {
     override fun KValue.show(): String = doc<Nothing>().renderPretty().renderString()
@@ -63,9 +72,9 @@ interface KValueEq : Eq<KValue> {
     override fun KValue.eqv(b: KValue): Boolean = this == b
 }
 
-typealias Parser<A> = ParsecT<Nothing, String, ForId, A>
+typealias Parser<A> = KParsecT<Nothing, String, Char, ForId, A>
 
-fun parser() = ParsecT.monadParsec<Nothing, String, Char, String, ForId>(String.stream())
+fun parser() = KParsecT.monadParsec<Nothing, String, Char, String, ForId>(String.stream(), Id.monad())
 
 // Top level parser
 fun outputParser(): Parser<KValue> =
@@ -73,7 +82,7 @@ fun outputParser(): Parser<KValue> =
         .orElse(tupleParser())
         .orElse(consParser())
         .orElse(recordParser())
-        .orElse(rawStringParser())
+        // .orElse(rawStringParser())
 
 fun valueParser(pred: (Char) -> Boolean): Parser<KValue> = parser().run {
     listParser()
@@ -85,6 +94,8 @@ fun valueParser(pred: (Char) -> Boolean): Parser<KValue> = parser().run {
     // .orElse(stringValueParser(pred)).fix()
 }
 
+var c = 0
+
 fun listParser(): Parser<KValue> = parser().run {
     unit().fix().flatMap {
         valueParser { it != ',' && it != ']' }.withSeperator(',').between('[', ']')
@@ -93,51 +104,48 @@ fun listParser(): Parser<KValue> = parser().run {
 }
 
 fun consParser(): Parser<KValue> = parser().run {
-    fx.monad {
-        val conName = !takeAtLeastOneWhile { it != '(' && it.isLetter() }
-        val props = (tupleParser().bind() as KValue.KTuple).vals
-        KValue.Cons(conName, props)
-    }.fix()
+    takeAtLeastOneWhile(None) { it != '(' && it.isLetter() }.label("constructor name")
+        .flatMap { conName -> tupleParser().map { props -> KValue.Cons(conName, (props as KValue.KTuple).vals) }.fix() }.fix()
 }
 
 fun recordParser(): Parser<KValue> = parser().run {
     fx.monad {
-        val conName = !takeAtLeastOneWhile { it != '(' && it.isLetter() }
-        val props = !propertyParser().withSeperator(',').between('(', ')')
+        val conName = takeAtLeastOneWhile(None) { it != '(' && it.isLetter() }.label("constructor name").bind()
+        val props = propertyParser().withSeperator(',').between('(', ')').bind()
         KValue.Record(conName, props.toList())
     }.fix()
 }
 
 fun propertyParser(): Parser<Tuple2<String, KValue>> = parser().run {
     fx.monad {
-        val propName = !takeAtLeastOneWhile { it != '=' }
-        val value = !char('=').fix()
+        val propName = takeAtLeastOneWhile(None) { it != '=' }.label("property name").bind()
+        val value = char('=').label("equals").fix()
             .flatMap { space().fix() }
-            .flatMap { valueParser { it != ',' && it != ')' } }
+            .flatMap { valueParser { it != ',' && it != ')' } }.bind()
         propName toT value
     }.fix()
 }
 
 fun <A> Parser<A>.between(start: Char, end: Char): Parser<A> = parser().run {
     fx.monad {
-        !char(start)
-        val a = !this@between
-        !char(end)
+        char(start).label("$start").bind()
+        val a = this@between.bind()
+        char(end).label("$end").bind()
         a
     }.fix()
 }
 
 fun <A> Parser<A>.withSeperator(sep: Char): Parser<SequenceK<A>> = parser().run {
     fx.monad {
-        val seq = !this@withSeperator.effectM { char(sep).followedBy(space()) }.many()
-        val last = !this@withSeperator.optional()
+        val seq = this@withSeperator.effectM { char(sep).label("$sep").followedBy(space()) }.many().bind()
+        val last = this@withSeperator.optional().bind()
 
         last.fold({ seq }, { (seq + sequenceOf(it)).k() })
     }.fix()
 }
 
 fun stringValueParser(pred: (Char) -> Boolean): Parser<KValue> = parser().run {
-    takeWhile(pred).map { KValue.RawString(it) }.fix()
+    takeWhile(None, pred).map { KValue.RawString(it) }.fix()
 }
 
 fun tupleParser(): Parser<KValue> = parser().run {

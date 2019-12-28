@@ -38,42 +38,42 @@ private inline fun String.takeWhile_(p: (Char) -> Boolean): String =
 
 // combinators
 fun <E, I, CHUNK, M> MonadParsec<E, I, Char, CHUNK, M>.newline(): Kind<M, Char> =
-    char('\n')
+    char('\n').label("newline")
 
 fun <E, I, CHUNK, M> MonadParsec<E, I, Char, CHUNK, M>.crlf(): Kind<M, CHUNK> =
     string(SI().run { listOf('\r', '\n').toChunk() })
 
 fun <E, I, CHUNK, M> MonadParsec<E, I, Char, CHUNK, M>.eol(): Kind<M, CHUNK> =
-    newline()
-        .map { SI().run { listOf(it).toChunk() } }.orElse(crlf())
+    newline().map { SI().run { listOf(it).toChunk() } }.orElse(crlf())
+        .label("end of line")
 
 fun <E, I, CHUNK, M> MonadParsec<E, I, Char, CHUNK, M>.tab(): Kind<M, Char> =
-    char('\t')
+    char('\t').label("tab")
 
 fun <E, I, CHUNK, M> MonadParsec<E, I, Char, CHUNK, M>.space(): Kind<M, Unit> =
-    takeWhile { it.isWhitespace() }.unit()
+    takeWhile("white space".some()) { it.isWhitespace() }.unit()
 
 
 fun <E, I, CHUNK, M> MonadParsec<E, I, Char, CHUNK, M>.atLeastOneSpace(): Kind<M, Unit> =
-    takeAtLeastOneWhile { it.isWhitespace() }.unit()
+    takeAtLeastOneWhile("white space".some()) { it.isWhitespace() }.unit()
 
 fun <E, I, CHUNK, M> MonadParsec<E, I, Char, CHUNK, M>.controlChar(): Kind<M, Char> =
-    satisfy { it.isISOControl() }
+    satisfy { it.isISOControl() }.label("control character")
 
 fun <E, I, CHUNK, M> MonadParsec<E, I, Char, CHUNK, M>.spaceChar(): Kind<M, Char> =
-    satisfy { it.isWhitespace() }
+    satisfy { it.isWhitespace() }.label("white space")
 
 fun <E, I, CHUNK, M> MonadParsec<E, I, Char, CHUNK, M>.upperChar(): Kind<M, Char> =
-    satisfy { it.isUpperCase() }
+    satisfy { it.isUpperCase() }.label("uppercase letter")
 
 fun <E, I, CHUNK, M> MonadParsec<E, I, Char, CHUNK, M>.lowerChar(): Kind<M, Char> =
-    satisfy { it.isLowerCase() }
+    satisfy { it.isLowerCase() }.label("lowercase letter")
 
 fun <E, I, CHUNK, M> MonadParsec<E, I, Char, CHUNK, M>.letterChar(): Kind<M, Char> =
-    satisfy { it.isLetter() }
+    satisfy { it.isLetter() }.label("letter")
 
 fun <E, I, CHUNK, M> MonadParsec<E, I, Char, CHUNK, M>.digitChar(): Kind<M, Char> =
-    satisfy { it.isDigit() }
+    satisfy { it.isDigit() }.label("digit")
 
 fun <E, I, CHUNK, M> MonadParsec<E, I, Char, CHUNK, M>.char(c: Char): Kind<M, Char> =
     single(c)
@@ -83,7 +83,7 @@ fun <E, I, EL, CHUNK, M> MonadParsec<E, I, EL, CHUNK, M>.string(str: CHUNK): Kin
 
 // TODO kotlin has inbuilt support for these, so if we fix CHUNK to String we get this for free
 fun <E, I, CHUNK, M> MonadParsec<E, I, Char, CHUNK, M>.decimal(): Kind<M, Long> =
-    takeAtLeastOneWhile { it in '0'..'9' }.map { chunk ->
+    takeAtLeastOneWhile("decimal digit".some()) { it in '0'..'9' }.map { chunk ->
         SI().run {
             chunk.toTokens().foldLeft(0L) { acc, v ->
                 acc * 10L + v.toString().toInt(10)
@@ -92,7 +92,7 @@ fun <E, I, CHUNK, M> MonadParsec<E, I, Char, CHUNK, M>.decimal(): Kind<M, Long> 
     }
 
 fun <E, I, CHUNK, M> MonadParsec<E, I, Char, CHUNK, M>.binary(): Kind<M, Long> =
-    takeAtLeastOneWhile { it == '0' || it == '1' }.map { chunk ->
+    takeAtLeastOneWhile("binary digit".some()) { it == '0' || it == '1' }.map { chunk ->
         SI().run {
             chunk.toTokens().foldLeft(0L) { acc, v ->
                 acc * 2L + v.toString().toInt(2)
@@ -102,7 +102,7 @@ fun <E, I, CHUNK, M> MonadParsec<E, I, Char, CHUNK, M>.binary(): Kind<M, Long> =
 
 
 fun <E, I, CHUNK, M> MonadParsec<E, I, Char, CHUNK, M>.octal(): Kind<M, Long> =
-    takeAtLeastOneWhile { it in '0'..'7' }.map { chunk ->
+    takeAtLeastOneWhile("octal digit".some()) { it in '0'..'7' }.map { chunk ->
         SI().run {
             chunk.toTokens().foldLeft(0L) { acc, v ->
                 acc * 2L + v.toString().toInt(8)
@@ -111,7 +111,7 @@ fun <E, I, CHUNK, M> MonadParsec<E, I, Char, CHUNK, M>.octal(): Kind<M, Long> =
     }
 
 fun <E, I, CHUNK, M> MonadParsec<E, I, Char, CHUNK, M>.hexadecimal(): Kind<M, Long> =
-    takeAtLeastOneWhile { it.isHexDigit() }.map { chunk ->
+    takeAtLeastOneWhile("hexadecimal digit".some()) { it.isHexDigit() }.map { chunk ->
         SI().run {
             chunk.toTokens().foldLeft(0L) { acc, v ->
                 acc * 16L + v.toString().toInt(16)

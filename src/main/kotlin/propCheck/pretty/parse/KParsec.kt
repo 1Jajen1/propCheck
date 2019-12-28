@@ -1,255 +1,542 @@
 package propCheck.pretty.parse
 
 import arrow.Kind
-import arrow.Kind3
+import arrow.Kind4
 import arrow.core.*
+import arrow.core.extensions.list.foldable.foldLeft
 import arrow.extension
-import arrow.typeclasses.*
-import propCheck.pretty.parse.parsect.alternative.alternative
+import arrow.syntax.collections.tail
+import arrow.typeclasses.Alternative
+import arrow.typeclasses.Eq
+import arrow.typeclasses.Foldable
+import arrow.typeclasses.Monad
+
+data class Hints<T>(val hints: List<Set<ErrorItem<T>>>) {
+    operator fun plus(other: Hints<T>): Hints<T> = Hints(hints + other.hints)
+
+    companion object {
+        fun <T> empty(): Hints<T> = Hints(emptyList())
+    }
+
+    fun refreshHints(l: Option<ErrorItem<T>>): Hints<T> =
+        if (hints.isEmpty()) this
+        else l.fold({ Hints(hints.tail()) }, { Hints(listOf(setOf(it)) + hints.tail()) })
+}
+
+sealed class ErrorItem<T> {
+    data class Tokens<T>(val ts: NonEmptyList<T>) : ErrorItem<T>()
+    data class Label<T>(val ts: String) : ErrorItem<T>()
+    class EndOfInput<T> : ErrorItem<T>()
+}
+
+sealed class ParserState<E, EL, A> {
+    data class ConsumedOk<E, EL, A>(val a: A, val hints: Hints<EL>) : ParserState<E, EL, A>()
+    data class ConsumedError<E, EL, A>(val e: ParsecError<E, EL>) : ParserState<E, EL, A>()
+    data class EmptyOk<E, EL, A>(val a: A, val hints: Hints<EL>) : ParserState<E, EL, A>()
+    data class EmptyError<E, EL, A>(val e: ParsecError<E, EL>) : ParserState<E, EL, A>()
+
+    fun <B> map(f: (A) -> B): ParserState<E, EL, B> = when (this) {
+        is ConsumedOk -> ConsumedOk(f(a), hints)
+        is EmptyOk -> EmptyOk(f(a), hints)
+        else -> this as ParserState<E, EL, B>
+    }
+}
+
+class ForKParsecT private constructor()
+typealias KParsecTOf<E, I, EL, M, A> = Kind<KParsecTPartialOf<E, I, EL, M>, A>
+typealias KParsecTPartialOf<E, I, EL, M> = Kind4<ForKParsecT, E, I, EL, M>
+
+@Suppress("UNCHECKED_CAST", "NOTHING_TO_INLINE")
+inline fun <E, I, EL, M, A> KParsecTOf<E, I, EL, M, A>.fix(): KParsecT<E, I, EL, M, A> =
+    this as KParsecT<E, I, EL, M, A>
+
+data class KParsecT<E, I, EL, M, A>(
+    val MM: Monad<M>,
+    val pFun: (State<I>) -> Kind<M, Tuple2<ParserState<E, EL, A>, State<I>>>
+) : KParsecTOf<E, I, EL, M, A> {
+
+    fun <B> map(f: (A) -> B): KParsecT<E, I, EL, M, B> =
+        KParsecT(MM, AndThen(pFun).andThen { MM.run { it.map { (s, i) -> s.map(f) toT i } } })
+
+    fun <B> ap(ff: KParsecT<E, I, EL, M, (A) -> B>): KParsecT<E, I, EL, M, B> = lazyAp { ff }
+
+    fun <B> lazyAp(ff: () -> KParsecT<E, I, EL, M, (A) -> B>): KParsecT<E, I, EL, M, B> =
+        KParsecT(MM, AndThen(pFun).andThen {
+            MM.run {
+                it.flatMap { (a, i) ->
+                    when (a) {
+                        is ParserState.ConsumedOk -> ff().pFun(i).map { (ffa, s) ->
+                            when (ffa) {
+                                is ParserState.ConsumedOk -> ParserState.ConsumedOk(ffa.a(a.a), ffa.hints)
+                                is ParserState.EmptyOk -> ParserState.ConsumedOk(ffa.a(a.a), a.hints + ffa.hints)
+                                is ParserState.EmptyError -> ParserState.EmptyError(ffa.e.withHints(a.hints))
+                                else -> (ffa as ParserState<E, EL, B>)
+                            } toT s
+                        }
+                        is ParserState.EmptyOk -> ff().pFun(i).map { (ffa, s) ->
+                            when (ffa) {
+                                is ParserState.ConsumedOk -> ParserState.ConsumedOk(ffa.a(a.a), ffa.hints)
+                                is ParserState.EmptyOk -> ParserState.EmptyOk(ffa.a(a.a), a.hints + ffa.hints)
+                                is ParserState.EmptyError -> ParserState.EmptyError(ffa.e.withHints(a.hints))
+                                else -> (ffa as ParserState<E, EL, B>)
+                            } toT s
+                        }
+                        else -> MM.just((a as ParserState<E, EL, B>) toT i)
+                    }
+                }
+            }
+        })
+
+    fun <B> flatMap(f: (A) -> KParsecT<E, I, EL, M, B>): KParsecT<E, I, EL, M, B> =
+        KParsecT(MM, AndThen(pFun).andThen {
+            MM.run {
+                it.flatMap { (pa, s) ->
+                    when (pa) {
+                        is ParserState.ConsumedOk -> f(pa.a).pFun(s).map { (pa2, s2) ->
+                            when (pa2) {
+                                is ParserState.EmptyOk -> ParserState.EmptyOk(pa2.a, pa.hints + pa2.hints)
+                                is ParserState.EmptyError -> ParserState.EmptyError(pa2.e.withHints(pa.hints))
+                                else -> pa2
+                            } toT s2
+                        }
+                        is ParserState.EmptyOk -> f(pa.a).pFun(s).map { (pa2, s2) ->
+                            when (pa2) {
+                                is ParserState.EmptyOk -> ParserState.EmptyOk(pa2.a, pa.hints + pa2.hints)
+                                is ParserState.EmptyError -> ParserState.EmptyError<E, EL, B>(pa2.e.withHints(pa.hints))
+                                else -> pa2
+                            } toT s2
+                        }
+                        else -> MM.just((pa as ParserState<E, EL, B>) toT s)
+                    }
+                }
+            }
+        })
+
+    fun orElse(other: KParsecT<E, I, EL, M, A>): KParsecT<E, I, EL, M, A> =
+        KParsecT(MM, AndThen {
+            MM.run {
+                pFun(it).flatMap { (a, i) ->
+                    when (a) {
+                        is ParserState.ConsumedOk,
+                        is ParserState.EmptyOk -> MM.just(a toT i)
+                        is ParserState.EmptyError -> other.pFun(it).map { (pa, s) ->
+                            when (pa) {
+                                is ParserState.ConsumedError -> ParserState.ConsumedError<E, EL, A>(a.e + pa.e) toT i.longestMatch(
+                                    s
+                                )
+                                is ParserState.EmptyError -> ParserState.EmptyError<E, EL, A>(a.e + pa.e) toT i.longestMatch(
+                                    s
+                                )
+                                is ParserState.EmptyOk -> ParserState.EmptyOk<E, EL, A>(
+                                    pa.a,
+                                    a.e.toHints(s.offset) + pa.hints
+                                ) toT s
+                                is ParserState.ConsumedOk -> pa toT s
+                            }
+                        }
+                        is ParserState.ConsumedError -> MM.just(a toT i)
+                    }
+                }
+            }
+        })
+
+    fun runParsecT(s: State<I>): Kind<M, Either<ParsecError<E, EL>, A>> = MM.run {
+        pFun(s).map { (pa, _) ->
+            when (pa) {
+                is ParserState.ConsumedOk -> pa.a.right()
+                is ParserState.EmptyOk -> pa.a.right()
+                is ParserState.ConsumedError -> pa.e.left()
+                is ParserState.EmptyError -> pa.e.left()
+            }
+        }
+    }
+
+    companion object {
+        fun <E, I, EL, CHUNK, M> monadParsec(
+            SI: Stream<I, EL, CHUNK>,
+            MM: Monad<M>
+        ): MonadParsec<E, I, EL, CHUNK, KParsecTPartialOf<E, I, EL, M>> =
+            object : KParsecTMonadParsec<E, I, EL, CHUNK, M> {
+                override fun MM(): Monad<M> = MM
+                override fun SI(): Stream<I, EL, CHUNK> = SI
+            }
+    }
+}
+
+@extension
+interface KParsecTMonadParsec<E, I, EL, CHUNK, M> : MonadParsec<E, I, EL, CHUNK, KParsecTPartialOf<E, I, EL, M>> {
+    override fun SI(): Stream<I, EL, CHUNK>
+    fun MM(): Monad<M>
+
+    override fun <A> empty(): Kind<KParsecTPartialOf<E, I, EL, M>, A> = KParsecT(MM(), AndThen {
+        MM().just(ParserState.EmptyError<E, EL, A>(ParsecError.Trivial(it.offset, None, emptySet())) toT it)
+    })
+
+    override fun <A> Kind<KParsecTPartialOf<E, I, EL, M>, A>.some(): Kind<KParsecTPartialOf<E, I, EL, M>, SequenceK<A>> =
+        fix().lazyAp { many().fix().map { xs -> { x: A -> (sequenceOf(x) + xs).k() } } }
+
+    override fun <A> Kind<KParsecTPartialOf<E, I, EL, M>, A>.orElse(b: Kind<KParsecTPartialOf<E, I, EL, M>, A>): Kind<KParsecTPartialOf<E, I, EL, M>, A> =
+        fix().orElse(b.fix())
+
+    override fun <A, B> Kind<KParsecTPartialOf<E, I, EL, M>, A>.flatMap(f: (A) -> Kind<KParsecTPartialOf<E, I, EL, M>, B>): Kind<KParsecTPartialOf<E, I, EL, M>, B> =
+        fix().flatMap(f.andThen { it.fix() })
+
+    override fun <A> just(a: A): Kind<KParsecTPartialOf<E, I, EL, M>, A> = KParsecT(MM(), AndThen {
+        MM().just(ParserState.EmptyOk<E, EL, A>(a, Hints.empty()) toT it)
+    })
+
+    override fun <A, B> tailRecM(
+        a: A,
+        f: (A) -> Kind<KParsecTPartialOf<E, I, EL, M>, Either<A, B>>
+    ): Kind<KParsecTPartialOf<E, I, EL, M>, B> = KParsecT(MM(), AndThen {
+        MM().run {
+            f(a).fix().pFun(it).flatMap { (pa, s) ->
+                when (pa) {
+                    is ParserState.ConsumedOk -> pa.a.fold({ tailRecM(it, f).fix().pFun(s) }, {
+                        just(ParserState.ConsumedOk<E, EL, B>(it, pa.hints) toT s)
+                    })
+                    is ParserState.EmptyOk -> pa.a.fold({ tailRecM(it, f).fix().pFun(s) }, {
+                        just(ParserState.ConsumedOk<E, EL, B>(it, pa.hints) toT s)
+                    })
+                    else -> just((pa as ParserState<E, EL, B>) toT s)
+                }
+            }
+        }
+    })
+
+    override fun <A> Kind<KParsecTPartialOf<E, I, EL, M>, A>.label(str: String): Kind<KParsecTPartialOf<E, I, EL, M>, A> =
+        KParsecT(MM(), AndThen(fix().pFun).andThen {
+            MM().run {
+                it.map { (pa, s) ->
+                    val l = if (str.isEmpty()) None
+                    else ErrorItem.Label<EL>(str).some()
+
+                    when (pa) {
+                        is ParserState.ConsumedOk -> ParserState.ConsumedOk(
+                            pa.a,
+                            l.fold({ pa.hints }, { pa.hints.refreshHints(None) })
+                        )
+                        is ParserState.EmptyOk -> ParserState.EmptyOk(pa.a, pa.hints.refreshHints(l))
+                        is ParserState.EmptyError -> ParserState.EmptyError<E, EL, A>(
+                            when (val err = pa.e) {
+                                is ParsecError.Trivial -> ParsecError.Trivial(
+                                    err.offset,
+                                    err.unexpectedTokens,
+                                    l.fold({ emptySet<ErrorItem<EL>>() }, { setOf(it) })
+                                )
+                                else -> err
+                            }
+                        )
+                        is ParserState.ConsumedError -> pa
+                    } toT s
+                }
+            }
+        })
+
+    override fun eof(): Kind<KParsecTPartialOf<E, I, EL, M>, Unit> = KParsecT(MM(), AndThen { s ->
+        SI().run {
+            MM().just(
+                s.input.takeOne().fold({
+                    ParserState.EmptyOk<E, EL, Unit>(Unit, Hints.empty()) toT s
+                }, { (x, _) ->
+                    ParserState.EmptyError<E, EL, Unit>(
+                        ParsecError.Trivial(
+                            s.offset, ErrorItem.Tokens(Nel(x)).some(), setOf(ErrorItem.EndOfInput())
+                        )
+                    ) toT s
+                })
+            )
+        }
+    })
+
+    override fun getParserState(): Kind<KParsecTPartialOf<E, I, EL, M>, State<I>> = KParsecT(MM(), AndThen {
+        MM().just(
+            ParserState.EmptyOk<E, EL, State<I>>(it, Hints.empty()) toT it
+        )
+    })
+
+    override fun <A> Kind<KParsecTPartialOf<E, I, EL, M>, A>.lookAhead(): Kind<KParsecTPartialOf<E, I, EL, M>, A> =
+        KParsecT(MM(), AndThen { s ->
+            MM().run {
+                fix().pFun(s).map { (pa, _) ->
+                    when (pa) {
+                        is ParserState.ConsumedOk -> ParserState.EmptyOk<E, EL, A>(pa.a, Hints.empty()) toT s
+                        is ParserState.EmptyOk -> ParserState.EmptyOk<E, EL, A>(pa.a, Hints.empty()) toT s
+                        else -> pa toT s
+                    }
+                }
+            }
+        })
+
+    override fun <A> Kind<KParsecTPartialOf<E, I, EL, M>, A>.notFollowedBy(): Kind<KParsecTPartialOf<E, I, EL, M>, Unit> =
+        KParsecT(MM(), AndThen { s ->
+            MM().run {
+                fix().pFun(s).map { (pa, _) ->
+                    val what = {
+                        SI().run {
+                            s.input.takeOne().fold({ ErrorItem.EndOfInput<EL>() }, { ErrorItem.Tokens(Nel(it.a)) })
+                        }
+                    }
+                    val tErr = { ParsecError.Trivial<E, EL>(s.offset, what().some(), emptySet()) }
+                    when (pa) {
+                        is ParserState.ConsumedOk -> ParserState.EmptyError<E, EL, Unit>(tErr()) toT s
+                        is ParserState.EmptyOk -> ParserState.EmptyError<E, EL, Unit>(tErr()) toT s
+                        is ParserState.ConsumedError -> ParserState.EmptyOk<E, EL, Unit>(Unit, Hints.empty()) toT s
+                        is ParserState.EmptyError -> ParserState.EmptyOk<E, EL, Unit>(Unit, Hints.empty()) toT s
+                    }
+                }
+            }
+        })
+
+    override fun <A> Kind<KParsecTPartialOf<E, I, EL, M>, A>.observing(): Kind<KParsecTPartialOf<E, I, EL, M>, Either<ParsecError<E, EL>, A>> =
+        KParsecT(MM(), AndThen(fix().pFun).andThen {
+            MM().run {
+                it.map { (pa, s) ->
+                    when (pa) {
+                        is ParserState.ConsumedOk -> ParserState.ConsumedOk<E, EL, Either<ParsecError<E, EL>, A>>(
+                            pa.a.right(),
+                            Hints.empty()
+                        )
+                        is ParserState.ConsumedError -> ParserState.ConsumedOk<E, EL, Either<ParsecError<E, EL>, A>>(
+                            pa.e.left(),
+                            Hints.empty()
+                        )
+                        is ParserState.EmptyOk -> ParserState.EmptyOk<E, EL, Either<ParsecError<E, EL>, A>>(
+                            pa.a.right(),
+                            Hints.empty()
+                        )
+                        is ParserState.EmptyError -> ParserState.EmptyOk<E, EL, Either<ParsecError<E, EL>, A>>(
+                            pa.e.left(),
+                            pa.e.toHints(s.offset)
+                        )
+                    } toT s
+                }
+            }
+        })
+
+    override fun take(label: Option<String>, n: Int): Kind<KParsecTPartialOf<E, I, EL, M>, CHUNK> =
+        KParsecT(MM(), AndThen {
+            SI().run {
+                it.input.take(n).fold({
+                    MM().just(ParserState.EmptyError<E, EL, CHUNK>(ParsecError.Trivial(
+                        it.offset,
+                        ErrorItem.EndOfInput<EL>().some(),
+                        label.filter { it.isNotEmpty() }.fold({ emptySet<ErrorItem<EL>>() }, { label ->
+                            setOf(ErrorItem.Label(label))
+                        })
+                    )
+                    ) toT it
+                    )
+                }, { (c, i) ->
+                    if (c.size() != n) MM().just(ParserState.EmptyError<E, EL, CHUNK>(ParsecError.Trivial(
+                        it.offset + c.size(),
+                        ErrorItem.EndOfInput<EL>().some(),
+                        label.filter { it.isNotEmpty() }.fold({ emptySet<ErrorItem<EL>>() }, { label ->
+                            setOf(ErrorItem.Label(label))
+                        })
+                    )
+                    ) toT it
+                    )
+                    else MM().just(ParserState.ConsumedOk<E, EL, CHUNK>(c, Hints.empty()) toT State(i, it.offset + n))
+                })
+            }
+        })
+
+    override fun takeAtLeastOneWhile(
+        label: Option<String>,
+        matcher: (EL) -> Boolean
+    ): Kind<KParsecTPartialOf<E, I, EL, M>, CHUNK> = KParsecT(MM(), AndThen {
+        SI().run {
+            it.input.takeWhile(matcher).let { (chunk, rem) ->
+                if (chunk.isEmpty()) MM().just(ParserState.EmptyError<E, EL, CHUNK>(ParsecError.Trivial<E, EL>(
+                    it.offset,
+                    it.input.takeOne().fold({ ErrorItem.EndOfInput<EL>() },
+                        { (x, _) -> ErrorItem.Tokens(Nel(x)) }).some(),
+                    label.filter { it.isNotEmpty() }.fold(
+                        { emptySet<ErrorItem<EL>>() },
+                        { l -> setOf(ErrorItem.Label(l)) })
+                )
+                ) toT it
+                )
+                else MM().just(ParserState.ConsumedOk<E, EL, CHUNK>(chunk, Hints(
+                    label.filter { it.isNotEmpty() }.fold(
+                        { emptyList<Set<ErrorItem<EL>>>() },
+                        { l -> listOf(setOf(ErrorItem.Label(l))) })
+                )
+                ) toT State(rem, it.offset + chunk.size())
+                )
+            }
+        }
+    })
+
+    override fun takeWhile(
+        label: Option<String>,
+        matcher: (EL) -> Boolean
+    ): Kind<KParsecTPartialOf<E, I, EL, M>, CHUNK> = KParsecT(MM(), AndThen {
+        SI().run {
+            it.input.takeWhile(matcher).let { (chunk, rem) ->
+                if (chunk.isEmpty()) MM().just(
+                    ParserState.EmptyOk<E, EL, CHUNK>(chunk, Hints.empty()) toT State(
+                        rem,
+                        it.offset + chunk.size()
+                    )
+                )
+                else MM().just(
+                    ParserState.ConsumedOk<E, EL, CHUNK>(chunk, Hints.empty()) toT State(
+                        rem,
+                        it.offset + chunk.size()
+                    )
+                )
+            }
+        }
+    })
+
+    override fun <A> token(
+        expected: Set<ErrorItem<EL>>,
+        matcher: (EL) -> Option<A>
+    ): Kind<KParsecTPartialOf<E, I, EL, M>, A> = KParsecT(MM(), AndThen {
+        SI().run {
+            it.input.takeOne().fold({
+                MM().just(
+                    ParserState.EmptyError<E, EL, A>(
+                        ParsecError.Trivial(
+                            it.offset,
+                            ErrorItem.EndOfInput<EL>().some(),
+                            expected
+                        )
+                    ) toT it
+                )
+            }, { (el, rem) ->
+                matcher(el).fold({
+                    MM().just(
+                        ParserState.EmptyError<E, EL, A>(
+                            ParsecError.Trivial(
+                                it.offset,
+                                ErrorItem.Tokens(Nel(el)).some(),
+                                expected
+                            )
+                        ) toT it
+                    )
+                }, { a ->
+                    MM().just(ParserState.ConsumedOk<E, EL, A>(a, Hints.empty()) toT State(rem, it.offset + 1))
+                })
+            })
+        }
+    })
+
+    override fun tokens(chunk: CHUNK): Kind<KParsecTPartialOf<E, I, EL, M>, CHUNK> = KParsecT(MM(), AndThen {
+        SI().run {
+            it.input.take(chunk.size()).fold({
+                MM().just(
+                    ParserState.EmptyError<E, EL, CHUNK>(
+                        ParsecError.Trivial(
+                            it.offset,
+                            ErrorItem.EndOfInput<EL>().some(),
+                            setOf(ErrorItem.Tokens(Nel.fromListUnsafe(chunk.toTokens())))
+                        )
+                    ) toT it
+                )
+            }, { (c, rem) ->
+                if (c.size() != chunk.size()) MM().just(
+                    ParserState.EmptyError<E, EL, CHUNK>(
+                        ParsecError.Trivial(
+                            it.offset,
+                            ErrorItem.Tokens(Nel.fromListUnsafe(c.toTokens())).some(),
+                            setOf(ErrorItem.Tokens(Nel.fromListUnsafe(chunk.toTokens())))
+                        )
+                    ) toT it
+                )
+                else MM().just(
+                    ParserState.ConsumedOk<E, EL, CHUNK>(c, Hints.empty()) toT State(
+                        rem,
+                        it.offset + c.size()
+                    )
+                )
+            })
+        }
+    })
+
+    override fun updateParserState(f: (State<I>) -> State<I>): Kind<KParsecTPartialOf<E, I, EL, M>, Unit> =
+        KParsecT(MM(), AndThen { MM().just(ParserState.EmptyOk<E, EL, Unit>(Unit, Hints.empty()) toT f(it)) })
+
+    override fun <A> Kind<KParsecTPartialOf<E, I, EL, M>, A>.tryP(): Kind<KParsecTPartialOf<E, I, EL, M>, A> =
+        KParsecT(MM(), AndThen {
+            MM().run {
+                fix().pFun(it).map { (pa, s) ->
+                    when (pa) {
+                        is ParserState.EmptyError -> ParserState.EmptyError<E, EL, A>(pa.e) toT it
+                        else -> pa toT s
+                    }
+                }
+            }
+        })
+
+    override fun <A> Kind<KParsecTPartialOf<E, I, EL, M>, A>.withRecovery(h: (ParsecError<E, EL>) -> Kind<KParsecTPartialOf<E, I, EL, M>, A>): Kind<KParsecTPartialOf<E, I, EL, M>, A> =
+        KParsecT(MM(), AndThen {
+            MM().run {
+                fix().pFun(it).flatMap { (pa, i) ->
+                    when (pa) {
+                        is ParserState.ConsumedError -> h(pa.e).fix().pFun(i)
+                        is ParserState.EmptyError -> h(pa.e).fix().pFun(i)
+                        else -> just(pa toT i)
+                    }
+                }
+            }
+        })
+}
 
 // TODO move to seperate lib
 // kotlin parser combinator
 // TODO better error reporting
-fun <E, I, M, A> ParsecT<E, I, M, A>.runParsecT(input: State<I>, MM: Monad<M>): Kind<M, Either<ParsecError<E>, A>> {
-    fun consumedOk(a: A, i: State<I>): Kind<M, Either<ParsecError<E>, A>> = MM.just(a.right())
-    fun consumedErr(e: ParsecError<E>, i: State<I>): Kind<M, Either<ParsecError<E>, A>> = MM.just(e.left())
-    fun emptyOk(a: A, i: State<I>): Kind<M, Either<ParsecError<E>, A>> = MM.just(a.right())
-    fun emptyErr(e: ParsecError<E>, i: State<I>): Kind<M, Either<ParsecError<E>, A>> = MM.just(e.left())
-
-    return runParser(input, ::consumedOk, ::consumedErr, ::emptyOk, ::emptyErr)
-}
-
 data class State<I>(val input: I, val offset: Int) {
+    fun longestMatch(s: State<I>): State<I> =
+        if (offset <= s.offset) s
+        else this
+
     companion object
 }
 
-class ForParsecT private constructor()
-typealias ParsecTOf<E, I, M, A> = Kind<ParsecTPartialOf<E, I, M>, A>
-typealias ParsecTPartialOf<E, I, M> = Kind3<ForParsecT, E, I, M>
+sealed class ParsecError<E, T> {
+    data class Trivial<E, T>(
+        val offset: Int,
+        val unexpectedTokens: Option<ErrorItem<T>>,
+        val expectedTokens: Set<ErrorItem<T>>
+    ) : ParsecError<E, T>()
 
-@Suppress("UNCHECKED_CAST", "NOTHING_TO_INLINE")
-inline fun <E, I, M, A> ParsecTOf<E, I, M, A>.fix(): ParsecT<E, I, M, A> =
-    this as ParsecT<E, I, M, A>
-
-typealias Parsec<E, I, A> = ParsecT<E, I, ForId, A>
-
-interface ParsecT<E, I, M, A> : ParsecTOf<E, I, M, A> {
-    fun <Z> runParser(
-        state: State<I>,
-        consumedOk: (A, State<I>) -> Kind<M, Z>,
-        consumedError: (ParsecError<E>, State<I>) -> Kind<M, Z>,
-        emptyOk: (A, State<I>) -> Kind<M, Z>,
-        emptyError: (ParsecError<E>, State<I>) -> Kind<M, Z>
-    ): Kind<M, Z>
-
-    fun <B> map(f: (A) -> B): ParsecT<E, I, M, B> = object : ParsecT<E, I, M, B> {
-        override fun <Z> runParser(
-            state: State<I>,
-            consumedOk: (B, State<I>) -> Kind<M, Z>,
-            consumedError: (ParsecError<E>, State<I>) -> Kind<M, Z>,
-            emptyOk: (B, State<I>) -> Kind<M, Z>,
-            emptyError: (ParsecError<E>, State<I>) -> Kind<M, Z>
-        ): Kind<M, Z> =
-            this@ParsecT.runParser(
-                state,
-                { a, i -> consumedOk(f(a), i) },
-                consumedError,
-                { a, i -> emptyOk(f(a), i) },
-                emptyError
-            )
+    fun toHints(currOff: Int): Hints<T> = when (this) {
+        is Trivial ->
+            if (currOff == offset) Hints(if (expectedTokens.isEmpty()) emptyList() else listOf(expectedTokens))
+            else Hints.empty()
     }
 
-    fun <B> ap(ff: ParsecT<E, I, M, (A) -> B>): ParsecT<E, I, M, B> = object : ParsecT<E, I, M, B> {
-        override fun <Z> runParser(
-            state: State<I>,
-            consumedOk: (B, State<I>) -> Kind<M, Z>,
-            consumedError: (ParsecError<E>, State<I>) -> Kind<M, Z>,
-            emptyOk: (B, State<I>) -> Kind<M, Z>,
-            emptyError: (ParsecError<E>, State<I>) -> Kind<M, Z>
-        ): Kind<M, Z> {
-            fun succ(a: A, i: State<I>): Kind<M, Z> {
-                return ff.runParser(
-                    i,
-                    { f, i -> consumedOk(f(a), i) },
-                    consumedError,
-                    { f, i -> consumedOk(f(a), i) },
-                    emptyError
+    fun withHints(h: Hints<T>): ParsecError<E, T> = when (this) {
+        is Trivial -> Trivial(
+            offset,
+            unexpectedTokens,
+            expectedTokens.union(h.hints.foldLeft(emptySet()) { acc, v -> acc.union(v) })
+        )
+    }
+
+    fun offset(): Int = when (this) {
+        is Trivial -> offset
+    }
+
+    operator fun plus(other: ParsecError<E, T>): ParsecError<E, T> {
+        val lOff = offset()
+        val rOff = other.offset()
+
+        return if (lOff < rOff) other
+        else if (lOff > rOff) this
+        else when (this) {
+            is Trivial -> when (other) {
+                is Trivial -> Trivial(
+                    offset,
+                    unexpectedTokens.or(other.unexpectedTokens),
+                    expectedTokens.union(other.expectedTokens)
                 )
             }
-
-            fun empt(a: A, i: State<I>): Kind<M, Z> {
-                return ff.runParser(
-                    i,
-                    { f, i -> consumedOk(f(a), i) },
-                    consumedError,
-                    { f, i -> emptyOk(f(a), i) },
-                    emptyError
-                )
-            }
-
-            return this@ParsecT.runParser(state, ::succ, consumedError, ::empt, emptyError)
         }
     }
-
-    fun <B> lazyAp(ff: Eval<ParsecT<E, I, M, (A) -> B>>): ParsecT<E, I, M, B> = object : ParsecT<E, I, M, B> {
-        override fun <Z> runParser(
-            state: State<I>,
-            consumedOk: (B, State<I>) -> Kind<M, Z>,
-            consumedError: (ParsecError<E>, State<I>) -> Kind<M, Z>,
-            emptyOk: (B, State<I>) -> Kind<M, Z>,
-            emptyError: (ParsecError<E>, State<I>) -> Kind<M, Z>
-        ): Kind<M, Z> {
-            fun succ(a: A, i: State<I>): Kind<M, Z> {
-                return ff.value().runParser(
-                    i,
-                    { f, i -> consumedOk(f(a), i) },
-                    consumedError,
-                    { f, i -> consumedOk(f(a), i) },
-                    emptyError
-                )
-            }
-
-            fun empt(a: A, i: State<I>): Kind<M, Z> {
-                return ff.value().runParser(
-                    i,
-                    { f, i -> consumedOk(f(a), i) },
-                    consumedError,
-                    { f, i -> emptyOk(f(a), i) },
-                    emptyError
-                )
-            }
-
-            return this@ParsecT.runParser(state, ::succ, consumedError, ::empt, emptyError)
-        }
-    }
-
-    fun <B> flatMap(f: (A) -> ParsecT<E, I, M, B>): ParsecT<E, I, M, B> = object : ParsecT<E, I, M, B> {
-        override fun <Z> runParser(
-            state: State<I>,
-            consumedOk: (B, State<I>) -> Kind<M, Z>,
-            consumedError: (ParsecError<E>, State<I>) -> Kind<M, Z>,
-            emptyOk: (B, State<I>) -> Kind<M, Z>,
-            emptyError: (ParsecError<E>, State<I>) -> Kind<M, Z>
-        ): Kind<M, Z> {
-            fun succ(a: A, i: State<I>): Kind<M, Z> {
-                return f(a).runParser(
-                    i,
-                    { b, i -> consumedOk(b, i) },
-                    consumedError,
-                    { b, i -> consumedOk(b, i) },
-                    emptyError
-                )
-            }
-
-            fun empt(a: A, i: State<I>): Kind<M, Z> {
-                return f(a).runParser(
-                    i,
-                    { b, i -> consumedOk(b, i) },
-                    consumedError,
-                    { b, i -> emptyOk(b, i) },
-                    emptyError
-                )
-            }
-            return this@ParsecT.runParser(state, ::succ, consumedError, ::empt, emptyError)
-        }
-    }
-
-    fun orElse(other: ParsecT<E, I, M, A>): ParsecT<E, I, M, A> = object : ParsecT<E, I, M, A> {
-        override fun <Z> runParser(
-            state: State<I>,
-            consumedOk: (A, State<I>) -> Kind<M, Z>,
-            consumedError: (ParsecError<E>, State<I>) -> Kind<M, Z>,
-            emptyOk: (A, State<I>) -> Kind<M, Z>,
-            emptyError: (ParsecError<E>, State<I>) -> Kind<M, Z>
-        ): Kind<M, Z> {
-            // This is trivial stuff atm, for better errors change this
-            // TODO combine errors and provide combined input
-            fun emptErr(e: ParsecError<E>, inp: State<I>): Kind<M, Z> =
-                other.runParser(state, consumedOk, consumedError, emptyOk, emptyError)
-            return this@ParsecT.runParser(state, consumedOk, consumedError, emptyOk, ::emptErr)
-        }
-    }
-
-    fun some(): ParsecT<E, I, M, Sequence<A>> = object : ParsecT<E, I, M, Sequence<A>> {
-        override fun <Z> runParser(
-            state: State<I>,
-            consumedOk: (Sequence<A>, State<I>) -> Kind<M, Z>,
-            consumedError: (ParsecError<E>, State<I>) -> Kind<M, Z>,
-            emptyOk: (Sequence<A>, State<I>) -> Kind<M, Z>,
-            emptyError: (ParsecError<E>, State<I>) -> Kind<M, Z>
-        ): Kind<M, Z> = ParsecT.alternative<E, I, M>().run {
-            this@ParsecT.lazyAp(Eval.later {
-                this@ParsecT.many().map { seq ->
-                    { el: A -> sequenceOf(el) + seq }
-                }.fix()
-            })
-        }.runParser(state, consumedOk, consumedError, emptyOk, emptyError)
-    }
-
-    companion object {
-        fun <E, I, M, A> just(a: A): ParsecT<E, I, M, A> = object : ParsecT<E, I, M, A> {
-            override fun <Z> runParser(
-                state: State<I>,
-                consumedOk: (A, State<I>) -> Kind<M, Z>,
-                consumedError: (ParsecError<E>, State<I>) -> Kind<M, Z>,
-                emptyOk: (A, State<I>) -> Kind<M, Z>,
-                emptyError: (ParsecError<E>, State<I>) -> Kind<M, Z>
-            ): Kind<M, Z> = emptyOk(a, state)
-        }
-
-        fun <E, I, M, A> empty(): ParsecT<E, I, M, A> = object : ParsecT<E, I, M, A> {
-            override fun <Z> runParser(
-                state: State<I>,
-                consumedOk: (A, State<I>) -> Kind<M, Z>,
-                consumedError: (ParsecError<E>, State<I>) -> Kind<M, Z>,
-                emptyOk: (A, State<I>) -> Kind<M, Z>,
-                emptyError: (ParsecError<E>, State<I>) -> Kind<M, Z>
-            ): Kind<M, Z> = emptyError(ParsecError.Trivial(), state)
-        }
-    }
-}
-
-sealed class ParsecError<E> {
-    class Trivial<E> : ParsecError<E>()
-}
-
-@extension
-interface ParsecFunctor<E, I, M> : Functor<ParsecTPartialOf<E, I, M>> {
-    override fun <A, B> Kind<ParsecTPartialOf<E, I, M>, A>.map(f: (A) -> B): Kind<ParsecTPartialOf<E, I, M>, B> =
-        fix().map(f)
-}
-
-@extension
-interface ParsecApplicative<E, I, M> : Applicative<ParsecTPartialOf<E, I, M>> {
-    override fun <A> just(a: A): Kind<ParsecTPartialOf<E, I, M>, A> = ParsecT.just(a)
-    override fun <A, B> Kind<ParsecTPartialOf<E, I, M>, A>.ap(ff: Kind<ParsecTPartialOf<E, I, M>, (A) -> B>): Kind<ParsecTPartialOf<E, I, M>, B> =
-        fix().ap(ff.fix())
-}
-
-@extension
-interface ParsecMonad<E, I, M> : Monad<ParsecTPartialOf<E, I, M>> {
-    override fun <A> just(a: A): Kind<ParsecTPartialOf<E, I, M>, A> = ParsecT.just(a)
-    override fun <A, B> Kind<ParsecTPartialOf<E, I, M>, A>.flatMap(f: (A) -> Kind<ParsecTPartialOf<E, I, M>, B>): Kind<ParsecTPartialOf<E, I, M>, B> =
-        fix().flatMap(f andThen { it.fix() })
-
-    override fun <A, B> tailRecM(
-        a: A,
-        f: (A) -> Kind<ParsecTPartialOf<E, I, M>, Either<A, B>>
-    ): Kind<ParsecTPartialOf<E, I, M>, B> = f(a).flatMap { it.fold({ tailRecM(it, f) }, { just(it) }) }
-}
-
-@extension
-interface ParsecAlternative<E, I, M> : Alternative<ParsecTPartialOf<E, I, M>>, ParsecApplicative<E, I, M> {
-    override fun <A> empty(): Kind<ParsecTPartialOf<E, I, M>, A> = ParsecT.empty()
-    override fun <A> Kind<ParsecTPartialOf<E, I, M>, A>.orElse(b: Kind<ParsecTPartialOf<E, I, M>, A>): Kind<ParsecTPartialOf<E, I, M>, A> =
-        fix().orElse(b.fix())
-
-    override fun <A> Kind<ParsecTPartialOf<E, I, M>, A>.some(): Kind<ParsecTPartialOf<E, I, M>, SequenceK<A>> =
-        fix().some().map { it.k() }
-
-    // TODO?
-    override fun <A> Kind<ParsecTPartialOf<E, I, M>, A>.combineK(y: Kind<ParsecTPartialOf<E, I, M>, A>): Kind<ParsecTPartialOf<E, I, M>, A> =
-        fix().orElse(y)
 }
 
 // Input typeclass to provide options to implement this for other text types (and streaming text)
@@ -273,232 +560,13 @@ interface Stream<S, EL, CHUNK> {
     fun CHUNK.toTokens(): List<EL>
 }
 
-// --------------- primitives
-fun <E, I, M, A> ParsecT<E, I, M, A>.ptryP(): ParsecT<E, I, M, A> = object : ParsecT<E, I, M, A> {
-    override fun <Z> runParser(
-        state: State<I>,
-        consumedOk: (A, State<I>) -> Kind<M, Z>,
-        consumedError: (ParsecError<E>, State<I>) -> Kind<M, Z>,
-        emptyOk: (A, State<I>) -> Kind<M, Z>,
-        emptyError: (ParsecError<E>, State<I>) -> Kind<M, Z>
-    ): Kind<M, Z> {
-        fun nEmptErr(err: ParsecError<E>, ignored: State<I>): Kind<M, Z> = emptyError(err, state)
-        return this@ptryP.runParser(state, consumedOk, consumedError, emptyOk, ::nEmptErr)
-    }
-}
-
-fun <E, I, M, A> ParsecT<E, I, M, A>.plookAhead(): ParsecT<E, I, M, A> = object : ParsecT<E, I, M, A> {
-    override fun <Z> runParser(
-        state: State<I>,
-        consumedOk: (A, State<I>) -> Kind<M, Z>,
-        consumedError: (ParsecError<E>, State<I>) -> Kind<M, Z>,
-        emptyOk: (A, State<I>) -> Kind<M, Z>,
-        emptyError: (ParsecError<E>, State<I>) -> Kind<M, Z>
-    ): Kind<M, Z> {
-        fun nEmptOk(a: A, ignored: State<I>): Kind<M, Z> = emptyOk(a, state)
-
-        return this@plookAhead.runParser(state, ::nEmptOk, consumedError, ::nEmptOk, emptyError)
-    }
-}
-
-fun <E, I, M, A> ParsecT<E, I, M, A>.pnotFollowedBy(): ParsecT<E, I, M, Unit> = object : ParsecT<E, I, M, Unit> {
-    override fun <Z> runParser(
-        state: State<I>,
-        consumedOk: (Unit, State<I>) -> Kind<M, Z>,
-        consumedError: (ParsecError<E>, State<I>) -> Kind<M, Z>,
-        emptyOk: (Unit, State<I>) -> Kind<M, Z>,
-        emptyError: (ParsecError<E>, State<I>) -> Kind<M, Z>
-    ): Kind<M, Z> {
-        // TODO better errors
-        fun nConOk(a: A, i: State<I>): Kind<M, Z> = emptyError(ParsecError.Trivial(), state)
-
-        fun nEmptOk(a: A, i: State<I>): Kind<M, Z> = emptyError(ParsecError.Trivial(), state)
-        fun nConErr(e: ParsecError<E>, i: State<I>): Kind<M, Z> = emptyOk(Unit, state)
-        fun nEmptErr(e: ParsecError<E>, i: State<I>): Kind<M, Z> = emptyOk(Unit, state)
-
-        return this@pnotFollowedBy.runParser(state, ::nConOk, ::nConErr, ::nEmptOk, ::nEmptErr)
-    }
-}
-
-fun <E, I, M, A> ParsecT<E, I, M, A>.pwithRecovery(h: (ParsecError<E>) -> ParsecT<E, I, M, A>): ParsecT<E, I, M, A> =
-    object : ParsecT<E, I, M, A> {
-        override fun <Z> runParser(
-            state: State<I>,
-            consumedOk: (A, State<I>) -> Kind<M, Z>,
-            consumedError: (ParsecError<E>, State<I>) -> Kind<M, Z>,
-            emptyOk: (A, State<I>) -> Kind<M, Z>,
-            emptyError: (ParsecError<E>, State<I>) -> Kind<M, Z>
-        ): Kind<M, Z> {
-            // TODO better error reporting
-            fun nConErr(e: ParsecError<E>, i: State<I>): Kind<M, Z> =
-                h(e).runParser(i, consumedOk, consumedError, emptyOk, consumedError)
-
-            fun nEmptErr(e: ParsecError<E>, i: State<I>): Kind<M, Z> =
-                h(e).runParser(i, consumedOk, emptyError, emptyOk, emptyError)
-
-            return this@pwithRecovery.runParser(state, consumedOk, ::nConErr, emptyOk, ::nEmptErr)
-        }
-    }
-
-fun <E, I, M, A> ParsecT<E, I, M, A>.pobserving(): ParsecT<E, I, M, Either<ParsecError<E>, A>> =
-    object : ParsecT<E, I, M, Either<ParsecError<E>, A>> {
-        override fun <Z> runParser(
-            state: State<I>,
-            consumedOk: (Either<ParsecError<E>, A>, State<I>) -> Kind<M, Z>,
-            consumedError: (ParsecError<E>, State<I>) -> Kind<M, Z>,
-            emptyOk: (Either<ParsecError<E>, A>, State<I>) -> Kind<M, Z>,
-            emptyError: (ParsecError<E>, State<I>) -> Kind<M, Z>
-        ): Kind<M, Z> {
-            return this@pobserving.runParser(
-                state,
-                { a, i -> consumedOk(a.right(), i) },
-                { e, i -> consumedOk(e.left(), i) },
-                { a, i -> emptyOk(a.right(), i) },
-                { e, i -> emptyOk(e.left(), i) }
-            )
-        }
-    }
-
-fun <E, I, EL, CHUNK, M> peof(stream: Stream<I, EL, CHUNK>): ParsecT<E, I, M, Unit> = object : ParsecT<E, I, M, Unit> {
-    override fun <Z> runParser(
-        state: State<I>,
-        consumedOk: (Unit, State<I>) -> Kind<M, Z>,
-        consumedError: (ParsecError<E>, State<I>) -> Kind<M, Z>,
-        emptyOk: (Unit, State<I>) -> Kind<M, Z>,
-        emptyError: (ParsecError<E>, State<I>) -> Kind<M, Z>
-    ): Kind<M, Z> = stream.run {
-        state.input.takeOne().fold({ emptyOk(Unit, state) }, { (_, _) ->
-            // TODO error reporting
-            emptyError(ParsecError.Trivial(), state)
-        })
-    }
-}
-
-fun <E, I, EL, CHUNK, M, A> ptoken(matcher: (EL) -> Option<A>, stream: Stream<I, EL, CHUNK>): ParsecT<E, I, M, A> =
-    object : ParsecT<E, I, M, A> {
-        override fun <Z> runParser(
-            state: State<I>,
-            consumedOk: (A, State<I>) -> Kind<M, Z>,
-            consumedError: (ParsecError<E>, State<I>) -> Kind<M, Z>,
-            emptyOk: (A, State<I>) -> Kind<M, Z>,
-            emptyError: (ParsecError<E>, State<I>) -> Kind<M, Z>
-        ): Kind<M, Z> = stream.run {
-            state.input.takeOne().fold({
-                // TODO error
-                emptyError(ParsecError.Trivial(), state)
-            }, { (tok, rem) ->
-                matcher(tok).fold({
-                    // TODO error
-                    emptyError(ParsecError.Trivial(), state)
-                }, { a ->
-                    consumedOk(a, State(rem, state.offset + 1))
-                })
-            })
-        }
-    }
-
-fun <E, I, EL, CHUNK, M> ptokens(chunk: CHUNK, stream: Stream<I, EL, CHUNK>): ParsecT<E, I, M, CHUNK> =
-    object : ParsecT<E, I, M, CHUNK> {
-        override fun <Z> runParser(
-            state: State<I>,
-            consumedOk: (CHUNK, State<I>) -> Kind<M, Z>,
-            consumedError: (ParsecError<E>, State<I>) -> Kind<M, Z>,
-            emptyOk: (CHUNK, State<I>) -> Kind<M, Z>,
-            emptyError: (ParsecError<E>, State<I>) -> Kind<M, Z>
-        ): Kind<M, Z> = stream.run {
-            state.input.take(chunk.size()).fold({
-                // TODO errors
-                emptyError(ParsecError.Trivial(), state)
-            }, { (cs, rem) ->
-                // TODO err
-                if (EQCHUNK().run { cs.eqv(chunk) }) State(rem, state.offset + cs.size()).let { newState ->
-                    if (chunk.isEmpty()) emptyOk(cs, newState)
-                    else consumedOk(cs, newState)
-                } else emptyError(ParsecError.Trivial(), state)
-            })
-        }
-    }
-
-fun <E, I, EL, CHUNK, M> ptakeWhile(matcher: (EL) -> Boolean, stream: Stream<I, EL, CHUNK>): ParsecT<E, I, M, CHUNK> =
-    object : ParsecT<E, I, M, CHUNK> {
-        override fun <Z> runParser(
-            state: State<I>,
-            consumedOk: (CHUNK, State<I>) -> Kind<M, Z>,
-            consumedError: (ParsecError<E>, State<I>) -> Kind<M, Z>,
-            emptyOk: (CHUNK, State<I>) -> Kind<M, Z>,
-            emptyError: (ParsecError<E>, State<I>) -> Kind<M, Z>
-        ): Kind<M, Z> = stream.run {
-            state.input.takeWhile(matcher).let { (res, rem) ->
-                State(rem, state.offset + res.size()).let { newState ->
-                    if (res.isEmpty()) emptyOk(res, newState)
-                    else consumedOk(res, newState)
-                }
-            }
-        }
-    }
-
-fun <E, I, EL, CHUNK, M> ptakeAtLeastOneWhile(
-    matcher: (EL) -> Boolean,
-    stream: Stream<I, EL, CHUNK>
-): ParsecT<E, I, M, CHUNK> = object : ParsecT<E, I, M, CHUNK> {
-    override fun <Z> runParser(
-        state: State<I>,
-        consumedOk: (CHUNK, State<I>) -> Kind<M, Z>,
-        consumedError: (ParsecError<E>, State<I>) -> Kind<M, Z>,
-        emptyOk: (CHUNK, State<I>) -> Kind<M, Z>,
-        emptyError: (ParsecError<E>, State<I>) -> Kind<M, Z>
-    ): Kind<M, Z> = stream.run {
-        state.input.takeWhile(matcher).let { (res, rem) ->
-            // TODO errors!
-            if (res.isEmpty()) emptyError(ParsecError.Trivial(), state)
-            else consumedOk(res, State(rem, state.offset + res.size()))
-        }
-    }
-}
-
-fun <E, I, EL, CHUNK, M> ptake(n: Int, stream: Stream<I, EL, CHUNK>): ParsecT<E, I, M, CHUNK> =
-    object : ParsecT<E, I, M, CHUNK> {
-        override fun <Z> runParser(
-            state: State<I>,
-            consumedOk: (CHUNK, State<I>) -> Kind<M, Z>,
-            consumedError: (ParsecError<E>, State<I>) -> Kind<M, Z>,
-            emptyOk: (CHUNK, State<I>) -> Kind<M, Z>,
-            emptyError: (ParsecError<E>, State<I>) -> Kind<M, Z>
-        ): Kind<M, Z> = stream.run {
-            state.input.take(n).fold({
-                // TODO err
-                emptyError(ParsecError.Trivial(), state)
-            }, { (chunk, rem) ->
-                // TODO err
-                if (chunk.size() != n) emptyError(ParsecError.Trivial(), state)
-                else consumedOk(chunk, State(rem, state.offset + chunk.size()))
-            })
-        }
-    }
-
-fun <E, I, M> pgetParserState(): ParsecT<E, I, M, State<I>> = object : ParsecT<E, I, M, State<I>> {
-    override fun <Z> runParser(
-        state: State<I>,
-        consumedOk: (State<I>, State<I>) -> Kind<M, Z>,
-        consumedError: (ParsecError<E>, State<I>) -> Kind<M, Z>,
-        emptyOk: (State<I>, State<I>) -> Kind<M, Z>,
-        emptyError: (ParsecError<E>, State<I>) -> Kind<M, Z>
-    ): Kind<M, Z> = emptyOk(state, state)
-}
-
-fun <E, I, M> pupdateParserState(f: (State<I>) -> State<I>): ParsecT<E, I, M, Unit> = object : ParsecT<E, I, M, Unit> {
-    override fun <Z> runParser(
-        state: State<I>,
-        consumedOk: (Unit, State<I>) -> Kind<M, Z>,
-        consumedError: (ParsecError<E>, State<I>) -> Kind<M, Z>,
-        emptyOk: (Unit, State<I>) -> Kind<M, Z>,
-        emptyError: (ParsecError<E>, State<I>) -> Kind<M, Z>
-    ): Kind<M, Z> = emptyOk(Unit, f(state))
-}
-
 // TODO monadplus
 interface MonadParsec<E, I, EL, CHUNK, M> : Monad<M>, Alternative<M> {
     fun SI(): Stream<I, EL, CHUNK>
+
+    fun <A> Kind<M, A>.label(str: String): Kind<M, A>
+
+    fun <A> Kind<M, A>.hidden(): Kind<M, A> = label("")
 
     fun <A> Kind<M, A>.tryP(): Kind<M, A>
 
@@ -506,90 +574,35 @@ interface MonadParsec<E, I, EL, CHUNK, M> : Monad<M>, Alternative<M> {
 
     fun <A> Kind<M, A>.notFollowedBy(): Kind<M, Unit>
 
-    fun <A> Kind<M, A>.withRecovery(h: (ParsecError<E>) -> Kind<M, A>): Kind<M, A>
+    fun <A> Kind<M, A>.withRecovery(h: (ParsecError<E, EL>) -> Kind<M, A>): Kind<M, A>
 
-    fun <A> Kind<M, A>.observing(): Kind<M, Either<ParsecError<E>, A>>
+    fun <A> Kind<M, A>.observing(): Kind<M, Either<ParsecError<E, EL>, A>>
 
     fun eof(): Kind<M, Unit>
 
-    fun <A> token(matcher: (EL) -> Option<A>): Kind<M, A>
+    fun <A> token(expected: Set<ErrorItem<EL>>, matcher: (EL) -> Option<A>): Kind<M, A>
 
     fun tokens(chunk: CHUNK): Kind<M, CHUNK>
 
-    fun takeWhile(matcher: (EL) -> Boolean): Kind<M, CHUNK>
+    fun takeWhile(label: Option<String>, matcher: (EL) -> Boolean): Kind<M, CHUNK>
 
-    fun takeAtLeastOneWhile(matcher: (EL) -> Boolean): Kind<M, CHUNK>
+    fun takeAtLeastOneWhile(label: Option<String>, matcher: (EL) -> Boolean): Kind<M, CHUNK>
 
-    fun take(n: Int): Kind<M, CHUNK>
+    fun take(label: Option<String>, n: Int): Kind<M, CHUNK>
 
     fun getParserState(): Kind<M, State<I>>
 
     fun updateParserState(f: (State<I>) -> State<I>): Kind<M, Unit>
 
-    fun <A> Kind<M, A>.optional(): Kind<M, Option<A>>
-}
-
-// TODO why is this not generated?
-fun <E, I, EL, CHUNK, M> ParsecT.Companion.monadParsec(stream: Stream<I, EL, CHUNK>): ParsecTMonadParsec<E, I, EL, CHUNK, M> =
-    object : ParsecTMonadParsec<E, I, EL, CHUNK, M> {
-        override fun SI(): Stream<I, EL, CHUNK> = stream
-    }
-
-@extension
-interface ParsecTMonadParsec<E, I, EL, CHUNK, M> : MonadParsec<E, I, EL, CHUNK, ParsecTPartialOf<E, I, M>>,
-    ParsecMonad<E, I, M>, ParsecAlternative<E, I, M> {
-
-    override fun SI(): Stream<I, EL, CHUNK>
-
-    override fun <A, B> Kind<ParsecTPartialOf<E, I, M>, A>.ap(ff: Kind<ParsecTPartialOf<E, I, M>, (A) -> B>): Kind<ParsecTPartialOf<E, I, M>, B> =
-        fix().ap(ff.fix())
-
-    override fun <A> just(a: A): Kind<ParsecTPartialOf<E, I, M>, A> = ParsecT.just(a)
-
-    override fun eof(): Kind<ParsecTPartialOf<E, I, M>, Unit> = peof(SI())
-    override fun <A> Kind<ParsecTPartialOf<E, I, M>, A>.lookAhead(): Kind<ParsecTPartialOf<E, I, M>, A> =
-        fix().plookAhead()
-
-    override fun <A> Kind<ParsecTPartialOf<E, I, M>, A>.notFollowedBy(): Kind<ParsecTPartialOf<E, I, M>, Unit> =
-        fix().pnotFollowedBy()
-
-    override fun <A> Kind<ParsecTPartialOf<E, I, M>, A>.observing(): Kind<ParsecTPartialOf<E, I, M>, Either<ParsecError<E>, A>> =
-        fix().pobserving()
-
-    override fun take(n: Int): Kind<ParsecTPartialOf<E, I, M>, CHUNK> = ptake(n, SI())
-    override fun takeAtLeastOneWhile(matcher: (EL) -> Boolean): Kind<ParsecTPartialOf<E, I, M>, CHUNK> =
-        ptakeAtLeastOneWhile(matcher, SI())
-
-    override fun takeWhile(matcher: (EL) -> Boolean): Kind<ParsecTPartialOf<E, I, M>, CHUNK> = ptakeWhile(matcher, SI())
-    override fun <A> token(matcher: (EL) -> Option<A>): Kind<ParsecTPartialOf<E, I, M>, A> =
-        ptoken(matcher, SI())
-
-    override fun <A> Kind<ParsecTPartialOf<E, I, M>, A>.tryP(): Kind<ParsecTPartialOf<E, I, M>, A> =
-        fix().ptryP()
-
-    override fun <A> Kind<ParsecTPartialOf<E, I, M>, A>.withRecovery(h: (ParsecError<E>) -> Kind<ParsecTPartialOf<E, I, M>, A>): Kind<ParsecTPartialOf<E, I, M>, A> =
-        fix().pwithRecovery(h andThen { it.fix() })
-
-    override fun tokens(chunk: CHUNK): Kind<ParsecTPartialOf<E, I, M>, CHUNK> =
-        ptokens(chunk, SI())
-
-    override fun getParserState(): Kind<ParsecTPartialOf<E, I, M>, State<I>> =
-        pgetParserState()
-
-    override fun updateParserState(f: (State<I>) -> State<I>): Kind<ParsecTPartialOf<E, I, M>, Unit> =
-        pupdateParserState(f)
-
-    // TODO arrow pr
-    override fun <A> Kind<ParsecTPartialOf<E, I, M>, A>.optional(): Kind<ParsecTPartialOf<E, I, M>, Option<A>> =
-        map { it.some() }.orElse(just(None))
+    fun <A> Kind<M, A>.optional(): Kind<M, Option<A>> = map { it.some() }.orElse(just(None))
 }
 
 // combinators
 fun <E, I, EL, CHUNK, M> MonadParsec<E, I, EL, CHUNK, M>.single(el: EL): Kind<M, EL> =
-    token { it.some().filter { SI().EQEL().run { el.eqv(it) } } }
+    token(setOf(ErrorItem.Tokens(Nel(el)))) { it.some().filter { SI().EQEL().run { el.eqv(it) } } }
 
 fun <E, I, EL, CHUNK, M> MonadParsec<E, I, EL, CHUNK, M>.satisfy(p: (EL) -> Boolean): Kind<M, EL> =
-    token { it.some().filter(p) }
+    token(emptySet()) { it.some().filter(p) }
 
 fun <E, I, EL, CHUNK, M> MonadParsec<E, I, EL, CHUNK, M>.anySingle(): Kind<M, EL> = satisfy { true }
 
@@ -606,5 +619,5 @@ fun <E, I, EL, CHUNK, M> MonadParsec<E, I, EL, CHUNK, M>.chunk(chunk: CHUNK): Ki
     tokens(chunk)
 
 fun <E, I, EL, CHUNK, M> MonadParsec<E, I, EL, CHUNK, M>.takeRemaining(): Kind<M, CHUNK> =
-    takeWhile { true }
+    takeWhile(None) { true }
 
