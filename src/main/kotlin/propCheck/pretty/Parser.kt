@@ -5,9 +5,12 @@ import arrow.core.extensions.id.monad.monad
 import arrow.extension
 import arrow.typeclasses.Eq
 import arrow.typeclasses.Show
+import kparsec.KParsecT
+import kparsec.fix
+import kparsec.string.*
+import kparsec.takeRemaining
 import pretty.*
-import propCheck.pretty.parse.*
-import propCheck.pretty.parse.string.*
+import pretty.space
 
 sealed class KValue {
     data class RawString(val s: String) : KValue()
@@ -83,12 +86,7 @@ typealias Parser<A> = KParsecT<Nothing, String, Char, ForId, A>
 fun parser() = KParsecT.monadParsec<Nothing, String, Char, String, ForId>(String.stream(), Id.monad())
 
 // Top level parser
-fun outputParser(): Parser<KValue> =
-    listParser()
-        .orElse(recordParser())
-        .orElse(tupleParser())
-        .orElse(consParser())
-        .orElse(rawStringParser())
+fun outputParser(): Parser<KValue> = valueParser { true }
 
 fun valueParser(pred: (Char) -> Boolean): Parser<KValue> = parser().run {
     listParser()
@@ -99,8 +97,6 @@ fun valueParser(pred: (Char) -> Boolean): Parser<KValue> = parser().run {
         .orElse(signedLong(decimal()).map { KValue.Decimal(it) }).fix()
         .orElse(stringValueParser(pred)).fix()
 }
-
-var c = 0
 
 fun listParser(): Parser<KValue> = parser().run {
     unit().fix().flatMap {
@@ -141,12 +137,12 @@ fun <A> Parser<A>.between(start: Char, end: Char): Parser<A> = parser().run {
     }.fix()
 }
 
-fun <A> Parser<A>.withSeparator(sep: Char): Parser<SequenceK<A>> = parser().run {
+fun <A> Parser<A>.withSeparator(sep: Char): Parser<List<A>> = parser().run {
     fx.monad {
-        val seq = this@withSeparator.effectM { char(sep).label("$sep").followedBy(space()) }.many().bind()
+        val seq = this@withSeparator.apTap(char(sep).label("$sep").followedBy(space())).many().bind().toList()
         val last = this@withSeparator.optional().bind()
 
-        last.fold({ seq }, { (seq + sequenceOf(it)).k() })
+        last.fold({ seq }, { (seq + listOf(it)).k() })
     }.fix()
 }
 

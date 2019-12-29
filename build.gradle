@@ -17,6 +17,7 @@ repositories {
     jcenter()
     maven { url 'https://oss.jfrog.org/artifactory/oss-snapshot-local' }
     maven { url 'https://dl.bintray.com/jannis/kotlin-pretty' }
+    maven { url 'https://dl.bintray.com/jannis/kparsec' }
 }
 
 apply plugin: 'kotlin-kapt'
@@ -40,6 +41,7 @@ dependencies {
     implementation "io.arrow-kt:arrow-mtl:$arrow_version" // StateT, Reader, Writer...
     implementation "io.arrow-kt:arrow-recursion:$arrow_version" // Recursion schemes
     implementation "kotlin-pretty:kotlin-pretty:0.3.5" // Pretty printing diffs
+    implementation "kparsec:kparsec:0.1" // Parser combinators to create toString-output parser
 
     testImplementation("io.kotlintest:kotlintest-runner-junit5:3.4.2") {
         exclude group: "io.arrow-kt"

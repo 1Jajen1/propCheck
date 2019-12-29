@@ -9,10 +9,10 @@ import arrow.extension
 import arrow.recursion.typeclasses.Birecursive
 import arrow.syntax.collections.tail
 import arrow.typeclasses.Functor
+import kparsec.State
 import pretty.*
 import propCheck.pretty.kvalue.eq.eq
 import propCheck.pretty.kvalue.show.show
-import propCheck.pretty.parse.State
 import propCheck.pretty.valuediff.birecursive.birecursive
 import propCheck.pretty.valuedifff.functor.functor
 
