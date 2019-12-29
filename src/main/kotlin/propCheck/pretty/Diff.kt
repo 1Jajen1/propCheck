@@ -207,7 +207,7 @@ fun ValueDiff.toLineDiff(): Doc<DiffType> = ValueDiff.birecursive().run {
                             .annotate(DiffType.Added))
             else -> cata<Doc<DiffType>> {
                 when (val vd = it.fix()) {
-                    is ValueDiffF.ValueD -> TODO()
+                    is ValueDiffF.ValueD -> vd.l.doc<DiffType>().group().annotate(DiffType.Removed).lineBreak(vd.r.doc<DiffType>().group().annotate(DiffType.Added))
                     // value is the same, use KValue's pretty printer
                     is ValueDiffF.Same -> vd.v.doc()
                     is ValueDiffF.ValueDAdded -> vd.v.doc<DiffType>().group().annotate(DiffType.Added)

@@ -377,14 +377,12 @@ interface KParsecTMonadParsec<E, I, EL, CHUNK, M> : MonadParsec<E, I, EL, CHUNK,
             it.input.takeWhile(matcher).let { (chunk, rem) ->
                 if (chunk.isEmpty()) MM().just(
                     ParserState.EmptyOk<E, EL, CHUNK>(chunk, Hints.empty()) toT State(
-                        rem,
-                        it.offset + chunk.size()
+                        rem, it.offset + chunk.size()
                     )
                 )
                 else MM().just(
                     ParserState.ConsumedOk<E, EL, CHUNK>(chunk, Hints.empty()) toT State(
-                        rem,
-                        it.offset + chunk.size()
+                        rem, it.offset + chunk.size()
                     )
                 )
             }
@@ -437,7 +435,7 @@ interface KParsecTMonadParsec<E, I, EL, CHUNK, M> : MonadParsec<E, I, EL, CHUNK,
                     ) toT it
                 )
             }, { (c, rem) ->
-                if (c.size() != chunk.size()) MM().just(
+                if (c.size() != chunk.size() || SI().EQCHUNK().run { c.neqv(chunk) }) MM().just(
                     ParserState.EmptyError<E, EL, CHUNK>(
                         ParsecError.Trivial(
                             it.offset,
@@ -525,15 +523,17 @@ sealed class ParsecError<E, T> {
         val lOff = offset()
         val rOff = other.offset()
 
-        return if (lOff < rOff) other
-        else if (lOff > rOff) this
-        else when (this) {
-            is Trivial -> when (other) {
-                is Trivial -> Trivial(
-                    offset,
-                    unexpectedTokens.or(other.unexpectedTokens),
-                    expectedTokens.union(other.expectedTokens)
-                )
+        return when {
+            lOff < rOff -> other
+            lOff > rOff -> this
+            else -> when (this) {
+                is Trivial -> when (other) {
+                    is Trivial -> Trivial(
+                        offset,
+                        unexpectedTokens.or(other.unexpectedTokens),
+                        expectedTokens.union(other.expectedTokens)
+                    )
+                }
             }
         }
     }
