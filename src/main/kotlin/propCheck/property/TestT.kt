@@ -2,22 +2,25 @@ package propCheck.property
 
 import arrow.Kind
 import arrow.core.*
-import arrow.core.extensions.listk.monoid.monoid
 import arrow.extension
 import arrow.mtl.EitherT
 import arrow.mtl.WriterT
 import arrow.mtl.WriterTPartialOf
-import arrow.mtl.extensions.eithert.alternative.orElse
 import arrow.mtl.extensions.writert.applicative.applicative
 import arrow.mtl.extensions.writert.functor.functor
 import arrow.mtl.extensions.writert.monad.monad
 import arrow.mtl.value
 import arrow.typeclasses.*
 import pretty.*
+import pretty.symbols.colon
 import propCheck.arbitrary.GenT
 import propCheck.arbitrary.GenTPartialOf
 import propCheck.arbitrary.gent.applicative.applicative
 import propCheck.arbitrary.gent.functor.functor
+import propCheck.pretty.ValueDiffF
+import propCheck.pretty.diff
+import propCheck.pretty.toDoc
+import propCheck.property.log.monoid.monoid
 
 // ---------------------------- TestT
 typealias Test<A> = TestT<ForId, A>
@@ -37,11 +40,12 @@ data class TestT<M, A>(val runTestT: EitherT<WriterTPartialOf<M, Log>, Failure, 
 
     fun <B> map(MM: Monad<M>, f: (A) -> B): TestT<M, B> = TestT(runTestT.map(WriterT.monad(MM, Log.monoid()), f))
 
-    fun <B> ap(MM: Monad<M>, ff: TestT<M, (A) -> B>): TestT<M, B> = TestT(runTestT.ap(WriterT.monad(MM, Log.monoid()), ff.runTestT))
+    fun <B> ap(MM: Monad<M>, ff: TestT<M, (A) -> B>): TestT<M, B> =
+        TestT(runTestT.ap(WriterT.monad(MM, Log.monoid()), ff.runTestT))
 
     companion object {
         fun <M, A> just(MM: Monad<M>, a: A): TestT<M, A> =
-            TestT(EitherT.just(WriterT.applicative(MM, Log.monoid<JournalEntry>()), a))
+            TestT(EitherT.just(WriterT.applicative(MM, Log.monoid()), a))
     }
 }
 
@@ -68,10 +72,10 @@ interface TestTMonad<M> : Monad<TestTPartialOf<M>> {
     fun MM(): Monad<M>
 
     override fun <A> just(a: A): Kind<TestTPartialOf<M>, A> =
-        TestT(EitherT.just(WriterT.applicative(MM(), ListK.monoid<JournalEntry>()), a))
+        TestT(EitherT.just(WriterT.applicative(MM(), Log.monoid()), a))
 
     override fun <A, B> Kind<TestTPartialOf<M>, A>.flatMap(f: (A) -> Kind<TestTPartialOf<M>, B>): Kind<TestTPartialOf<M>, B> =
-        TestT(fix().runTestT.flatMap(WriterT.monad(MM(), ListK.monoid()), f andThen { it.fix().runTestT }))
+        TestT(fix().runTestT.flatMap(WriterT.monad(MM(), Log.monoid()), f andThen { it.fix().runTestT }))
 
     override fun <A, B> tailRecM(a: A, f: (A) -> Kind<TestTPartialOf<M>, Either<A, B>>): Kind<TestTPartialOf<M>, B> =
         f(a).flatMap {
@@ -91,25 +95,30 @@ interface TestTMonadTest<M> : MonadTest<TestTPartialOf<M>>, TestTMonad<M> {
 }
 
 fun <M, A> GenT<M, A>.lift(MM: Monad<M>): TestT<GenTPartialOf<M>, A> = TestT(
-    EitherT.liftF<WriterTPartialOf<GenTPartialOf<M>, Log>, Failure, A>(WriterT.functor(GenT.functor(MM)), WriterT.liftF(this@lift, ListK.monoid(), GenT.applicative(MM)))
+    EitherT.liftF<WriterTPartialOf<GenTPartialOf<M>, Log>, Failure, A>(
+        WriterT.functor(GenT.functor(MM)),
+        WriterT.liftF(this@lift, Log.monoid(), GenT.applicative(MM))
+    )
 )
 
 // TODO refractor when https://github.com/arrow-kt/arrow/pull/1767 is merged
-fun <M, A>Test<A>.hoist(MM: Monad<M>): TestT<M, A> = TestT(EitherT(WriterT(MM.just(runTestT.value().value().value()))))
+fun <M, A> Test<A>.hoist(MM: Monad<M>): TestT<M, A> = TestT(EitherT(WriterT(MM.just(runTestT.value().value().value()))))
 
 fun <M, A> Kind<M, Tuple2<Log, Either<Failure, A>>>.toTestT(): TestT<M, A> = TestT(EitherT(WriterT(this)))
 
 fun <A> Tuple2<Log, Either<Failure, A>>.toTest(): Test<A> = Id(this).toTestT()
 
-interface MonadTest<M>: Monad<M> {
+interface MonadTest<M> : Monad<M> {
 
     fun <A> Test<A>.liftTest(): Kind<M, A>
 
     fun writeLog(l: JournalEntry): Kind<M, Unit> =
-        (ListK.just(l) toT Unit.right()).toTest().liftTest()
+        (Log(ListK.just(l)) toT Unit.right()).toTest().liftTest()
+
+    fun failWith(msg: String): Kind<M, Unit> = failWith(msg.doc())
 
     fun failWith(msg: Doc<Markup>): Kind<M, Unit> =
-        (ListK.empty<JournalEntry>() toT Failure(msg).left())
+        (Log(ListK.empty()) toT Failure(msg).left())
             .toTest().liftTest()
 
     fun annotate(msg: () -> Doc<Markup>): Kind<M, Unit> =
@@ -120,7 +129,7 @@ interface MonadTest<M>: Monad<M> {
 
     fun failException(e: Exception): Kind<M, Unit> =
         failWith(
-            "Exception:".text<Markup>() softLine (e.message?.doc() ?: nil())
+            "Exception:".text() softLine (e.message?.doc() ?: nil())
         )
 
     fun failure(): Kind<M, Unit> = failWith(nil())
@@ -131,12 +140,29 @@ interface MonadTest<M>: Monad<M> {
         if (b) succeeded()
         else failure()
 
+    fun <A> diff(a: A, other: A, SA: Show<A> = Show.any(), cmp: (A, A) -> Boolean): Kind<M, Unit> =
+        if (cmp(a, other)) succeeded()
+        else failWith(SA.run {
+            val diff = a.show().diff(other.show())
+
+            when (diff.unDiff) {
+                is ValueDiffF.Same -> "━━━ Failed (no differences) ━━━".text() +
+                        hardLine() + diff.toDoc()
+                else -> {
+                    // Not sure if this overloading of Markup.Result.Failed is good, but for now it works
+                    "━━━ Failed (".text() +
+                            "- lhs".text().annotate(Markup.Result.Failed) +
+                            " =/= ".text() +
+                            "+ rhs".text().annotate(Markup.Result.Success) +
+                            ") ━━━".text() +
+                            hardLine() + diff.toDoc()
+                }
+            }
+        })
+
     fun <A> A.eqv(other: A, EQA: Eq<A> = Eq.any(), SA: Show<A> = Show.any()): Kind<M, Unit> =
-        if (EQA.run { this@eqv.eqv(other) }) succeeded()
-        else failWith("$this is not $other".text()) // TODO better message with diff
+        diff(this, other, SA) { a, b -> EQA.run { a.eqv(b) } }
 
     fun <A> A.neqv(other: A, EQA: Eq<A> = Eq.any(), SA: Show<A> = Show.any()): Kind<M, Unit> =
-        if (EQA.run { this@neqv.neqv(other) }) succeeded()
-        else failWith("Equal, but expected not to".text())
-
+        diff(this, other, SA) { a, b -> EQA.run { a.neqv(b) } }
 }

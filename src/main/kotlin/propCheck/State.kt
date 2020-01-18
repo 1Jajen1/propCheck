@@ -43,7 +43,7 @@ data class StateMachine<M, S, A, R, SUT>(
     val invariant: Invariant<S>,
     val transition: Transition<S, A>,
     val executeAction: (A, SUT) -> Kind<M, R>,
-    val sut: () -> Kind<M, SUT>
+    val sut: Kind<M, SUT>
 )
 
 internal fun <M, S, A, R, SUT> commandGen(
@@ -51,13 +51,13 @@ internal fun <M, S, A, R, SUT> commandGen(
     currState: S
 ): Gen<List<A>> = GenT.monadGen(Id.monad()).run {
     sized { sz ->
-        if (sz == 0) GenT.just(Id.monad(), emptyList())
+        if (sz.unSize == 0) GenT.just(Id.monad(), emptyList())
         else fx.monad {
             val (optCommands) = sm.cmdGen(currState).fromGenT().filter {
                 it.fold({ true }, { sm.preCondition(currState, it) && sm.invariant(sm.transition(currState, it)) })
             }
             optCommands.fold({ emptyList<A>() }, {
-                listOf(it) + commandGen(sm, sm.transition(currState, it)).fromGenT().resize(sz - 1).bind()
+                listOf(it) + commandGen(sm, sm.transition(currState, it)).fromGenT().resize(Size(sz.unSize - 1)).bind()
             })
         }
     }.fix()
@@ -105,11 +105,11 @@ fun <M, S, A, R, SUT> execSeq(
     MM: Monad<M>,
     postCondition: PostCondition<S, A, R, M>
 ): PropertyT<M, Unit> = PropertyT.propertyTestM(MM).fx.monad {
-    val (cmds) = forAll(commandGen(sm, sm.initialState), MM)
+    val cmds = forAll(commandGen(sm, sm.initialState), MM).bind()
 
-    val (sut) = PropertyT.lift(MM, sm.sut())
+    val sut = PropertyT.lift(MM, sm.sut).bind()
 
-    val (results) = PropertyT.lift(MM, executeActions(cmds, sut, MM, sm.executeAction))
+    val results = PropertyT.lift(MM, executeActions(cmds, sut, MM, sm.executeAction)).bind()
 
     checkResults(results, sm.initialState, postCondition, sm.invariant, sm.transition, MM).a.bind()
 }.fix()
@@ -127,7 +127,7 @@ fun <M, S, A, R, SUT> parGen(sm: StateMachine<M, S, A, R, SUT>, maxThreads: Int)
                     prefix,
                     (0 until threads).map {
                         pathGen.resize( // TODO short hand for sized(::identity)
-                            int(0..sized { Gen.just(Id.monad(), it) }.bind()).bind() / threads
+                            Size(int(0..sized { Gen.just(Id.monad(), it.unSize) }.bind()).bind() / threads)
                         ).bind()
                     }
                 )
@@ -149,8 +149,8 @@ fun <M, S, A, R, SUT> execPar(
 ): PropertyT<M, Unit> = PropertyT.propertyTestM(MM).fx.monad {
     val (prefix, paths) = forAll(parGen(sm, max(maxThreads, 2)), MM).bind()
 
-    val (sut) = PropertyT.lift(MM, sm.sut())
-    val (prefixResult) = PropertyT.lift(MM, executeActions(prefix, sut, MM, sm.executeAction))
+    val sut = PropertyT.lift(MM, sm.sut).bind()
+    val prefixResult = PropertyT.lift(MM, executeActions(prefix, sut, MM, sm.executeAction)).bind()
 
     val (prefixRes, state) = checkResults(
         prefixResult, sm.initialState, postCondition,
@@ -162,19 +162,20 @@ fun <M, S, A, R, SUT> execPar(
 
     // check parallel actions
     // TODO check if this is actually parallel for IO, for other Concurrent instances idc, their responsibility
-    val (pathResults) = PropertyT.lift(
+    val pathResults = PropertyT.lift(
         MM, MM.run {
             paths.parTraverse {
                 executeActions(it, sut, MM, sm.executeAction).map { it.asSequence() }
             }
         }
-    )
+    ).bind()
 
     // TODO annotate failures properly, probably needs to be done inside recurGo
     recurGo(pathResults, state, sm.invariant, sm.transition, postCondition, MM).bind()
 }.fix()
 
-// TODO where is the recursion scheme?!
+// TODO where is the recursion scheme?! Can this be redone using traverse or something? it should now work better ^^
+// The scheme is a rose tree structure where each node represents (State, Res) and the branches are next states
 internal fun <M, S, A, R> recurGo(
     list: List<Sequence<Tuple2<A, R>>>,
     state: S,

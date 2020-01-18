@@ -7,10 +7,14 @@ import arrow.typeclasses.Eq
 import arrow.typeclasses.Show
 import kparsec.KParsecT
 import kparsec.fix
+import kparsec.stream
 import kparsec.string.*
 import kparsec.takeRemaining
 import pretty.*
-import pretty.space
+import pretty.symbols.*
+import propCheck.UseColor
+import propCheck.render
+import kotlin.math.min
 
 sealed class KValue {
     data class RawString(val s: String) : KValue()
@@ -21,59 +25,76 @@ sealed class KValue {
     data class Record(val name: String, val kv: List<Tuple2<String, KValue>>) : KValue()
     data class Cons(val name: String, val props: List<KValue>) : KValue()
 
-    fun <A> doc(): Doc<A> = when (this) {
+    fun doc(): Doc<Nothing> = when (this) {
         is RawString -> s.doc()
         is Decimal -> l.doc()
         is Rational -> r.doc()
-        is KList -> vals.map { it.doc<A>() }.newLineList().group()
-        is KTuple -> vals.map { it.doc<A>() }.newLineTupled().group()
-        is Record -> name.text<A>() softLineBreak
-                (kv.map { (k, v) ->
-                    (k.text<A>() spaced equals<A>() + space() + v.doc()).group()
-                }).newLineTupled()
-                    .nest(name.length)
-        is Cons -> name.text<A>() softLineBreak
-                (props.map { it.doc<A>().group() })
+        is KList -> vals.map { it.doc() }.newLineList().align()
+        is KTuple -> vals.map { it.doc() }.newLineTupled().align()
+        is Record -> {
+            val max = min(10, kv.maxBy { it.a.length }?.a?.length ?: 0)
+            name.text() +
+                    (kv.map { (k, v) ->
+                        (k.text().fillBreak(max).flatAlt(k.text()) spaced equals() spaced v.doc().align()).align()
+                    }).newLineTupled().align()
+        }
+        is Cons -> name.text() softLineBreak
+                (props.map { it.doc().align() })
                     .newLineTupled()
-                    .nest(name.length)
-                    .group()
+                    .align()
     }
 
-    private fun <A> List<Doc<A>>.newLineTupled() = this.encloseSep(
-        (lParen<A>() + space()).flatAlt(lParen()),
-        (lineBreak<A>() + rParen()).flatAlt(rParen()),
-        comma<A>() + space()
-    )
+    private fun <A> List<Doc<A>>.newLineTupled() =
+        // Special case this because here the highest layout for [] is actually [\n\n]
+        //  and in the worst case that will get chosen
+        if (isEmpty()) lParen() + rParen()
+        else encloseSep(
+            lParen() + lineBreak() + (space() + space()).flatAlt(nil()),
+            lineBreak() + rParen(),
+            comma() + space()
+        ).group()
 
-    private fun <A> List<Doc<A>>.newLineList() = encloseSep(
-        (lBracket<A>() + space()).flatAlt(lBracket()),
-        (lineBreak<A>() + rBracket()).flatAlt(rBracket()),
-        comma<A>() + space()
-    )
+    private fun <A> List<Doc<A>>.newLineList() =
+        // Special case this because here the highest layout for [] is actually [\n\n]
+        //  and in the worst case that will get chosen
+        if (isEmpty()) lBracket() + rBracket()
+        else encloseSep(
+            lBracket() + lineBreak() + (space() + space()).flatAlt(nil()),
+            lineBreak() + rBracket(),
+            comma() + space()
+        ).group()
 
     companion object
 }
 
-data class Test(val l : Int, val r: Double, val e: List<Test>)
+data class Test(val llllllllllllllll: Int, val reee: Double, val e: List<Test>)
 
 fun main() {
     val d = Test(500, 0.175, emptyList())
     val c2 = Test(50, 0.75, listOf(Test(51100, 0.1756, emptyList())))
     val c = Test(50, 0.75, listOf(d, d, d, d, d, d, d, d))
     val b = Test(30, 0.5, listOf(c, c, c))
-    val a = Test(10, 0.10, listOf(b, b, b, b, b, c, d, d, d, c, b)).toString().also(::println)
+    val a = Test(10, 0.10, listOf(d, c2, d/*, b, b, b, c, d, d, d, c, b*/)).toString().also(::println)
 
     val h = "Hello World"
 
     // outputParser().runParsecT(State(a, 0)).fix().value()
-       // .also(::println)
+    // .also(::println)
 
-    c.toString().diff(c2.toString()).also(::println)
+    "1".diff("2")
+        .toDoc()
+        .indent(20)
+        .render(UseColor.EnableColor).also(::println)
+
+    a.toString().diff(c.toString())
+        .toDoc()
+        .indent(20)
+        .render(UseColor.EnableColor).also(::println)
 }
 
 @extension
 interface KValueShow : Show<KValue> {
-    override fun KValue.show(): String = doc<Nothing>().renderPretty().renderString()
+    override fun KValue.show(): String = doc().renderPretty().renderString()
 }
 
 @extension
@@ -107,7 +128,8 @@ fun listParser(): Parser<KValue> = parser().run {
 
 fun consParser(): Parser<KValue> = parser().run {
     takeAtLeastOneWhile("constructor name".some()) { it != '(' && it.isLetter() }
-        .flatMap { conName -> tupleParser().map { props -> KValue.Cons(conName, (props as KValue.KTuple).vals) }.fix() }.fix()
+        .flatMap { conName -> tupleParser().map { props -> KValue.Cons(conName, (props as KValue.KTuple).vals) }.fix() }
+        .fix()
 }
 
 fun recordParser(): Parser<KValue> = parser().run {

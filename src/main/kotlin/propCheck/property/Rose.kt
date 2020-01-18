@@ -203,6 +203,39 @@ interface RoseAlternative<M> : Alternative<RosePartialOf<M>>, RoseApplicative<M>
 }
 
 @extension
+interface RoseFunctorFilter<M> : FunctorFilter<RosePartialOf<M>>, RoseFunctor<M> {
+    override fun FM(): Functor<M> = MM()
+    fun MM(): Monad<M>
+    fun AM(): Alternative<M>
+
+    override fun <A, B> Kind<RosePartialOf<M>, A>.filterMap(f: (A) -> Option<B>): Kind<RosePartialOf<M>, B> =
+        Rose(MM().fx.monad {
+            val (x, xs) = fix().runRose.bind()
+            f(x).fold({ AM().empty<RoseF<B, Rose<M, B>>>().bind() }, { x1 ->
+                RoseF(x1, xs.map { it.filterMap(f).fix() })
+            })
+        })
+}
+
+@extension
+interface RoseMonadFilter<M> : MonadFilter<RosePartialOf<M>>, RoseFunctorFilter<M>, RoseMonad<M> {
+    override fun AM(): Alternative<M>
+    override fun MM(): Monad<M>
+
+    override fun <A> empty(): Kind<RosePartialOf<M>, A> = Rose.lift(MM(), AM().empty())
+    override fun <A, B> Kind<RosePartialOf<M>, A>.map(f: (A) -> B): Kind<RosePartialOf<M>, B> =
+        fix().map(MM(), f)
+
+    override fun <A, B> Kind<RosePartialOf<M>, A>.filterMap(f: (A) -> Option<B>): Kind<RosePartialOf<M>, B> =
+        Rose(MM().fx.monad {
+            val (x, xs) = fix().runRose.bind()
+            f(x).fold({ AM().empty<RoseF<B, Rose<M, B>>>().bind() }, { x1 ->
+                RoseF(x1, xs.map { it.filterMap(f).fix() })
+            })
+        })
+}
+
+@extension
 interface RoseBirecursive<M, A>: Birecursive<Rose<M, A>, Nested<M, RoseFPartialOf<A>>> {
     fun MM(): Monad<M>
     override fun FF(): Functor<Nested<M, RoseFPartialOf<A>>> =

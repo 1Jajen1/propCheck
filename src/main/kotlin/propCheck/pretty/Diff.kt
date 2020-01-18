@@ -3,18 +3,23 @@ package propCheck.pretty
 import arrow.Kind
 import arrow.core.*
 import arrow.core.extensions.fx
+import arrow.core.extensions.list.foldable.foldLeft
 import arrow.core.extensions.list.functor.map
 import arrow.core.extensions.list.functor.tupleLeft
+import arrow.core.extensions.list.monadFilter.filterMap
 import arrow.extension
 import arrow.recursion.typeclasses.Birecursive
 import arrow.syntax.collections.tail
 import arrow.typeclasses.Functor
-import kparsec.State
+import kparsec.runParser
 import pretty.*
+import pretty.ansistyle.monoid.monoid
+import pretty.symbols.*
 import propCheck.pretty.kvalue.eq.eq
-import propCheck.pretty.kvalue.show.show
 import propCheck.pretty.valuediff.birecursive.birecursive
 import propCheck.pretty.valuedifff.functor.functor
+import propCheck.property.Markup
+import kotlin.math.min
 
 class ForValueDiffF private constructor()
 typealias ValueDiffFOf<F> = Kind<ForValueDiffF, F>
@@ -22,15 +27,15 @@ typealias ValueDiffFOf<F> = Kind<ForValueDiffF, F>
 @Suppress("UNCHECKED_CAST", "NOTHING_TO_INLINE")
 inline fun <F> ValueDiffFOf<F>.fix(): ValueDiffF<F> = this as ValueDiffF<F>
 
-sealed class ValueDiffF<F> : ValueDiffFOf<F> {
+sealed class ValueDiffF<out F> : ValueDiffFOf<F> {
     // two values that are entirely different
-    data class ValueD<F>(val l: KValue, val r: KValue) : ValueDiffF<F>()
+    data class ValueD(val l: KValue, val r: KValue) : ValueDiffF<Nothing>()
 
     // a value was removed
-    data class ValueDRemoved<F>(val v: KValue) : ValueDiffF<F>()
+    data class ValueDRemoved(val v: KValue) : ValueDiffF<Nothing>()
 
     // a value was added
-    data class ValueDAdded<F>(val v: KValue) : ValueDiffF<F>()
+    data class ValueDAdded(val v: KValue) : ValueDiffF<Nothing>()
 
     // a tuple that contains at least one diff value that is not Same
     data class TupleD<F>(val vals: List<F>) : ValueDiffF<F>()
@@ -45,7 +50,7 @@ sealed class ValueDiffF<F> : ValueDiffFOf<F> {
     data class Cons<F>(val consName: String, val props: List<F>) : ValueDiffF<F>()
 
     // compared values were equal
-    data class Same<F>(val v: KValue) : ValueDiffF<F>()
+    data class Same(val v: KValue) : ValueDiffF<Nothing>()
 
     companion object
 }
@@ -92,19 +97,20 @@ infix fun KValue.toDiff(other: KValue): ValueDiff = (this toT other).let { (a, b
     }
 }
 
-fun diffMaps(a: List<Tuple2<String, KValue>>, b: List<Tuple2<String, KValue>>): List<Tuple2<String, ValueDiff>> = a.toMap().let { aMap ->
-    val diffOrAdd = b.map { (k, v) ->
-        if (aMap.containsKey(k)) k toT aMap.getValue(k).toDiff(v)
-        else k toT ValueDiff(ValueDiffF.ValueDAdded(v))
-    }.toMap()
+fun diffMaps(a: List<Tuple2<String, KValue>>, b: List<Tuple2<String, KValue>>): List<Tuple2<String, ValueDiff>> =
+    a.toMap().let { aMap ->
+        val diffOrAdd = b.map { (k, v) ->
+            if (aMap.containsKey(k)) k toT aMap.getValue(k).toDiff(v)
+            else k toT ValueDiff(ValueDiffF.ValueDAdded(v))
+        }.toMap()
 
-    val diffOrRemove = a.map { (k, v) ->
-        if (diffOrAdd.containsKey(k)) k toT diffOrAdd[k]!!
-        else k toT ValueDiff(ValueDiffF.ValueDRemoved(v))
+        val diffOrRemove = a.filterMap { (k, v) ->
+            if (diffOrAdd.containsKey(k)) None
+            else (k to ValueDiff(ValueDiffF.ValueDRemoved(v))).some()
+        }
+
+        (diffOrAdd.toList() + diffOrRemove).map { (k, v) -> k toT v }
     }
-
-    (diffOrAdd + diffOrRemove).toList().map { (k, v) -> k toT v }
-}
 
 // Myer's algorithm
 // Based on https://github.com/github/semantic/blob/master/src/Diffing/Algorithm/SES.hs
@@ -177,13 +183,21 @@ fun List<KValue>.diffOrderedLists(ls: List<KValue>): List<ValueDiff> {
         else -> searchToD(0, Array(2) { Endpoint(0, -1, emptyList()) })
     }.reversed()
 
-    return editScript.map {
-        when (it) {
-            is Edit.Add -> ValueDiff(ValueDiffF.ValueDAdded(it.a))
-            is Edit.Remove -> ValueDiff(ValueDiffF.ValueDRemoved(it.a))
-            is Edit.Compare -> it.l.toDiff(it.r)
-        }
+    fun Edit.toValueDiff(): ValueDiff = when (this) {
+        is Edit.Add -> ValueDiff(ValueDiffF.ValueDAdded(a))
+        is Edit.Remove -> ValueDiff(ValueDiffF.ValueDRemoved(a))
+        is Edit.Compare -> l.toDiff(r)
     }
+
+    return if (editScript.size >= 2) {
+        val fst = editScript[0]
+        val snd = editScript[1]
+        if (fst is Edit.Remove && snd is Edit.Add) {
+            listOf(
+                ValueDiff(ValueDiffF.ValueD(fst.a, snd.a))
+            ) + editScript.drop(2).map { it.toValueDiff() }
+        } else editScript.map { it.toValueDiff() }
+    } else editScript.map { it.toValueDiff() }
 }
 
 fun <T> Array<T>.safeGet(i: Int): Option<T> = when (i) {
@@ -194,143 +208,109 @@ fun <T> Array<T>.safeGet(i: Int): Option<T> = when (i) {
 sealed class DiffType {
     object Removed : DiffType() // Identifies a removed element
     object Added : DiffType() // Identifies an added element
+    object Same : DiffType()
 }
 
+/**
+ * This is quite the hack: In order to get proper prefixes and colors I am abusing some facts about
+ *  ValueDiffs. The catamorphism returns an annotation to add to the document + the prefix where the
+ *  newline (there has to be one for diffs) is added. This means the annotation includes both the newline
+ *  and the doc with the changes. This is later used by the custom renderMarkup method to remove a space
+ *  from the SimpleDoc.Line and insert a + or -. Because the resulting diff can be placed at any nested level
+ *  itself we must also add a Markup.Diff annotation that has the current column offset around the entire diff.
+ *  In the end this all allows diffs to be rendered properly anywhere.
+ */
 fun ValueDiff.toLineDiff(): Doc<DiffType> = ValueDiff.birecursive().run {
-    KValue.show().run {
-        when (val diff = this@toLineDiff.unDiff) {
-            // Treat top level value diffs special because the nested diff implementation assumes newlines that this does not have
-            is ValueDiffF.ValueD ->
-                (("-".text<DiffType>() + space() + diff.l.doc<DiffType>().group())
-                    .annotate(DiffType.Removed) +
-                        (hardLine<DiffType>() + space() + diff.r.doc<DiffType>().group())
-                            .annotate(DiffType.Added))
-            else -> cata<Doc<DiffType>> {
+    when (val diff = this@toLineDiff.unDiff) {
+        // Treat top level value diffs special because the nested diff implementation assumes newlines that this does not have
+        is ValueDiffF.ValueD ->
+            // This is the only place where we need to manually add a prefix because this cannot
+            //  elevate the annotation to the previous newline
+            ("-".text() spaced diff.l.doc()).annotate(DiffType.Removed) +
+                    (hardLine() spaced diff.r.doc()).annotate(DiffType.Added)
+        is ValueDiffF.Same -> diff.v.doc()
+        else ->
+            cata<Tuple2<DiffType, Doc<DiffType>>> {
                 when (val vd = it.fix()) {
-                    is ValueDiffF.ValueD -> vd.l.doc<DiffType>().group().annotate(DiffType.Removed).lineBreak(vd.r.doc<DiffType>().group().annotate(DiffType.Added))
+                    is ValueDiffF.ValueD ->
+                        DiffType.Removed toT (vd.l.doc() + (hardLine() + vd.r.doc()).annotate(DiffType.Added))
                     // value is the same, use KValue's pretty printer
-                    is ValueDiffF.Same -> vd.v.doc()
-                    is ValueDiffF.ValueDAdded -> vd.v.doc<DiffType>().group().annotate(DiffType.Added)
-                    is ValueDiffF.ValueDRemoved -> vd.v.doc<DiffType>().group().annotate(DiffType.Removed)
+                    is ValueDiffF.Same -> DiffType.Same toT vd.v.doc()
+                    is ValueDiffF.ValueDAdded -> DiffType.Added toT vd.v.doc()
+                    is ValueDiffF.ValueDRemoved -> DiffType.Removed toT vd.v.doc()
                     // everything below contains a diff, that's why custom tuple/list methods are used that are always vertical without group
-                    is ValueDiffF.TupleD -> vd.vals.map { it.nest(1) }.tupledNested()
-                    is ValueDiffF.ListD -> vd.vals.map { it.nest(1) }.listNested()
-                    is ValueDiffF.Cons -> vd.consName.text<DiffType>() +
+                    is ValueDiffF.TupleD -> DiffType.Same toT vd.vals.tupledNested()
+                    is ValueDiffF.ListD -> DiffType.Same toT vd.vals.listNested()
+                    is ValueDiffF.Cons -> DiffType.Same toT (vd.consName.text() +
                             vd.props
-                                .map { it.nest(1) }
                                 .tupledNested()
-                                .nest(vd.consName.length)
-                    is ValueDiffF.Record -> vd.conName.text<DiffType>() +
-                            vd.props
-                                .map { it.a.text<DiffType>() + space() + equals() + space() + it.b.nest(it.a.length + 4) }
-                                .map { it.nest(1) }
-                                .tupledNested()
-                                .nest(vd.conName.length)
+                                .align()
+                            )
+                    is ValueDiffF.Record -> {
+                        val max = min(10, vd.props.maxBy { it.a.length }?.a?.length ?: 0)
+                        DiffType.Same toT (vd.conName.text() +
+                                vd.props
+                                    .map { (name, it) ->
+                                        val (pre, doc) = it
+                                        if (name.length > max)
+                                            DiffType.Same toT (name.text() + (lineBreak().nest(max) spaced equals() spaced doc.align()).annotate(
+                                                pre
+                                            )).align()
+                                        else pre toT (name.text().fill(max) spaced equals() spaced doc.align()).align()
+                                    }
+                                    .tupledNested()
+                                    .align())
+                    }
                 }
-            }.indent(1)
-        }
+            }.b.indent(1) // save space for +/- // This also ensures the layout algorithm is optimal
     }
 }
 
-fun <A> List<Doc<A>>.listNested(): Doc<A> =
+fun <A> List<Tuple2<A, Doc<A>>>.listNested(): Doc<A> =
     encloseSepVert(
-        lBracket<A>() + line() + space() + space(),
-        lineBreak<A>() + rBracket(),
-        comma<A>() + space()
+        lBracket(),
+        hardLine() + rBracket(),
+        comma() + space()
     )
 
-fun <A> List<Doc<A>>.tupledNested(): Doc<A> =
+fun <A> List<Tuple2<A, Doc<A>>>.tupledNested(): Doc<A> =
     encloseSepVert(
-        lParen<A>() + line() + space() + space(),
-        lineBreak<A>() + rParen(),
-        comma<A>() + space()
+        lParen(),
+        hardLine() + rParen(),
+        comma() + space()
     )
 
-fun <A> List<Doc<A>>.encloseSepVert(l: Doc<A>, r: Doc<A>, sep: Doc<A>): Doc<A> = when {
+fun <A> List<Tuple2<A, Doc<A>>>.encloseSepVert(l: Doc<A>, r: Doc<A>, sep: Doc<A>): Doc<A> = when {
     isEmpty() -> l + r
-    size == 1 -> l + first() + r
-    else -> ((listOf(l toT this.first()) + this.tail().tupleLeft(sep)).map { (a, b) -> a + b }
-        .vCat() + r).align()
+    size == 1 -> l + first().let { (t, doc) -> (hardLine() + doc).annotate(t) }.align() + r
+    else -> l + ((listOf((hardLine() + space() + space()) toT this.first()) + this.tail().tupleLeft(sep))
+        .map { (a, b) -> b.a toT (a + b.b.align()) }
+        .let { xs ->
+            if (xs.size == 1) xs.first().let { (ann, d) -> d.annotate(ann) }
+            else xs.tail().foldLeft(xs.first().let { (ann, d) -> d.annotate(ann) }) { acc, (ann, d) ->
+                (acc + (hardLine() + d).annotate(ann))
+            }
+        } + r).align()
 }
 
-operator fun <A> SimpleDoc<A>.plus(other: SimpleDoc<A>): SimpleDoc<A> = cata {
-    when (it) {
-        is SimpleDocF.Nil -> other
-        else -> SimpleDoc(it)
-    }
+infix fun String.diff(str: String): ValueDiff {
+    val lhs = outputParser().runParser("", this).fold({
+        KValue.RawString(this)
+    }, ::identity)
+    val rhs = outputParser().runParser("", str).fold({
+        KValue.RawString(str)
+    }, ::identity)
+
+    return lhs.toDiff(rhs)
 }
 
-fun SimpleDoc<DiffType>.expandDiff(): SimpleDoc<DiffType> =
-    cata<DiffType, (SimpleDoc<DiffType>, SimpleDoc<DiffType>, Boolean) -> SimpleDoc<DiffType>> {
-        { prefix, lastLinePre, inDiff ->
-            when (val dF = it) {
-                is SimpleDocF.Fail -> throw IllegalStateException("Encountered Fail in simple-doc. Please report this.")
-                is SimpleDocF.Line ->
-                    // add to prefix if we are in a diff, if not add to lastLinePrefix
-                    if (inDiff) prefix + dF.doc(SimpleDoc.line(dF.i, SimpleDoc.nil()), lastLinePre, inDiff)
-                    else dF.doc(prefix + lastLinePre, SimpleDoc.line(dF.i, SimpleDoc.nil()), inDiff)
-                is SimpleDocF.Text ->
-                    // if we are in diff, add the text to the prefix, if not add it to lastLinePrefix
-                    if (inDiff) dF.doc(prefix + SimpleDoc.text(dF.str, SimpleDoc.nil()), lastLinePre, inDiff)
-                    else dF.doc(prefix, lastLinePre + SimpleDoc.text(dF.str, SimpleDoc.nil()), inDiff)
-                is SimpleDocF.Nil -> prefix + lastLinePre
-                is SimpleDocF.AddAnnotation -> when (dF.ann) {
-                    is DiffType.Added -> (if (inDiff) SimpleDoc.nil() else prefix) + SimpleDoc.addAnnotation(
-                        dF.ann,
-                        dF.doc(SimpleDoc.nil(), lastLinePre, false)
-                    )
-                    is DiffType.Removed -> (if (inDiff) SimpleDoc.nil() else prefix) + SimpleDoc.addAnnotation(
-                        dF.ann,
-                        (if (inDiff) prefix else lastLinePre) +
-                                dF.doc(SimpleDoc.nil(), lastLinePre, true)
-                    )
-                }
-                is SimpleDocF.RemoveAnnotation -> prefix + (if (inDiff) SimpleDoc.nil() else lastLinePre) + SimpleDoc.removeAnnotation(
-                    dF.doc(SimpleDoc.nil(), if (inDiff) lastLinePre else SimpleDoc.nil(), inDiff)
-                )
+fun ValueDiff.toDoc(): Doc<Markup> =
+    column { cc ->
+        toLineDiff().alterAnnotations {
+            when (it) {
+                is DiffType.Removed -> listOf(Markup.DiffRemoved(cc))
+                is DiffType.Added -> listOf(Markup.DiffAdded(cc))
+                is DiffType.Same -> emptyList()
             }
         }
-    }.invoke(SimpleDoc.nil(), SimpleDoc.nil(), false)
-
-sealed class LineStatus {
-    object Same : LineStatus()
-    object Removed : LineStatus()
-    object Added : LineStatus()
-}
-
-fun SimpleDoc<DiffType>.layoutColored(): String = cata<DiffType, (NonEmptyList<LineStatus>) -> String> {
-    { annotations ->
-        when (it) {
-            is SimpleDocF.Fail -> throw IllegalStateException("Encountered fail in simple doc! Report this please.")
-            is SimpleDocF.Nil -> ""
-            is SimpleDocF.Text -> it.str + it.doc(annotations)
-            is SimpleDocF.Line -> (when (annotations.head) {
-                is LineStatus.Same -> "\n" + spaces(it.i)
-                is LineStatus.Removed -> "\n-" + spaces(it.i - 1)
-                is LineStatus.Added -> "\n+" + spaces(it.i - 1)
-            }) + it.doc(annotations)
-            is SimpleDocF.AddAnnotation -> when (it.ann) {
-                is DiffType.Removed -> "\u001b[31m" + it.doc(Nel(LineStatus.Removed, annotations.all))
-                is DiffType.Added -> "\u001b[32m" + it.doc(Nel(LineStatus.Added, annotations.all))
-            }
-            is SimpleDocF.RemoveAnnotation ->
-                "\u001b[0m" + it.doc(Nel.fromListUnsafe(annotations.tail))
-        }
-    }
-}(Nel.of(LineStatus.Same))
-
-// TODO simplify
-infix fun String.diff(str: String): String =
-    outputParser().runParsecT(State(this, 0)).value().fold({
-        TODO()
-    }, { a ->
-        outputParser().runParsecT(State(str, 0)).value().fold({
-            TODO()
-        }, { b ->
-            (a toDiff b)
-                .toLineDiff()
-                .renderPretty()
-                .expandDiff()
-                .layoutColored()
-        })
-    })
+    }.annotate(Markup.Diff)

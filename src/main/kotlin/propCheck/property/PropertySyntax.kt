@@ -7,6 +7,7 @@ import arrow.core.Id
 import arrow.core.extensions.id.monad.monad
 import arrow.fx.ForIO
 import arrow.fx.IO
+import arrow.fx.IOOf
 import arrow.fx.extensions.io.monad.monad
 import arrow.typeclasses.Monad
 import arrow.typeclasses.MonadContinuation
@@ -34,6 +35,8 @@ fun property(propertyConfig: PropertyConfig = PropertyConfig(), c: suspend Prope
 
 interface PropertyTestSyntax : MonadSyntax<PropertyTPartialOf<ForIO>>, PropertyTest<ForIO> {
     override fun MM(): Monad<ForIO> = IO.monad()
+
+    suspend fun <A> IO<A>.bind(): A = PropertyT.lift(IO.monad(), this).bind()
 }
 
 class PropertyTestContinuation<A> : MonadContinuation<PropertyTPartialOf<ForIO>, A>(

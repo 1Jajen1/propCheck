@@ -1,31 +1,28 @@
 package propCheck
 
-import arrow.Kind
 import arrow.core.*
 import arrow.core.extensions.id.traverse.traverse
-import arrow.core.extensions.list.foldable.traverse_
-import arrow.core.extensions.option.monad.flatten
-import arrow.core.extensions.sequence.foldable.firstOption
-import arrow.core.extensions.sequence.traverse.traverse
+import arrow.core.extensions.list.functorFilter.filterMap
+import arrow.core.extensions.sequence.foldable.foldRight
 import arrow.fx.ForIO
 import arrow.fx.IO
 import arrow.fx.extensions.fx
 import arrow.fx.extensions.io.applicative.applicative
 import arrow.fx.extensions.io.functor.functor
+import arrow.fx.extensions.io.functor.unit
 import arrow.fx.extensions.io.monad.monad
 import arrow.fx.fix
 import arrow.mtl.OptionT
 import arrow.mtl.OptionTPartialOf
 import arrow.mtl.value
-import arrow.recursion.AlgebraM
 import arrow.recursion.elgotM
 import arrow.recursion.hyloC
-import arrow.typeclasses.Monad
-import arrow.typeclasses.Traverse
+import pretty.doc
 import propCheck.arbitrary.RandSeed
+import propCheck.arbitrary.Range
+import propCheck.arbitrary.clamp
 import propCheck.arbitrary.fix
-import propCheck.arbitrary.printTree
-import propCheck.arbitrary.toFunction
+import propCheck.pretty.clearConsole
 import propCheck.property.*
 import propCheck.property.Failure
 import propCheck.property.rosef.functor.functor
@@ -51,170 +48,321 @@ import kotlin.random.Random
  * - Gradle test runner won't be too easy to get right I think
  * - running ank automatically? maybe add a lambda function to compile and run kotlin code?
  *
- * Schedule:
- * 1. 24.11
- * 2. 25.11
- * 3. 27.11
- * 4.1. research 30.11 + new goal when thats done
- * 5.2. 8.12
- * 5. 15.12
- * 6. 29.12
- * 7. 6.1.20
+ * New Grand Plan:
+ * - Running tests:
+ *  - short circuit, which means the IO of a failed prop should throw (or use EitherT and later IO<E, A> to signal errors)
+ *  - define recheck better + add some note that recheck won't work when the generator or the property changes
+ *  - redo pretty printed output
+ * - function gens
+ *  - write Function and Coarbitrary instances for all relevant types
+ *  - pretty print functions
+ * - state machine testing
+ *  - rewrite using rec-scheme
+ *  - pretty print results
+ * - writing gens
+ *  - bind overload for `ForId` gens inside `M` genT's.
+ *  - shorthand to get into `MonadGen`
+ *  - pretty print generated values
+ *  - finish missing gens + methods
+ * - writing properties
+ *  - look into autobinding eqv/neqv or provide should like syntax which autobinds
+ *  - same for success/discard etc
+ *  - provide effect {} for IO properties
+ * - shrinking
+ *  - implement shrink retries
+ *  - pretty print shrink-trees/gens
+ * - toString() output pretty printer
+ *  - move to new lib to allow independent use
+ * - diffing
+ *  - algorithms could use some improvements to readability
+ * - helpers
+ *  - kotlin receiver syntax magic to define tests
+ * - write a bunch of tests and try to notice flaws
+ *  - Write tests for propCheck itself
+ *  - Do a 0.10 release and write tests for the prettyprinter, kparsec and the toString output one
  */
 
+/*
+ TODO Shrinking is too slow for the clamp test
+
+ */
 fun main() {
-    propCheckIO(
-        property {
-            // TODO implement Range.linear and use that for ranges instead
-            //  Or even better, interpret ranges as a function max(start + step * size, end)
-            val (l, r) = !forAll {
-                tupled(int(0..10), int(0..10))
-            }
+    checkNamed(Config(UseColor.EnableColor, Verbose.Quiet), "MyProp", property {
+        val (a, b) = !forAll { tupled(int(0..10), int(0..10)) }
 
-            !l.eqv(r)
-        },
-        property {
-            val i = !forAll {
-                int(0..100)
-            }
+        listOf(a).eqv(listOf(b)).bind()
+    }).unsafeRunSync()
 
-            if (i >= 5) !discard<Unit>()
-
-            if (i < 5) !succeeded()
-            else !failure()
-        },
-        property {
-            // TODO
+    val test = property {
+        val (b, bs) = !forAll {
+            choice(
+                map(
+                    long(Range.constant(0, Long.MIN_VALUE, Long.MAX_VALUE)),
+                    long(Range.constant(0, Long.MIN_VALUE, Long.MAX_VALUE))
+                ) { (l, r) -> l.toBigDecimal() * r.toBigDecimal() },
+                long(Range.constant(0, Long.MIN_VALUE, Long.MAX_VALUE)).map { it.toBigDecimal() }
+            ).product(
+                tupled(
+                    long(Range.constant(0, Long.MIN_VALUE, Long.MAX_VALUE)),
+                    long(Range.constant(0, Long.MIN_VALUE, Long.MAX_VALUE))
+                )
+            )
         }
-    ).unsafeRunSync()
+        val (l1, h1) = bs
+        val (l, h) = if (l1 > h1) h1 toT l1 else l1 toT h1
+
+        // TODO this is a good test to check coverage on
+
+        val r = b.clamp(l, h)
+        if (r < l || r >= h) !failWith("out of bounds".doc())
+    }
+
+    check(test).unsafeRunSync()
 }
 
-fun propCheckIO(vararg props: Property): IO<Unit> = IO.fx {
-    // execute every prop
-    !props.toList().traverse_(IO.applicative(), ::check)
+/**
+ * Running properties:
+ * Entry points: execPar/execSeq both take a config
+ *  - execPar has a max worker options which defaults to availableThreads
+ *  - both take a config which specifies pretty-print settings like ribbon- and max-width, color
+ *     other options are short-circuit on failure
+ *  - both run tests according to the config and accumulate results
+ *   - (ListK<Report>, Option<Report>) contains all necessary information, passed tests + optional failure
+ *    - at runtime I might want to use Either<Report, Unit> to have short-circuiting
+ *  - both call into lifecycle methods:
+ *   - I need some global state that tracks current running tests and stores their state
+ *   - Test can either be:
+ *      Scheduled(id: Int) // show as not yet running
+ *      Ignored(reason: String) // show greyed out as skipped
+ *      Running(iteration: Int) // show as running and update from 0..testLimit + some smart way to show discards
+ *      Shrinking(iteration: Int) // show as failed + shrinking with the shrunkAttempts without showing max, completion is non-det
+ *      GaveUp, Failed, Passed (all +report) // show properly
+ *    - These also mix well with gradle/intellij reporting
+ *  - Neither method actually prints directly to some accumulated console report, they only update the console
+ *   - Progress updates can be configured in the config (passing handle like IO methods)
+ *    - This means you can easily disable/enable different output handles
+ *  - Neither method throws on test failure, this behaviour can be added back by a combinator on exec*.withException()
+ * Other entry points:
+ *  - recheck runs a single property with a specified seed and size (maybe integrate it with execSeq, execPar)
+ *
+ * execSeq:
+ * - traverse { p -> genSeed().flatTap { s -> p.checkProperty(s) }.lift() // lift into EitherT<WriterT> }
+ *  - Property.checkProperty(seed: RandSeed, hooks: Hooks): IO<Report>
+ *   - update lifecycle hook scheduled -> running(0)
+ *   - setup start state and unfold using elgotM with IO
+ *    - the fold just unpacks the Id into IO
+ *    - unfold:
+ *     - update lifecycle hook Running(numTests + 1)
+ *     - stop if any stop condition was reached
+ *      - maxTests: lifecycle hook Passed(report)
+ *      - gaveUp: lifecycle hook GaveUp(report)
+ *     - run a single test
+ *      - failed:
+ *       - update lifecycle hook Shrinking(0)
+ *       - start shrinking
+ *        - setup shrink state
+ *        - elgotM
+ *         - unfold:
+ *          - update lifecycle hook Shrinking(numShrinks + 1)
+ *          - run a single shrink it
+ *       - update lifecycle hook Failed(report)
+ *       - return shrunk result
+ *      - success:
+ *       - recur
+ *
+ * execPar:
+ *  Same as traverse but singular test runs are run in parallel
+ * exec* overfloads that take [(String, Prop)], [(String, [Prop])] and [(String, [(String, Prop])]
+ *  - those denote named properties, grouped properties and named grouped properties.
+ *  - There is also the guarantee that execPar will execute props in a group sequentially
+ */
 
-    TODO()
-}
+fun check(propertyConfig: PropertyConfig = PropertyConfig(), c: suspend PropertyTestSyntax.() -> Unit): IO<Boolean> =
+    check(property(propertyConfig, c))
 
-fun check(prop: Property): IO<Report> = IO.fx {
-    val seed = !IO { RandSeed(Random.nextLong()) }
-    val rep = !runProperty(0, seed, prop)
 
-    println(renderReport(rep))
+fun check(config: Config, propertyConfig: PropertyConfig = PropertyConfig(), c: suspend PropertyTestSyntax.() -> Unit): IO<Boolean> =
+    check(config, property(propertyConfig, c))
 
-    rep
-}
+fun check(prop: Property): IO<Boolean> =
+    detectConfig().flatMap { check(it, prop) }
 
-fun recheck(size: Int, seed: RandSeed, prop: Property): IO<Unit> = IO.fx {
-    val report = !runProperty(size, seed, prop)
-}
+fun check(config: Config, prop: Property): IO<Boolean> = check(config, None, prop)
 
+
+fun recheck(size: Size, seed: RandSeed, prop: Property): IO<Unit> =
+    detectConfig().flatMap { recheck(it, size, seed, prop) }
+
+fun recheck(size: Size, seed: RandSeed, propertyConfig: PropertyConfig = PropertyConfig(), c: suspend PropertyTestSyntax.() -> Unit): IO<Unit> =
+    recheck(size, seed, property(propertyConfig, c))
+
+fun recheck(config: Config, size: Size, seed: RandSeed, propertyConfig: PropertyConfig = PropertyConfig(), c: suspend PropertyTestSyntax.() -> Unit): IO<Unit> =
+    recheck(config, size, seed, property(propertyConfig, c))
+
+fun recheck(config: Config, size: Size, seed: RandSeed, prop: Property): IO<Unit> =
+    check(seed, size, config, None, prop).unit()
+
+fun checkNamed(name: String, propertyConfig: PropertyConfig = PropertyConfig(), c: suspend PropertyTestSyntax.() -> Unit): IO<Boolean> =
+    checkNamed(name, property(propertyConfig, c))
+
+fun checkNamed(name: String, prop: Property): IO<Boolean> =
+    detectConfig().flatMap { check(it, PropertyName(name).some(), prop) }
+
+
+fun checkNamed(config: Config, name: String, propertyConfig: PropertyConfig = PropertyConfig(), c: suspend PropertyTestSyntax.() -> Unit): IO<Boolean> =
+    check(config, PropertyName(name).some(), property(propertyConfig, c))
+
+fun checkNamed(config: Config, name: String, prop: Property): IO<Boolean> =
+    check(config, PropertyName(name).some(), prop)
+
+internal fun check(config: Config, name: Option<PropertyName>, prop: Property): IO<Boolean> =
+    IO { RandSeed(Random.nextLong()) }.flatMap {
+        check(it, Size(0), config, name, prop)
+    }
+
+internal fun check(seed: RandSeed, size: Size, config: Config, name: Option<PropertyName>, prop: Property): IO<Boolean> =
+    IO.fx {
+        val report = !runProperty(size, seed, prop) {
+            // TODO this needs to be in some terminal lib
+            // TODO check if when run by a gradle plugin this actually works
+            if (config.verbose is Verbose.Normal)
+                clearConsole().followedBy(IO { print(it.renderProgress(UseColor.EnableColor, name)) })
+            else IO.unit
+        }
+        // TODO better terminal support, this is quite meh
+        !clearConsole().followedBy(IO { print(report.renderResult(UseColor.EnableColor, name)) })
+        report.status is Result.Success
+    }.fix()
+
+// ---------------- Running a single property
 data class State(
     val numTests: Int,
     val numDiscards: Int,
-    val size: Int,
+    val size: Size,
     val seed: RandSeed
 )
 
-fun runProperty(initialSize: Int, initialSeed: RandSeed, prop: Property): IO<Report> =
+fun runProperty(
+    initialSize: Size,
+    initialSeed: RandSeed,
+    prop: Property,
+    hook: (Report<Progress>) -> IO<Unit>
+): IO<Report<Result>> =
     State(0, 0, initialSize, initialSeed).elgotM({ IO.just(it.value()) }, { (numTests, numDiscards, size, seed) ->
-        when {
-            numTests >= prop.config.testLimit ->
-                IO.just(Report(numTests, numDiscards, Result.Success).left())
-            size > 99 ->
-                IO.just(Id(State(numTests, numDiscards, 0, seed)).right())
-            numDiscards >= prop.config.maxDiscardRatio * numTests.coerceAtLeast(prop.config.testLimit) ->
-                IO.just(Report(numTests, numDiscards, Result.GivenUp).left())
-            else -> seed.split().let { (s1, s2) ->
-                IO.fx {
-                    val res = !prop.prop.unPropertyT.runTestT
-                        .value() // EitherT
-                        .value().fix() // WriterT
-                        .runGen(s1 toT size)
-                        .runRose
-                        .value() // OptionT
+        hook(Report(numTests, numDiscards, Progress.Running)).followedBy(
+            when {
+                numTests >= prop.config.testLimit.unTestLimit ->
+                    IO.just(Report(numTests, numDiscards, Result.Success).left())
+                size.unSize > 99 ->
+                    IO.just(Id(State(numTests, numDiscards, Size(0), seed)).right())
+                numDiscards >= prop.config.maxDiscardRatio.unDiscardRatio * numTests.coerceAtLeast(prop.config.testLimit.unTestLimit) ->
+                    IO.just(Report(numTests, numDiscards, Result.GivenUp).left())
+                else -> seed.split().let { (s1, s2) ->
+                    IO.fx {
+                        val res = !prop.prop.unPropertyT.runTestT
+                            .value() // EitherT
+                            .value().fix() // WriterT
+                            .runGen(s1 toT size)
+                            .runRose
+                            .value() // OptionT
 
-                    res.fold({
-                        // discard
-                        Id(State(numTests, numDiscards + 1, size + 1, s2)).right()
-                    }, { node ->
-                        node.res.let { (_, result) ->
-                            // shrink failure
-                            result.fold({
-                                val summary = !shrinkResult(
-                                    size,
-                                    seed,
-                                    prop.config.shrinkLimit,
-                                    prop.config.shrinkRetries,
-                                    Rose(OptionT.just(IO.applicative(), node))
-                                )
+                        res.fold({
+                            // discard
+                            Id(State(numTests, numDiscards + 1, Size(size.unSize + 1), s2)).right()
+                        }, { node ->
+                            node.res.let { (_, result) ->
+                                result.fold({
+                                    // shrink failure
+                                    val summary = !shrinkResult(
+                                        size,
+                                        seed,
+                                        prop.config.shrinkLimit.unShrinkLimit,
+                                        prop.config.shrinkRetries.unShrinkRetries,
+                                        Rose(OptionT.just(IO.applicative(), node))
+                                    ) { s ->
+                                        hook(
+                                            Report(
+                                                numTests + 1,
+                                                numDiscards,
+                                                Progress.Shrinking(s)
+                                            )
+                                        )
+                                    }
 
-                                Report(
-                                    numTests + 1,
-                                    numDiscards,
-                                    Result.Failure(
-                                        summary
-                                    )
-                                ).left()
-                            }, {
-                                // test success
-                                Id(State(numTests + 1, numDiscards, size + 1, s2)).right()
-                            })
-                        }
-                    })
+                                    Report(
+                                        numTests + 1,
+                                        numDiscards,
+                                        Result.Failure(
+                                            summary
+                                        )
+                                    ).left()
+                                }, {
+                                    // test success
+                                    Id(State(numTests + 1, numDiscards, Size(size.unSize + 1), s2)).right()
+                                })
+                            }
+                        })
+                    }
                 }
             }
-        }
+        )
     }, Id.traverse(), IO.monad()).fix()
 
+// rewrite because this is broken
 fun shrinkResult(
-    size: Int,
+    size: Size,
     seed: RandSeed,
     shrinkLimit: Int,
-    shrinkRetries: Int, // TODO
-    node: Rose<OptionTPartialOf<ForIO>, Tuple2<ListK<JournalEntry>, Either<Failure, Unit>>>
-): IO<FailureSummary> = node.hyloC<ForIO, RoseFPartialOf<Option<Tuple2<ListK<JournalEntry>, Either<Failure, Unit>>>>, Rose<OptionTPartialOf<ForIO>, Tuple2<ListK<JournalEntry>, Either<Failure, Unit>>>, (Int) -> IO<Option<FailureSummary>>>({ io ->
-    { numShrinks: Int ->
-        IO.fx {
-            val (res, shrinks) = io.bind().fix()
+    shrinkRetries: Int, // TODO with alternative or schedule
+    node: Rose<OptionTPartialOf<ForIO>, Tuple2<Log, Either<Failure, Unit>>>,
+    hook: (FailureSummary) -> IO<Unit>
+): IO<FailureSummary> =
+    // This needs a rewrite
+    node.hyloC<ForIO, RoseFPartialOf<Option<Tuple2<Log, Either<Failure, Unit>>>>, Rose<OptionTPartialOf<ForIO>, Tuple2<Log, Either<Failure, Unit>>>, (Int) -> IO<Option<FailureSummary>>>(
+        { io ->
+            { numShrinks: Int ->
+                IO.fx {
+                    val (res, shrinks) = io.bind().fix()
 
-            val a = res.filterMap { (logs, result) ->
-                result.swap().toOption().map { logs toT it }
-            }.map { (logs, result) ->
-                FailureSummary(
-                    size, seed, numShrinks,
-                    result.message,
-                    logs.filterMap { if (it is JournalEntry.Annotate) it.text().some() else None },
-                    logs.filterMap { if (it is JournalEntry.Footnote) it.text().some() else None }
-                )
+                    val a = res.filterMap { (logs, result) ->
+                        result.swap().toOption().map { logs toT it }
+                    }.map { (logs, result) ->
+                        FailureSummary(
+                            size, seed, numShrinks,
+                            result.unFailure,
+                            logs.unLog.filterMap { if (it is JournalEntry.Annotate) it.text().some() else None },
+                            logs.unLog.filterMap { if (it is JournalEntry.Footnote) it.text().some() else None }
+                        )
+                    }
+
+                    // this counts shrinks wrong, it tracks depth but not the actual amount of tried shrinks
+                    if (numShrinks >= shrinkLimit) a // vv TODO rewrite below with asum/choice once https://github.com/arrow-kt/arrow/pull/1897 is merged
+                    else shrinks.map { OptionT(it(numShrinks + 1)) }.foldRight<OptionT<ForIO, FailureSummary>, OptionT<ForIO, FailureSummary>>(
+                        Eval.now(OptionT(IO.just(none())))
+                    ) { v, acc ->
+                        Eval.later { v.orElse(IO.monad()) { acc.value() } }
+                    }.value().value().bind().or(a)
+                }
             }
-
-            if (numShrinks >= shrinkLimit) a
-            else shrinks.map { it(numShrinks + 1) }.lazyTakeFirst { it.isDefined() }.bind().flatten().or(a)
-        }
-    }
-}, {
-    // unfold Rose<OptionT<IO>, *> to Rose<IO, Option<*>> lazily
-    it.runRose
-        .value().fix()
-        .map {
-            it.fold({
-                RoseF<Option<Tuple2<ListK<JournalEntry>, Either<Failure, Unit>>>, Rose<OptionTPartialOf<ForIO>, Tuple2<ListK<JournalEntry>, Either<Failure, Unit>>>>(
-                    None,
-                    emptySequence()
-                )
-            }, {
-                RoseF(it.res.some(), it.shrunk)
-            })
-        }.fix()
-}, IO.functor(), RoseF.functor()).invoke(0).map { it.orNull()!! /* Safe because the first one is a failure anyway, we are guaranteed at least one good result */ }
-
-// traverse and firstOption is not available because both evaluate every element of the sequence
-fun <A>Sequence<IO<A>>.lazyTakeFirst(f: (A) -> Boolean): IO<Option<A>> =
-    when {
-        firstOrNull() != null -> first().flatMap { if (f(it)) IO.just(it.some()) else drop(1).lazyTakeFirst(f) }
-        else -> IO.just(None)
-    }
+        },
+        {
+            // unfold Rose<OptionT<IO>, *> to Rose<IO, Option<*>> lazily
+            it.runRose
+                .value().fix()
+                .map {
+                    it.fold({
+                        RoseF<Option<Tuple2<Log, Either<Failure, Unit>>>, Rose<OptionTPartialOf<ForIO>, Tuple2<Log, Either<Failure, Unit>>>>(
+                            None,
+                            emptySequence()
+                        )
+                    }, {
+                        RoseF(it.res.some(), it.shrunk)
+                    })
+                }.fix()
+        },
+        IO.functor(),
+        RoseF.functor()
+    ).invoke(0).map { it.orNull()!! /* Safe because the first one is a failure anyway, we are guaranteed at least one good result */ }
 
 /*
 /**

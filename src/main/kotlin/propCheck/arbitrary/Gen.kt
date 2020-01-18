@@ -10,7 +10,6 @@ import arrow.core.extensions.listk.functorFilter.filterMap
 import arrow.extension
 import arrow.mtl.OptionT
 import arrow.mtl.OptionTPartialOf
-import arrow.mtl.extensions.OptionTApplicative
 import arrow.mtl.extensions.optiont.alternative.alternative
 import arrow.mtl.extensions.optiont.applicative.applicative
 import arrow.mtl.extensions.optiont.functor.functor
@@ -20,18 +19,18 @@ import arrow.mtl.typeclasses.unnest
 import arrow.mtl.value
 import arrow.syntax.collections.tail
 import arrow.typeclasses.*
+import propCheck.arbitrary.gent.alternative.alternative
 import propCheck.arbitrary.gent.applicative.applicative
+import propCheck.arbitrary.gent.functor.functor
 import propCheck.arbitrary.gent.monad.map
 import propCheck.arbitrary.gent.monad.monad
-import propCheck.property.Rose
-import propCheck.property.fix
-import propCheck.property.hoist
-import propCheck.property.interleave
+import propCheck.property.*
 import propCheck.property.rose.alternative.alternative
 import propCheck.property.rose.alternative.orElse
 import propCheck.property.rose.applicative.applicative
 import propCheck.property.rose.birecursive.birecursive
 import propCheck.property.rose.monad.monad
+import propCheck.property.rose.monadFilter.filterMap
 import kotlin.random.Random
 
 // @higherkind boilerplate
@@ -50,7 +49,7 @@ typealias Gen<A> = GenT<ForId, A>
 /**
  * Datatype that modesl creation of a value based on a seed and a size parameter
  */
-class GenT<M, A>(val runGen: (Tuple2<RandSeed, Int>) -> Rose<OptionTPartialOf<M>, A>) : GenTOf<M, A> {
+class GenT<M, A>(val runGen: (Tuple2<RandSeed, Size>) -> Rose<OptionTPartialOf<M>, A>) : GenTOf<M, A> {
 
     fun <B> genMap(MF: Functor<M>, f: (A) -> B): GenT<M, B> =
         GenT(runGen andThen { r -> r.map(OptionT.functor(MF), f) })
@@ -60,7 +59,7 @@ class GenT<M, A>(val runGen: (Tuple2<RandSeed, Int>) -> Rose<OptionTPartialOf<M>
      *  is essential to good shrinking results. And tbh since we assume sameness by just size and same distribution in
      *  monad laws as well, we could consider this equal as well.
      */
-    fun <B> genAp(MA: Applicative<M>, ff: GenT<M, (A) -> B>): GenT<M, B> = GenT { (seed, size) ->
+    fun <B> genAp(MA: Monad<M>, ff: GenT<M, (A) -> B>): GenT<M, B> = GenT { (seed, size) ->
         val (l, r) = seed.split()
         Rose.applicative(OptionT.applicative(MA)).map(
             this@GenT.runGen(l toT size),
@@ -79,7 +78,7 @@ class GenT<M, A>(val runGen: (Tuple2<RandSeed, Int>) -> Rose<OptionTPartialOf<M>
     }
 
     companion object {
-        fun <M, A> just(MA: Applicative<M>, a: A): GenT<M, A> = GenT {
+        fun <M, A> just(MA: Monad<M>, a: A): GenT<M, A> = GenT {
             Rose.just(OptionT.applicative(MA), a)
         }
     }
@@ -111,6 +110,22 @@ interface GenTApplicative<M> : Applicative<GenTPartialOf<M>> {
 @extension
 interface GenTMonad<M> : Monad<GenTPartialOf<M>> {
     fun MM(): Monad<M>
+
+    // explicit overwrite so I do not use the monadic version here
+    override fun <A, B> Kind<GenTPartialOf<M>, A>.map(f: (A) -> B): Kind<GenTPartialOf<M>, B> =
+        GenT.functor(MM()).run { map(f) }
+
+    // explicit overwrite so I do not use the monadic version here
+    override fun <A, B> Kind<GenTPartialOf<M>, A>.followedBy(fb: Kind<GenTPartialOf<M>, B>): Kind<GenTPartialOf<M>, B> =
+        GenT.applicative(MM()).run { followedBy(fb) }
+
+    // explicit overwrite so I do not use the monadic version here
+    override fun <A, B> Kind<GenTPartialOf<M>, A>.apTap(fb: Kind<GenTPartialOf<M>, B>): Kind<GenTPartialOf<M>, A> =
+        GenT.applicative(MM()).run { apTap(fb) }
+
+    // explicit overwrite so I do not use the monadic version here
+    override fun <A, B> Kind<GenTPartialOf<M>, A>.lazyAp(ff: () -> Kind<GenTPartialOf<M>, (A) -> B>): Kind<GenTPartialOf<M>, B> =
+        fix().genAp(MM(), ff().fix())
 
     // explicit overwrite so I do not use the monadic version here
     override fun <A, B> Kind<GenTPartialOf<M>, A>.ap(ff: Kind<GenTPartialOf<M>, (A) -> B>): Kind<GenTPartialOf<M>, B> =
@@ -163,11 +178,19 @@ fun <M> GenT.Companion.monadGen(MM: Monad<M>): MonadGen<GenTPartialOf<M>, M> = o
     override fun MM(): Monad<GenTPartialOf<M>> = GenT.monad(MM)
     override fun <A> GenT<M, A>.fromGenT(): Kind<GenTPartialOf<M>, A> = this
     override fun <A> Kind<GenTPartialOf<M>, A>.toGenT(): GenT<M, A> = fix()
+    override fun <A, B> Kind<GenTPartialOf<M>, A>.map(f: (A) -> B): Kind<GenTPartialOf<M>, B> =
+        fix().genMap(BM(), f)
+    override fun <A, B> Kind<GenTPartialOf<M>, A>.ap(ff: Kind<GenTPartialOf<M>, (A) -> B>): Kind<GenTPartialOf<M>, B> =
+        fix().genAp(BM(), ff.fix())
     override fun <A, B> Kind<GenTPartialOf<M>, A>.flatMap(f: (A) -> Kind<GenTPartialOf<M>, B>): Kind<GenTPartialOf<M>, B> =
         MM().run { flatMap(f) }
     override fun <A> just(a: A): Kind<GenTPartialOf<M>, A> = MM().just(a)
     override fun <A, B> tailRecM(a: A, f: (A) -> Kind<GenTPartialOf<M>, Either<A, B>>): Kind<GenTPartialOf<M>, B> =
         MM().tailRecM(a, f)
+    override fun <A> empty(): Kind<GenTPartialOf<M>, A> = GenT.alternative(BM()).empty()
+    override fun <A> Kind<GenTPartialOf<M>, A>.orElse(b: Kind<GenTPartialOf<M>, A>): Kind<GenTPartialOf<M>, A> = GenT.alternative(BM()).run {
+        orElse(b.fix())
+    }
 }
 
 fun <M, A> Gen<A>.generalize(MM: Monad<M>): GenT<M, A> = GenT { (r, s) ->
@@ -183,7 +206,7 @@ fun <M, A> GenT.Companion.lift(ff: Functor<M>, fa: Kind<M, A>): GenT<M, A> = Gen
     Rose.lift(OptionT.functor(ff), OptionT.liftF(ff, fa))
 }
 
-interface MonadGen<M, B> : Monad<M> {
+interface MonadGen<M, B> : Monad<M>, MonadFilter<M>, Alternative<M> {
     fun MM(): Monad<M>
     fun BM(): Monad<B>
 
@@ -193,7 +216,7 @@ interface MonadGen<M, B> : Monad<M> {
     fun <A> Kind<M, A>.toGenT(): GenT<B, A>
 
     // generate values without shrinking
-    fun <A> generate(f: (RandSeed, Int) -> A): Kind<M, A> = GenT { (r, s) ->
+    fun <A> generate(f: (RandSeed, Size) -> A): Kind<M, A> = GenT { (r, s) ->
         Rose.just(roseM(), f(r, s))
     }.fromGenT()
 
@@ -209,21 +232,21 @@ interface MonadGen<M, B> : Monad<M> {
     }.fromGenT()
 
     // ----------- Size
-    fun <A> sized(f: (Int) -> Kind<M, A>): Kind<M, A> = MM().run {
+    fun <A> sized(f: (Size) -> Kind<M, A>): Kind<M, A> = MM().run {
         generate { _, s -> s }.flatMap(f)
     }
 
-    fun <A> Kind<M, A>.resize(i: Int): Kind<M, A> = scale { i }
+    fun <A> Kind<M, A>.resize(i: Size): Kind<M, A> = scale { i }
 
-    fun <A> Kind<M, A>.scale(f: (Int) -> Int): Kind<M, A> = GenT { (r, s) ->
+    fun <A> Kind<M, A>.scale(f: (Size) -> Size): Kind<M, A> = GenT { (r, s) ->
         val newSize = f(s)
-        if (newSize < 0) throw IllegalArgumentException("GenT.scaled. Negative size")
+        if (newSize.unSize < 0) throw IllegalArgumentException("GenT.scaled. Negative size")
         else toGenT().runGen(r toT newSize)
     }.fromGenT()
 
     fun <A> Kind<M, A>.small(): Kind<M, A> = scale(::golden)
 
-    fun golden(s: Int): Int = (s * 0.61803398875).toInt()
+    fun golden(s: Size): Size = Size((s.unSize * 0.61803398875).toInt())
 
     // ------- integral numbers
     fun long(range: Range<Long>): Kind<M, Long> =
@@ -389,7 +412,7 @@ interface MonadGen<M, B> : Monad<M> {
         rec: () -> List<Kind<M, A>>
     ): Kind<M, A> =
         sized { s ->
-            if (s <= 1) chooseFn(nonRec)
+            if (s.unSize <= 1) chooseFn(nonRec)
             else chooseFn(nonRec + rec().map { it.small() })
         }
 
@@ -404,12 +427,24 @@ interface MonadGen<M, B> : Monad<M> {
             else !discard<A>()
         }
 
-    fun <A> Kind<M, A>.filter(p: (A) -> Boolean): Kind<M, A> = TODO()
+    override fun <A, C> Kind<M, A>.filterMap(f: (A) -> Option<C>): Kind<M, C> {
+        fun t(k: Int): Kind<M, C> =
+            if (k > 100) discard()
+            else fx {
+                val (x, gen) = this@filterMap.scale { Size(2 * k + it.unSize) }.freeze().bind()
+                f(x).fold({ t(k + 1).bind() }, {
+                    gen.toGenT()
+                        .mapTree { it.filterMap(OptionT.alternative(BM()), OptionT.monad(BM()), f)  }
+                        .fromGenT().bind()
+                })
+            }
+        return t(0)
+    }
 
-    fun <A> Kind<M, A>.optional(): Kind<M, Option<A>> = sized { n ->
+    fun <A> Kind<M, A>.option(): Kind<M, Option<A>> = sized { n ->
         frequency(
             2 toT MM().just(None),
-            1 + n toT MM().run { this@optional.map { it.some() } }
+            1 + n.unSize toT MM().run { this@option.map { it.some() } }
         )
     }
 
@@ -425,7 +460,7 @@ interface MonadGen<M, B> : Monad<M> {
                     roseM().run {
                         r.runRose.flatMap {
                             it.res
-                                // TODO laziness when arrow is fixed for that
+                                // TODO laziness when arrow is fixed for that https://github.com/arrow-kt/arrow/pull/1900
                                 .traverse(OptionT.monad(BM())) { it.runRose }
                                 .map {
                                     it.fix().asSequence()
@@ -551,7 +586,7 @@ fun <A> Gen<A>.sample(): A {
         if (n <= 0) throw IllegalStateException("Gen.Sample too many discards")
         else {
             val seed = RandSeed(Random.nextLong())
-            val opt = this.runGen(seed toT 30).runRose
+            val opt = this.runGen(seed toT Size(30)).runRose
                 .value() // optionT
                 .value() // id
             when (opt) {
@@ -563,9 +598,9 @@ fun <A> Gen<A>.sample(): A {
 }
 
 fun <A> Gen<A>.print(SA: Show<A> = Show.any()): Unit =
-    printWith(30, RandSeed(Random.nextLong()), SA)
+    printWith(Size(30), RandSeed(Random.nextLong()), SA)
 
-fun <A> Gen<A>.printWith(size: Int, r: RandSeed, SA: Show<A> = Show.any()): Unit =
+fun <A> Gen<A>.printWith(size: Size, r: RandSeed, SA: Show<A> = Show.any()): Unit =
     this.runGen(r toT size).runRose
         .value() // optionT
         .value() // id
@@ -588,9 +623,9 @@ fun <A> Gen<A>.printWith(size: Int, r: RandSeed, SA: Show<A> = Show.any()): Unit
         })
 
 fun <A> Gen<A>.printTree(SA: Show<A> = Show.any()): Unit =
-    printTreeWith(30, RandSeed(Random.nextLong()), SA)
+    printTreeWith(Size(30), RandSeed(Random.nextLong()), SA)
 
-fun <A> Gen<A>.printTreeWith(size: Int, randSeed: RandSeed, SA: Show<A> = Show.any()) =
+fun <A> Gen<A>.printTreeWith(size: Size, randSeed: RandSeed, SA: Show<A> = Show.any()) =
     runGen(randSeed toT size)
         .let {
             Rose.birecursive<OptionTPartialOf<ForId>, A>(OptionT.monad(Id.monad())).run {
@@ -644,7 +679,7 @@ fun <A> Gen<A>.printTreeWith(size: Int, randSeed: RandSeed, SA: Show<A> = Show.a
 // TODO fix range 3 to 3
 fun main() {
     treeGen()
-        .printTreeWith(3, RandSeed(0))
+        .printTreeWith(Size(3), RandSeed(0))
 }
 
 sealed class Tree<A> {

@@ -2,14 +2,11 @@ package propCheck.property
 
 import arrow.Kind
 import arrow.core.Either
-import arrow.core.ForId
 import arrow.core.Id
 import arrow.core.extensions.id.monad.monad
 import arrow.core.extensions.listk.monoid.monoid
 import arrow.extension
 import arrow.fx.ForIO
-import arrow.fx.IO
-import arrow.fx.extensions.io.monad.monad
 import arrow.mtl.EitherT
 import arrow.mtl.WriterT
 import arrow.mtl.WriterTPartialOf
@@ -23,12 +20,9 @@ import propCheck.arbitrary.`fun`.show.show
 import propCheck.arbitrary.gent.alternative.orElse
 import propCheck.arbitrary.gent.functor.functor
 import propCheck.arbitrary.gent.monad.monad
-import propCheck.property.propertyt.monad.map
-import propCheck.property.propertyt.monad.monad
+import propCheck.property.log.monoid.monoid
 import propCheck.property.propertyt.monadTest.monadTest
-import propCheck.property.testt.monad.map
 import propCheck.property.testt.monad.monad
-import kotlin.coroutines.startCoroutine
 
 // -------------- Property
 
@@ -37,16 +31,16 @@ data class Property(val config: PropertyConfig, val prop: PropertyT<ForIO, Unit>
     fun mapConfig(f: (PropertyConfig) -> PropertyConfig): Property =
         copy(config = f(config))
 
-    fun withTestLimit(i: Int): Property =
+    fun withTestLimit(i: TestLimit): Property =
         mapConfig { PropertyConfig.testLimit.set(it, i) }
 
-    fun withDiscardLimit(i: Double): Property =
+    fun withDiscardLimit(i: DiscardRatio): Property =
         mapConfig { PropertyConfig.maxDiscardRatio.set(it, i) }
 
-    fun withShrinkLimit(i: Int): Property =
+    fun withShrinkLimit(i: ShrinkLimit): Property =
         mapConfig { PropertyConfig.shrinkLimit.set(it, i) }
 
-    fun withShrinkRetries(i: Int): Property =
+    fun withShrinkRetries(i: ShrinkRetries): Property =
         mapConfig { PropertyConfig.shrinkRetries.set(it, i) }
 
     companion object
@@ -63,7 +57,7 @@ typealias PropertyTPartialOf<M> = arrow.Kind<ForPropertyT, M>
 inline fun <M, A> PropertyTOf<M, A>.fix(): PropertyT<M, A> =
     this as PropertyT<M, A>
 
-class PropertyT<M, A>(val unPropertyT: TestT<GenTPartialOf<M>, A>) : PropertyTOf<M, A> {
+data class PropertyT<M, A>(val unPropertyT: TestT<GenTPartialOf<M>, A>) : PropertyTOf<M, A> {
 
     fun <B> map(MM: Monad<M>, f: (A) -> B): PropertyT<M, B> = PropertyT(unPropertyT.map(GenT.monad(MM), f))
 
