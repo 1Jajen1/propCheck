@@ -2,6 +2,7 @@ package propCheck
 
 import arrow.Kind
 import arrow.core.*
+import arrow.core.extensions.either.applicative.applicative
 import arrow.core.extensions.id.traverse.traverse
 import arrow.core.extensions.list.functorFilter.filterMap
 import arrow.core.extensions.sequence.foldable.foldRight
@@ -13,11 +14,18 @@ import arrow.fx.fix
 import arrow.mtl.OptionTPartialOf
 import arrow.mtl.value
 import arrow.recursion.elgotM
+import arrow.syntax.collections.tail
 import arrow.typeclasses.Functor
 import arrow.typeclasses.Monad
+import kparsec.renderPretty
+import kparsec.runParser
+import kparsec.stream
 import pretty.doc
+import pretty.pretty
+import pretty.renderPretty
+import pretty.renderString
 import propCheck.arbitrary.*
-import propCheck.pretty.clearConsole
+import propCheck.pretty.*
 import propCheck.property.*
 import propCheck.property.Failure
 import kotlin.random.Random
@@ -42,18 +50,14 @@ import kotlin.random.Random
  * - Gradle test runner won't be too easy to get right I think
  *
  * New Grand Plan:
- * - Running tests:
- *  - short circuit, which means the IO of a failed prop should throw (or use EitherT and later IO<E, A> to signal errors)
- * - function gens
- *  - write Function and Coarbitrary instances for all relevant types
- *  - pretty print functions
  * - state machine testing
  *  - rewrite using rec-scheme
  *  - pretty print results
+ * - Functions
+ *  - easier access to toFunction
  * - writing gens
  *  - bind overload for `ForId` gens inside `M` genT's.
  *  - shorthand to get into `MonadGen`
- *  - finish missing gens + methods
  * - writing properties
  *  - look into autobinding eqv/neqv or provide should like alternative syntax which autobinds
  *  - same for success/discard etc
@@ -68,17 +72,22 @@ import kotlin.random.Random
  *  - Do a 0.10 release and write tests for the prettyprinter, kparsec and the toString output one
  */
 fun main() {
-    checkNamed("MyProp", property {
-        val (a, b) = !forAll { tupled(int(0..10), int(0..10)) }
+    checkNamed("List.reverse", property {
+        val xs = !forAll { int(0..100).list(0..100) }
 
-        listOf(a, 1).neqv(listOf(b)).bind()
+        // TODO this is a bug in the parser, it should parse 0ö0 as string 0ö0 instead!
+        xs.map { it.toString() }.roundtrip({ "[" + it.joinToString("ö") + "]" }, {
+            listParser().runParser("", it)
+                .map { (it as KValue.KList); it.vals.map { it.doc().pretty() } }
+                .mapLeft { it.renderPretty(String.stream()) }
+        }, Either.applicative()).bind()
     }).unsafeRunSync()
 
     checkNamed("Option.map") {
         // TODO add special IdGen overload to forAll etc which offers the extra functions
         //  like filter, toFunction, etc
-        val f = !forAllFn { int(0..100).toGenT().toFunction(Int.func(), Int.coarbitrary()).fromGenT() }
         val opt = !forAll { int(0..100).option() }
+        val f = !forAllFn { int(0..100).toGenT().toFunction(Int.func(), Int.coarbitrary()).fromGenT() }
 
         opt.map(f).eqv(opt.fold({ None }, { f(it + 1).some() })).bind()
     }.unsafeRunSync()
@@ -170,7 +179,6 @@ fun main() {
 fun check(propertyConfig: PropertyConfig = PropertyConfig(), c: suspend PropertyTestSyntax.() -> Unit): IO<Boolean> =
     check(property(propertyConfig, c))
 
-
 fun check(
     config: Config,
     propertyConfig: PropertyConfig = PropertyConfig(),
@@ -215,7 +223,6 @@ fun checkNamed(
 
 fun checkNamed(name: String, prop: Property): IO<Boolean> =
     detectConfig().flatMap { check(it, PropertyName(name).some(), prop) }
-
 
 fun checkNamed(
     config: Config,

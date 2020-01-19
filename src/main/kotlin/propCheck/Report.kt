@@ -91,6 +91,7 @@ fun Report<Result>.prettyResult(name: Option<PropertyName>): Doc<Markup> = when 
             status.summary.pretty()
 }
 
+// TODO handle cases without annotations or footnotes better, they have excessive newlines atm
 fun FailureSummary.pretty(): Doc<Markup> = annotations.prettyAnnotations() line
         failureDoc line
         footnotes.map { it().annotate(Markup.Footnote) }.vSep()
@@ -127,10 +128,18 @@ fun Doc<Markup>.render(useColor: UseColor): String = alterAnnotations {
         is Markup.DiffRemoved -> listOf(
             Style.Prefix("-", it.offset), Style.Ansi(colorDull(Color.Red))
         )
-        is Markup.Result.Failed -> listOf(Style.Ansi(colorDull(Color.Red)))
+        is Markup.Result.Failed -> listOf(Style.Ansi(color(Color.Red)))
+        is Markup.Result.GaveUp -> listOf(Style.Ansi(colorDull(Color.Yellow)))
         is Markup.Result.Success -> listOf(Style.Ansi(colorDull(Color.Green)))
-        is Markup.Progress -> listOf(Style.Ansi(colorDull(Color.Red)))
+        is Markup.Progress.Shrinking -> listOf(Style.Ansi(color(Color.Red)))
         is Markup.Annotation -> listOf(Style.Ansi(colorDull(Color.Magenta)))
+        is Markup.Icon -> when (it.name) {
+            is IconType.Success -> listOf(Style.Ansi(colorDull(Color.Green)))
+            is IconType.Shrinking -> listOf(Style.Ansi(color(Color.Red)))
+            is IconType.GaveUp -> listOf(Style.Ansi(colorDull(Color.Yellow)))
+            is IconType.Failure -> listOf(Style.Ansi(color(Color.Red)))
+            else -> emptyList()
+        }
         else -> emptyList()
     }
     else when (it) {

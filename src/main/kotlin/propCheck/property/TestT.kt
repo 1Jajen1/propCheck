@@ -2,6 +2,9 @@ package propCheck.property
 
 import arrow.Kind
 import arrow.core.*
+import arrow.core.extensions.id.applicative.applicative
+import arrow.core.extensions.id.eq.eq
+import arrow.core.extensions.list.foldable.combineAll
 import arrow.extension
 import arrow.mtl.EitherT
 import arrow.mtl.WriterT
@@ -12,14 +15,15 @@ import arrow.mtl.extensions.writert.monad.monad
 import arrow.mtl.value
 import arrow.typeclasses.*
 import pretty.*
-import pretty.symbols.colon
 import propCheck.arbitrary.GenT
 import propCheck.arbitrary.GenTPartialOf
 import propCheck.arbitrary.gent.applicative.applicative
 import propCheck.arbitrary.gent.functor.functor
 import propCheck.pretty.ValueDiffF
 import propCheck.pretty.diff
+import propCheck.pretty.showPretty
 import propCheck.pretty.toDoc
+import propCheck.property.coverage.monoid.monoid
 import propCheck.property.log.monoid.monoid
 
 // ---------------------------- TestT
@@ -108,6 +112,23 @@ fun <M, A> Kind<M, Tuple2<Log, Either<Failure, A>>>.toTestT(): TestT<M, A> = Tes
 
 fun <A> Tuple2<Log, Either<Failure, A>>.toTest(): Test<A> = Id(this).toTestT()
 
+fun Log.coverage(): Coverage<CoverCount> =
+    unLog.filterIsInstance<JournalEntry.JournalLabel>().map {
+        val l = it.label
+        Coverage(
+            mapOf(
+                l.table to mapOf(
+                    l.name to Label(
+                        l.table,
+                        l.name,
+                        l.min,
+                        if (l.annotation) CoverCount(1) else CoverCount(0)
+                    )
+                )
+            )
+        )
+    }.combineAll(Coverage.monoid(CoverCount.semigroup()))
+
 interface MonadTest<M> : Monad<M> {
 
     fun <A> Test<A>.liftTest(): Kind<M, A>
@@ -126,6 +147,24 @@ interface MonadTest<M> : Monad<M> {
 
     fun footnote(msg: () -> Doc<Markup>): Kind<M, Unit> =
         writeLog(JournalEntry.Footnote(msg))
+
+    fun cover(p: Double, name: String, bool: Boolean): Kind<M, Unit> =
+        writeLog(JournalEntry.JournalLabel(Label(None, LabelName(name), CoverPercentage(p), bool)))
+
+    fun classify(name: String, bool: Boolean): Kind<M, Unit> =
+        cover(0.0, name, bool)
+
+    fun label(name: String): Kind<M, Unit> =
+        cover(0.0, name, true)
+
+    fun <A> A.collect(SA: Show<A> = Show.any()): Kind<M, Unit> =
+        cover(0.0, SA.run { show() }, true)
+
+    fun coverTable(table: String, p: Double, name: String, bool: Boolean): Kind<M, Unit> =
+        writeLog(JournalEntry.JournalLabel(Label(LabelTable(table).some(), LabelName(name), CoverPercentage(p), bool)))
+
+    fun tabulate(table: String, name: String): Kind<M, Unit> =
+        coverTable(table, 0.0, name, true)
 
     fun failException(e: Exception): Kind<M, Unit> =
         failWith(
@@ -151,9 +190,9 @@ interface MonadTest<M> : Monad<M> {
                 else -> {
                     // Not sure if this overloading of Markup.Result.Failed is good, but for now it works
                     "━━━ Failed (".text() +
-                            "- lhs".text().annotate(Markup.Result.Failed) +
+                            "- lhs".text().annotate(Markup.DiffRemoved(0)) +
                             " =/= ".text() +
-                            "+ rhs".text().annotate(Markup.Result.Success) +
+                            "+ rhs".text().annotate(Markup.DiffAdded(0)) +
                             ") ━━━".text() +
                             hardLine() + diff.toDoc()
                 }
@@ -165,4 +204,77 @@ interface MonadTest<M> : Monad<M> {
 
     fun <A> A.neqv(other: A, EQA: Eq<A> = Eq.any(), SA: Show<A> = Show.any()): Kind<M, Unit> =
         diff(this, other, SA) { a, b -> EQA.run { a.neqv(b) } }
+
+    // TODO check if either roundtripeffect and roundtrip can be unififed somehow without producing uglier output
+    fun <F, A, B> A.roundtrip(
+        encode: (A) -> B,
+        decode: (B) -> Kind<F, A>,
+        AP: Applicative<F>,
+        EQF: Eq<Kind<F, A>> = Eq.any(),
+        SFA: Show<Kind<F, A>> = Show.any(),
+        SB: Show<B> = Show.any()
+    ): Kind<M, Unit> {
+        val fa = AP.just(this)
+        val intermediate = encode(this)
+        val decoded = decode(intermediate)
+
+        return if (EQF.run { fa.eqv(decoded) }) succeeded()
+        else failWith(
+            SFA.run {
+                val diff = fa.show().diff(decoded.show())
+
+                "━━━ Intermediate ━━━".text() + hardLine() +
+                        intermediate.showPretty(SB) + hardLine() +
+                        "━━━ Failed (".text() +
+                        "- Original".text().annotate(Markup.DiffRemoved(0)) +
+                        " =/= ".text() +
+                        "+ Roundtrip".text().annotate(Markup.DiffAdded(0)) +
+                        ") ━━━".text() +
+                        hardLine() + diff.toDoc()
+            }
+        )
+    }
+
+    fun <A, B> A.roundtripEffect(
+        encode: (A) -> B,
+        decode: (B) -> Kind<M, A>,
+        EQF: Eq<A> = Eq.any(),
+        SFA: Show<A> = Show.any(),
+        SB: Show<B> = Show.any()
+    ): Kind<M, Unit> = fx.monad {
+        val intermediate = encode(this@roundtripEffect)
+        val decoded = decode(intermediate).bind()
+
+        if (EQF.run { this@roundtripEffect.eqv(decoded) }) succeeded().bind()
+        else failWith(
+            SFA.run {
+                val diff = this@roundtripEffect.show().diff(decoded.show())
+
+                "━━━ Intermediate ━━━".text() + hardLine() +
+                        intermediate.showPretty(SB) + hardLine() +
+                        "━━━ Failed (".text() +
+                        "- Original".text().annotate(Markup.DiffRemoved(0)) +
+                        " =/= ".text() +
+                        "+ Roundtrip".text().annotate(Markup.DiffAdded(0)) +
+                        ") ━━━".text() +
+                        hardLine() + diff.toDoc()
+            }
+        ).bind()
+    }
+
+    fun <A, B> A.roundtrip(
+        encode: (A) -> B,
+        decode: (B) -> A,
+        EQ: Eq<A> = Eq.any(),
+        SA: Show<A> = Show.any(),
+        SB: Show<B> = Show.any()
+    ): Kind<M, Unit> = this.roundtrip(
+        encode,
+        decode.andThen(::Id),
+        Id.applicative(),
+        Id.eq(EQ) as Eq<Kind<ForId, A>>,
+        Show {
+            SA.run { value().show() }
+        }, SB
+    )
 }

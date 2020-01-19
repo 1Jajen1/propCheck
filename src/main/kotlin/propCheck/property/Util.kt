@@ -1,11 +1,13 @@
 package propCheck.property
 
 import arrow.core.ListK
+import arrow.core.Option
 import arrow.core.Tuple2
 import arrow.core.extensions.listk.monoid.monoid
 import arrow.extension
 import arrow.optics.optics
 import arrow.typeclasses.Monoid
+import arrow.typeclasses.Semigroup
 import pretty.Doc
 
 sealed class Markup {
@@ -24,6 +26,10 @@ sealed class Markup {
         object Success : Result()
     }
     data class Icon(val name: IconType): Markup()
+    sealed class Style : Markup() {
+        object Failure : Style()
+        object Success : Style()
+    }
 }
 
 sealed class IconType {
@@ -55,7 +61,54 @@ sealed class JournalEntry {
 
     data class Footnote(val text: () -> Doc<Markup>) : JournalEntry()
     // labels, classes, tables
-    // TODO
+    data class JournalLabel(val label: Label<Boolean>): JournalEntry()
+}
+
+data class Label<A>(
+    val table: Option<LabelTable>,
+    val name: LabelName,
+    val min: CoverPercentage,
+    val annotation: A
+)
+
+inline class CoverPercentage(val unCoverPercentage: Double)
+
+inline class LabelTable(val unLabelTable: String)
+
+inline class LabelName(val unLabelName: String)
+
+inline class Coverage<A>(val unCoverage: Map<Option<LabelTable>, Map<LabelName, Label<A>>>) {
+    companion object
+}
+
+@extension
+interface CoverageMonoid<A> : Monoid<Coverage<A>> {
+    fun SA(): Semigroup<A>
+    override fun empty(): Coverage<A> = Coverage(emptyMap())
+    override fun Coverage<A>.combine(b: Coverage<A>): Coverage<A> =
+        // TODO this is ugly
+        Coverage(
+            b.unCoverage.toList().fold(unCoverage) { acc, (k, v) ->
+                if (acc.containsKey(k))
+                    acc + mapOf(k to v.toList().fold(acc[k]!!) { acc, (k2, v2) ->
+                        if (acc.containsKey(k2))
+                            acc + mapOf(k2 to (Label(v2.table, v2.name, v2.min, SA().run { acc[k2]!!.annotation + v2.annotation })))
+                        else acc + mapOf(k2 to v2)
+                    })
+                else acc + mapOf(k to v)
+            }
+        )
+}
+
+inline class CoverCount(val unCoverCount: Int) {
+    companion object {
+        fun semigroup() = object : CoverCountSemigroup {}
+    }
+}
+
+interface CoverCountSemigroup : Semigroup<CoverCount> {
+    override fun CoverCount.combine(b: CoverCount): CoverCount =
+        CoverCount(unCoverCount + b.unCoverCount)
 }
 
 @optics
@@ -78,6 +131,7 @@ inline class GroupName(val unGroupName: String)
 
 inline class Size(val unSize: Int)
 
+// TODO
 data class Group(
     val name: GroupName,
     val props: List<Tuple2<PropertyName, Property>>

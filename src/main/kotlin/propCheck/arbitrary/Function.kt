@@ -2,11 +2,8 @@ package propCheck.arbitrary
 
 import arrow.Kind
 import arrow.core.*
-import arrow.core.extensions.either.applicative.applicative
-import arrow.core.extensions.eval.applicative.applicative
 import arrow.core.extensions.id.monad.monad
 import arrow.core.extensions.list.functorFilter.filterMap
-import arrow.core.extensions.list.traverse.traverse
 import arrow.extension
 import arrow.mtl.OptionT
 import arrow.mtl.OptionTPartialOf
@@ -17,10 +14,6 @@ import arrow.syntax.collections.tail
 import arrow.typeclasses.Functor
 import arrow.typeclasses.Monad
 import arrow.typeclasses.Show
-import pretty.pretty
-import pretty.spaced
-import pretty.text
-import pretty.vSep
 import propCheck.arbitrary.`fun`.show.show
 import propCheck.arbitrary.either.func.func
 import propCheck.arbitrary.fn.functor.functor
@@ -29,7 +22,6 @@ import propCheck.arbitrary.gent.applicative.applicative
 import propCheck.arbitrary.listk.func.func
 import propCheck.arbitrary.option.func.func
 import propCheck.arbitrary.tuple2.func.func
-import propCheck.pretty.showPretty
 import propCheck.property.PropertyT
 import propCheck.property.Rose
 import propCheck.property.fix
@@ -63,17 +55,16 @@ interface FunShow<A, B> : Show<Fun<A, B>> {
     fun SA(): Show<A>
     fun SB(): Show<B>
 
+    // I might want to add a safeguard to this in terms of IO.timeout or something because when this renders badly shrunk,
+    //  or unshrunk values, it will take ages!
     override fun Fun<A, B>.show(): String =
         fn.table().let { ls ->
-            if (ls.isEmpty()) ("_ ->".text() spaced d.showPretty(SB()))
-            else ls.toList()
+            ls.toList()
                 .filterMap { (k, v) -> v.runRose.value().value().map { k toT it.res } }
                 .map { (k, v) ->
-                    k.showPretty(SA()) spaced "->".text() spaced v.showPretty(SB())
-                }.let {
-                    it + ("_ ->".text() spaced d.showPretty(SB()))
-                }.vSep()
-        }.pretty() // TODO better solution
+                    SA().run { k.show() } + " -> " + SB().run { v.show() }
+                } + listOf("_ -> " + SB().run { d.show() })
+        }.toString()
 }
 
 // Gen instance
@@ -102,7 +93,7 @@ sealed class Fn<A, B> : FnOf<A, B> {
 
     class MapFn<A, B, C>(val f: (A) -> B, val cF: (B) -> A, val g: Fn<B, C>) : Fn<A, C>()
 
-    class TableFn<A, B>(val m: Map<A, Eval<B>>): Fn<A, B>()
+    class TableFn<A, B>(val m: Map<A, Eval<B>>) : Fn<A, B>()
 
     companion object
 }
@@ -299,14 +290,30 @@ fun Boolean.Companion.func(): Func<Boolean> = object : BooleanFunc {}
 interface LongFunc : Func<Long> {
     override fun <B> function(f: (Long) -> B): Fn<Long, B> =
         funMap(
-            Tuple2.func(UByte.func(), Tuple2.func(UByte.func(), Tuple2.func(UByte.func(), Tuple2.func(UByte.func(), Tuple2.func(UByte.func(), Tuple2.func(UByte.func(), Tuple2.func(UByte.func(), UByte.func()))))))),
+            Tuple2.func(
+                UByte.func(),
+                Tuple2.func(
+                    UByte.func(),
+                    Tuple2.func(
+                        UByte.func(),
+                        Tuple2.func(
+                            UByte.func(),
+                            Tuple2.func(
+                                UByte.func(),
+                                Tuple2.func(UByte.func(), Tuple2.func(UByte.func(), UByte.func()))
+                            )
+                        )
+                    )
+                )
+            ),
             {
                 val l = it.toByteList().padTo(8, 0.toUByte())
                 l[0] toT (l[1] toT (l[2] toT (l[3] toT (l[4] toT (l[5] toT (l[6] toT l[7]))))))
             },
             { (a, xs) ->
                 listOf(a, xs.a, xs.b.a, xs.b.b.a, xs.b.b.b.a, xs.b.b.b.b.a, xs.b.b.b.b.b.a, xs.b.b.b.b.b.b).toLong()
-            }, f)
+            }, f
+        )
 }
 
 fun Long.Companion.func(): Func<Long> = object : LongFunc {}
@@ -316,6 +323,7 @@ interface UByteFunc : Func<UByte> {
     override fun <B> function(f: (UByte) -> B): Fn<UByte, B> =
         funList((UByte.MIN_VALUE..UByte.MAX_VALUE).map { it.toUByte() }, f)
 }
+
 fun UByte.Companion.func(): Func<UByte> = object : UByteFunc {}
 
 fun <A, B> funList(vals: Collection<A>, f: (A) -> B): Fn<A, B> =
@@ -328,6 +336,7 @@ private fun <A> List<A>.padTo(i: Int, a: A): List<A> =
 private fun List<UByte>.toLong() = foldIndexed(0L) { i, acc, v ->
     acc or (v.toLong().shl(8 * i))
 }
+
 private fun Long.toByteList(): List<UByte> = when (this) {
     0L -> emptyList()
     else -> listOf(this.and(UByte.MAX_VALUE.toLong()).toUByte()) + this.ushr(8).toByteList()
