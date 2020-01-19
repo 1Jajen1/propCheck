@@ -5,11 +5,8 @@ import arrow.core.extensions.id.monad.monad
 import arrow.extension
 import arrow.typeclasses.Eq
 import arrow.typeclasses.Show
-import kparsec.KParsecT
-import kparsec.fix
-import kparsec.stream
+import kparsec.*
 import kparsec.string.*
-import kparsec.takeRemaining
 import pretty.*
 import pretty.symbols.*
 import propCheck.UseColor
@@ -67,6 +64,13 @@ sealed class KValue {
     companion object
 }
 
+fun <A> A.showPretty(SA: Show<A> = Show.any()): Doc<Nothing> = SA.run {
+    val str = show()
+    outputParser().runParser("", str).fold({
+        KValue.RawString(str)
+    }, ::identity)
+}.doc().group()
+
 data class Test(val llllllllllllllll: Int, val reee: Double, val e: List<Test>)
 
 fun main() {
@@ -107,7 +111,9 @@ typealias Parser<A> = KParsecT<Nothing, String, Char, ForId, A>
 fun parser() = KParsecT.monadParsec<Nothing, String, Char, String, ForId>(String.stream(), Id.monad())
 
 // Top level parser
-fun outputParser(): Parser<KValue> = valueParser { true }
+fun outputParser(): Parser<KValue> = parser().run {
+    valueParser { true }.apTap(eof()).fix()
+}
 
 fun valueParser(pred: (Char) -> Boolean): Parser<KValue> = parser().run {
     listParser()

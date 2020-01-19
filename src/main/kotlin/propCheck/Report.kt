@@ -39,8 +39,8 @@ data class FailureSummary(
     val usedSeed: RandSeed,
     val numShrinks: Int,
     val failureDoc: Doc<Markup>,
-    val annotations: List<Doc<Markup>>,
-    val footnotes: List<Doc<Markup>>
+    val annotations: List<() -> Doc<Markup>>,
+    val footnotes: List<() -> Doc<Markup>>
 ) {
     companion object
 }
@@ -93,16 +93,16 @@ fun Report<Result>.prettyResult(name: Option<PropertyName>): Doc<Markup> = when 
 
 fun FailureSummary.pretty(): Doc<Markup> = annotations.prettyAnnotations() line
         failureDoc line
-        footnotes.map { it.annotate(Markup.Footnote) }.vSep()
+        footnotes.map { it().annotate(Markup.Footnote) }.vSep()
 
-fun List<Doc<Markup>>.prettyAnnotations(): Doc<Markup> =
+fun List<() -> Doc<Markup>>.prettyAnnotations(): Doc<Markup> =
     if (size == 1) ("forAll".text() spaced "=".text() +
-            (line() + first().annotate(Markup.Annotation)).nest(2)).group()
+            (line() + first()().annotate(Markup.Annotation)).nest(2)).group()
     else {
         val szLen = "$size".length
         withIndex().map { (i, v) ->
             ("forAll".text() + (i + 1).doc().fill(szLen) spaced pretty.symbols.equals() +
-                    (line() + v.annotate(Markup.Annotation)).nest(2)).group()
+                    (line() + v().annotate(Markup.Annotation)).nest(2)).group()
         }.vSep()
     }
 
@@ -118,9 +118,6 @@ fun <A> Int.plural(singular: Doc<A>, plural: Doc<A>): Doc<A> =
     if (this == 1) doc() spaced singular
     else doc() spaced plural
 
-// rendering
-// TODO better colour support
-// TODO I need a better algo for diffs that can nest the diff at any nesting
 fun Doc<Markup>.render(useColor: UseColor): String = alterAnnotations {
     if (useColor == UseColor.EnableColor) when (it) {
         is Markup.Diff -> emptyList()

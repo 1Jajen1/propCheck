@@ -20,6 +20,7 @@ import propCheck.arbitrary.`fun`.show.show
 import propCheck.arbitrary.gent.alternative.orElse
 import propCheck.arbitrary.gent.functor.functor
 import propCheck.arbitrary.gent.monad.monad
+import propCheck.pretty.showPretty
 import propCheck.property.log.monoid.monoid
 import propCheck.property.propertyt.monadTest.monadTest
 import propCheck.property.testt.monad.monad
@@ -148,9 +149,8 @@ fun <M, A> forAllWithT(showA: (A) -> Doc<Markup>, gen: GenT<M, A>, MM: Monad<M>)
 fun <M, A> forAllWith(showA: (A) -> Doc<Markup>, gen: Gen<A>, MM: Monad<M>): PropertyT<M, A> =
     forAllWithT(showA, gen.generalize(MM), MM)
 
-// TODO pretty print res
 fun <M, A> forAllT(gen: GenT<M, A>, MM: Monad<M>, SA: Show<A> = Show.any()): PropertyT<M, A> =
-    forAllWithT({ SA.run { it.show().doc() } }, gen, MM)
+    forAllWithT({ SA.run { it.showPretty(SA) } }, gen, MM)
 
 fun <M, A> forAll(gen: Gen<A>, MM: Monad<M>, SA: Show<A> = Show.any()): PropertyT<M, A> =
     forAllT(gen.generalize(MM), MM, SA)

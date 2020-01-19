@@ -364,7 +364,12 @@ interface MonadGen<M, B> : Monad<M>, MonadFilter<M>, Alternative<M> {
         int(0..255).map { it.toChar() }
     }
 
-    fun unicode(): Kind<M, Char> = TODO()
+    fun unicode(): Kind<M, Char> = MM().run {
+        val s1 = (55296 toT int(0..55295).map { it.toChar() })
+        val s2 = (8190 toT int(57344..65533).map { it.toChar() })
+        val s3 = (1048576 toT int(65536..1114111).map { it.toChar() })
+        frequency(s1, s2, s3)
+    }
 
     fun unicodeAll(): Kind<M, Char> = char(Char.MIN_VALUE..Char.MAX_VALUE)
 
@@ -460,11 +465,9 @@ interface MonadGen<M, B> : Monad<M>, MonadFilter<M>, Alternative<M> {
                     roseM().run {
                         r.runRose.flatMap {
                             it.res
-                                // TODO laziness when arrow is fixed for that https://github.com/arrow-kt/arrow/pull/1900
                                 .traverse(OptionT.monad(BM())) { it.runRose }
                                 .map {
-                                    it.fix().asSequence()
-                                        .interleave(OptionT.monad(BM()))
+                                    it.fix().asSequence().interleave(OptionT.monad(BM()))
                                 }
                         }
                     }
@@ -477,7 +480,9 @@ interface MonadGen<M, B> : Monad<M>, MonadFilter<M>, Alternative<M> {
 
     fun <A> Kind<M, A>.list(range: IntRange): Kind<M, List<A>> = list(Range.constant(range.first, range.last))
 
-    fun <A> Kind<M, A>.set(range: Range<Int>): Kind<M, Set<A>> = TODO()
+    fun <A> Kind<M, A>.set(range: Range<Int>): Kind<M, Set<A>> = MM().run {
+        map { it toT Unit }.map(range).map { it.keys }
+    }
 
     fun <K, A> Kind<M, Tuple2<K, A>>.map(range: Range<Int>): Kind<M, Map<K, A>> = sized { s ->
         MM().run {
@@ -485,14 +490,22 @@ interface MonadGen<M, B> : Monad<M>, MonadFilter<M>, Alternative<M> {
                 val k = !int_(range)
                 !this@map.uniqueByKey(k)
             }.shrink { it.shrink() }
+                .flatMap { it.sequence(MM()).map { it.fix() } }
                 .map { it.toMap() }
                 .ensure { it.size >= range.lowerBound(s) }
         }
     }
 
-    fun <K, A> Kind<M, Tuple2<K, A>>.uniqueByKey(k: Int): Kind<M, List<Tuple2<K, A>>> =
-        TODO()
-
+    fun <K, A> Kind<M, Tuple2<K, A>>.uniqueByKey(n: Int): Kind<M, List<Kind<M, Tuple2<K, A>>>> {
+        fun go(k: Int, map: Map<K, Kind<M, Tuple2<K, A>>>): Kind<M, List<Kind<M, Tuple2<K, A>>>> =
+            if (k > 100) discard()
+            else freeze().replicate(n).flatMap {
+                val res = (map + it.map { it.bimap({ it.a }, ::identity) }.toMap())
+                if (res.size >= n) MM().just(res.values.toList())
+                else go(k + 1, res)
+            }
+        return go(0, emptyMap())
+    }
 
     // subterms
     fun <A> Kind<M, A>.freeze(): Kind<M, Tuple2<A, Kind<M, A>>> =
@@ -665,8 +678,7 @@ fun <A> Gen<A>.printTreeWith(size: Size, randSeed: RandSeed, SA: Show<A> = Show.
                                                                 .map { "    $it" }
                                                         }
                                                     }
-                                                }
-                                                )
+                                                })
                                     }
                             }
                         })
@@ -679,7 +691,7 @@ fun <A> Gen<A>.printTreeWith(size: Size, randSeed: RandSeed, SA: Show<A> = Show.
 // TODO fix range 3 to 3
 fun main() {
     treeGen()
-        .printTreeWith(Size(3), RandSeed(0))
+        .printTreeWith(Size(3), RandSeed(1))
 }
 
 sealed class Tree<A> {
