@@ -14,18 +14,16 @@ import arrow.fx.fix
 import arrow.mtl.OptionTPartialOf
 import arrow.mtl.value
 import arrow.recursion.elgotM
-import arrow.syntax.collections.tail
 import arrow.typeclasses.Functor
 import arrow.typeclasses.Monad
 import kparsec.renderPretty
 import kparsec.runParser
 import kparsec.stream
-import pretty.doc
-import pretty.pretty
-import pretty.renderPretty
-import pretty.renderString
+import pretty.*
 import propCheck.arbitrary.*
-import propCheck.pretty.*
+import propCheck.pretty.KValue
+import propCheck.pretty.clearConsole
+import propCheck.pretty.listParser
 import propCheck.property.*
 import propCheck.property.Failure
 import kotlin.random.Random
@@ -72,11 +70,16 @@ import kotlin.random.Random
  *  - Do a 0.10 release and write tests for the prettyprinter, kparsec and the toString output one
  */
 fun main() {
-    checkNamed("List.reverse", property {
-        val xs = !forAll { int(0..100).list(0..100) }
+    checkNamed("List.reverse", property(PropertyConfig(TerminationCriteria.EarlyTermination(Confidence(), TestLimit(100)))) {
+        val xs = !forAll { int(0..100).list(0..99) }
+
+        // cover(80.0, "non-empty list", xs.isEmpty().not()).bind()
+        // cover(1.0, "empty list", xs.isEmpty()).bind()
+        coverTable("Length", 24.0, xs.size.rem(4).toString(), true).bind()
+        // tabulate("Length", xs.size.toString()).bind()
 
         // TODO this is a bug in the parser, it should parse 0ö0 as string 0ö0 instead!
-        xs.map { it.toString() }.roundtrip({ "[" + it.joinToString("ö") + "]" }, {
+        xs.map { it.toString() }.roundtrip({ "[" + it.joinToString(", ") + "]" }, {
             listParser().runParser("", it)
                 .map { (it as KValue.KList); it.vals.map { it.doc().pretty() } }
                 .mapLeft { it.renderPretty(String.stream()) }
@@ -87,7 +90,10 @@ fun main() {
         // TODO add special IdGen overload to forAll etc which offers the extra functions
         //  like filter, toFunction, etc
         val opt = !forAll { int(0..100).option() }
+        annotate { "Hello2".text() }.bind()
         val f = !forAllFn { int(0..100).toGenT().toFunction(Int.func(), Int.coarbitrary()).fromGenT() }
+
+        annotate { "Hello".text() }.bind()
 
         opt.map(f).eqv(opt.fold({ None }, { f(it + 1).some() })).bind()
     }.unsafeRunSync()
@@ -262,10 +268,11 @@ internal fun check(
 
 // ---------------- Running a single property
 data class State(
-    val numTests: Int,
-    val numDiscards: Int,
+    val numTests: TestCount,
+    val numDiscards: DiscardCount,
     val size: Size,
-    val seed: RandSeed
+    val seed: RandSeed,
+    val coverage: Coverage<CoverCount>
 )
 
 // Change these methods to be polymorphic over m
@@ -277,18 +284,72 @@ fun <M> runProperty(
     config: PropertyConfig,
     prop: PropertyT<M, Unit>,
     hook: (Report<Progress>) -> Kind<M, Unit>
-): Kind<M, Report<Result>> =
-    State(0, 0, initialSize, initialSeed).elgotM({ MM.just(it.value()) }, { (numTests, numDiscards, size, seed) ->
+): Kind<M, Report<Result>> {
+    val (confidence, minTests) = when (config.terminationCriteria) {
+        is TerminationCriteria.EarlyTermination -> config.terminationCriteria.confidence.some() to config.terminationCriteria.limit
+        is TerminationCriteria.NoEarlyTermination -> config.terminationCriteria.confidence.some() to config.terminationCriteria.limit
+        is TerminationCriteria.NoConfidenceTermination -> None to config.terminationCriteria.limit
+    }
+
+    fun successVerified(testCount: TestCount, coverage: Coverage<CoverCount>): Boolean =
+        testCount.unTestCount.rem(100) == 0 && confidence.fold({ false }, { it.success(testCount, coverage) })
+
+    fun failureVerified(testCount: TestCount, coverage: Coverage<CoverCount>): Boolean =
+        testCount.unTestCount.rem(100) == 0 && confidence.fold({ false }, { it.failure(testCount, coverage) })
+
+    return State(
+        TestCount(0),
+        DiscardCount(0),
+        initialSize,
+        initialSeed,
+        Coverage.monoid(CoverCount.semigroup()).empty()
+    ).elgotM({ MM.just(it.value()) }, { (numTests, numDiscards, size, seed, currCoverage) ->
         MM.run {
-            hook(Report(numTests, numDiscards, Progress.Running)).followedBy(
+            hook(Report(numTests, numDiscards, currCoverage, Progress.Running)).flatMap {
+                val coverageReached = successVerified(numTests, currCoverage)
+                val coverageUnreachable = failureVerified(numTests, currCoverage)
+
+                val enoughTestsRun = when (config.terminationCriteria) {
+                    is TerminationCriteria.EarlyTermination ->
+                        numTests.unTestCount >= defaultMinTests.unTestLimit &&
+                                (coverageReached || coverageUnreachable)
+                    is TerminationCriteria.NoEarlyTermination ->
+                        numTests.unTestCount >= minTests.unTestLimit
+                    is TerminationCriteria.NoConfidenceTermination ->
+                        numTests.unTestCount >= minTests.unTestLimit
+                }
+
                 when {
-                    numTests >= config.testLimit.unTestLimit ->
-                        MM.just(Report(numTests, numDiscards, Result.Success).left())
                     size.unSize > 99 ->
-                        MM.just(Id(State(numTests, numDiscards, Size(0), seed)).right())
-                    numDiscards >= config.maxDiscardRatio.unDiscardRatio * numTests.coerceAtLeast(config.testLimit.unTestLimit) ->
-                        MM.just(Report(numTests, numDiscards, Result.GivenUp).left())
+                        MM.just(Id(State(numTests, numDiscards, Size(0), seed, currCoverage)).right())
+                    enoughTestsRun -> {
+                        fun failureRep(msg: Doc<Markup>): Report<Result> = Report(
+                            numTests, numDiscards, currCoverage,
+                            Result.Failure(FailureSummary(
+                                size, seed, ShrinkCount(0), msg, emptyList(), emptyList()
+                            ))
+                        )
+                        val successRep = Report(numTests, numDiscards, currCoverage, Result.Success)
+                        val labelsCovered = currCoverage.coverageSuccess(numTests)
+                        val confidenceReport =
+                            if (coverageReached && labelsCovered) successRep
+                            else failureRep("Test coverage cannot be reached after".text() spaced numTests.testCount())
+
+                        val finalRep = when (config.terminationCriteria) {
+                            is TerminationCriteria.EarlyTermination -> confidenceReport
+                            is TerminationCriteria.NoEarlyTermination -> confidenceReport
+                            is TerminationCriteria.NoConfidenceTermination ->
+                                if (labelsCovered) successRep
+                                else failureRep("Labels not sufficently covered after".text() spaced numTests.testCount())
+                        }
+                        MM.just(finalRep.left())
+                    }
+                    numDiscards.unDiscardCount >= config.maxDiscardRatio.unDiscardRatio * numTests.unTestCount.coerceAtLeast(
+                        minTests.unTestLimit
+                    ) ->
+                        MM.just(Report(numTests, numDiscards, currCoverage, Result.GivenUp).left())
                     else -> seed.split().let { (s1, s2) ->
+                        // TODO catch errors
                         MM.fx.monad {
                             val res = !prop.unPropertyT.runTestT
                                 .value() // EitherT
@@ -299,9 +360,17 @@ fun <M> runProperty(
 
                             res.fold({
                                 // discard
-                                Id(State(numTests, numDiscards + 1, Size(size.unSize + 1), s2)).right()
+                                Id(
+                                    State(
+                                        numTests,
+                                        DiscardCount(numDiscards.unDiscardCount + 1),
+                                        Size(size.unSize + 1),
+                                        s2,
+                                        currCoverage
+                                    )
+                                ).right()
                             }, { node ->
-                                node.res.let { (_, result) ->
+                                node.res.let { (log, result) ->
                                     result.fold({
                                         // shrink failure
                                         val shrinkRes = !shrinkResult(
@@ -314,35 +383,49 @@ fun <M> runProperty(
                                         ) { s ->
                                             hook(
                                                 Report(
-                                                    numTests + 1,
+                                                    TestCount(numTests.unTestCount + 1),
                                                     numDiscards,
+                                                    currCoverage,
                                                     Progress.Shrinking(s)
                                                 )
                                             )
                                         }
 
                                         Report(
-                                            numTests + 1,
-                                            numDiscards, shrinkRes
+                                            TestCount(numTests.unTestCount + 1),
+                                            numDiscards, currCoverage, shrinkRes
                                         ).left()
                                     }, {
                                         // test success
-                                        Id(State(numTests + 1, numDiscards, Size(size.unSize + 1), s2)).right()
+                                        val newCover = Coverage.monoid(CoverCount.semigroup()).run {
+                                            log.coverage() + currCoverage
+                                        }
+                                        Id(
+                                            State(
+                                                TestCount(numTests.unTestCount + 1),
+                                                numDiscards,
+                                                Size(size.unSize + 1),
+                                                s2,
+                                                newCover
+                                            )
+                                        ).right()
                                     })
                                 }
                             })
                         }
                     }
                 }
-            )
+            }
         }
     }, Id.traverse(), MM)
+}
 
 data class ShrinkState<M>(
-    val numShrinks: Int,
+    val numShrinks: ShrinkCount,
     val node: RoseF<Option<Tuple2<Log, Either<Failure, Unit>>>, Rose<M, Option<Tuple2<Log, Either<Failure, Unit>>>>>
 )
 
+// TODO inline classes for params
 fun <M> shrinkResult(
     MM: Monad<M>,
     size: Size,
@@ -352,7 +435,7 @@ fun <M> shrinkResult(
     node: RoseF<Option<Tuple2<Log, Either<Failure, Unit>>>, Rose<M, Option<Tuple2<Log, Either<Failure, Unit>>>>>,
     hook: (FailureSummary) -> Kind<M, Unit>
 ): Kind<M, Result> =
-    ShrinkState(0, node).elgotM({ MM.just(it.value()) }, { (numShrinks, curr) ->
+    ShrinkState(ShrinkCount(0), node).elgotM({ MM.just(it.value()) }, { (numShrinks, curr) ->
         MM.fx.monad {
             curr.res.fold({
                 Result.GivenUp.left()
@@ -360,11 +443,12 @@ fun <M> shrinkResult(
                 result.fold({
                     val summary = FailureSummary(
                         size, seed, numShrinks, it.unFailure,
-                        log.unLog.filterMap {
-                            if (it is JournalEntry.Annotate) it.text.some()
+                        annotations = log.unLog.filterMap {
+                            if (it is JournalEntry.Annotate) FailureAnnotation.Annotation(it.text).some()
+                            else if (it is JournalEntry.Input) FailureAnnotation.Input(it.text).some()
                             else None
                         },
-                        log.unLog.filterMap {
+                        footnotes = log.unLog.filterMap {
                             if (it is JournalEntry.Footnote) it.text.some()
                             else None
                         }
@@ -372,14 +456,14 @@ fun <M> shrinkResult(
 
                     hook(summary).bind()
 
-                    if (numShrinks >= shrinkLimit)
+                    if (numShrinks.unShrinkCount >= shrinkLimit)
                         Result.Failure(summary).left()
                     else curr.shrunk.foldRight<Rose<M, Option<Tuple2<Log, Either<Failure, Unit>>>>, Kind<M, Either<Result, Id<ShrinkState<M>>>>>(Eval.now(MM.just(Result.Failure(summary).left()))) { v, acc ->
                         Eval.now(
                             MM.fx.monad {
                                 val r = v.runTreeN(MM, shrinkRetries).bind()
                                 if (r.isFailure())
-                                    Id(ShrinkState(numShrinks + 1, r)).right()
+                                    Id(ShrinkState(ShrinkCount(numShrinks.unShrinkCount + 1), r)).right()
                                 else acc.value().bind()
                             }
                         )

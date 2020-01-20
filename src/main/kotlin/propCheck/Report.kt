@@ -1,21 +1,23 @@
 package propCheck
 
 import arrow.core.*
+import arrow.core.extensions.list.foldable.foldMap
 import arrow.syntax.collections.tail
+import arrow.typeclasses.Monoid
 import pretty.*
 import pretty.ansistyle.monoid.monoid
 import pretty.symbols.bullet
 import pretty.symbols.comma
 import pretty.symbols.dot
 import propCheck.arbitrary.RandSeed
-import propCheck.property.IconType
-import propCheck.property.Markup
-import propCheck.property.PropertyName
-import propCheck.property.Size
+import propCheck.property.*
+import kotlin.math.floor
+import kotlin.math.max
 
 data class Report<out A>(
-    val numTests: Int,
-    val numDiscarded: Int,
+    val numTests: TestCount,
+    val numDiscarded: DiscardCount,
+    val coverage: Coverage<CoverCount>,
     val status: A
 ) {
     companion object
@@ -37,18 +39,43 @@ sealed class Result {
 data class FailureSummary(
     val usedSize: Size,
     val usedSeed: RandSeed,
-    val numShrinks: Int,
+    val numShrinks: ShrinkCount,
     val failureDoc: Doc<Markup>,
-    val annotations: List<() -> Doc<Markup>>,
+    val annotations: List<FailureAnnotation>,
     val footnotes: List<() -> Doc<Markup>>
 ) {
     companion object
+}
+
+sealed class FailureAnnotation {
+    data class Input(val text: () -> Doc<Markup>) : FailureAnnotation()
+    data class Annotation(val text: () -> Doc<Markup>) : FailureAnnotation()
 }
 
 data class FullTestReport(
     val successful: ListK<Report<Result>>,
     val failure: Option<Report<Result>>
 )
+
+data class ColumnWidth(
+    val percentage: Int,
+    val min: Int,
+    val name: Int,
+    val nameFail: Int
+) {
+    companion object {
+        fun monoid(): Monoid<ColumnWidth> = object : Monoid<ColumnWidth> {
+            override fun empty(): ColumnWidth = ColumnWidth(0, 0, 0, 0)
+            override fun ColumnWidth.combine(b: ColumnWidth): ColumnWidth =
+                ColumnWidth(
+                    max(percentage, b.percentage),
+                    max(min, b.min),
+                    max(name, b.name),
+                    max(nameFail, b.nameFail)
+                )
+        }
+    }
+}
 
 // ------- Pretty printing
 fun Option<PropertyName>.doc(): Doc<Markup> = fold({
@@ -63,7 +90,8 @@ fun Report<Progress>.prettyProgress(name: Option<PropertyName>): Doc<Markup> = w
             "passed".text() spaced
             numTests.testCount() +
             numDiscarded.discardCount() spaced
-            "(running)".text()).annotate(Markup.Progress.Running)
+            "(running)".text()).annotate(Markup.Progress.Running) +
+            coverage.ifNotEmpty { line() + prettyPrint(numTests) }
     is Progress.Shrinking -> ("↯".text().annotate(Markup.Icon(IconType.Shrinking)) spaced
             name.doc() spaced
             "failed after".text() spaced
@@ -75,45 +103,143 @@ fun Report<Result>.prettyResult(name: Option<PropertyName>): Doc<Markup> = when 
     is Result.Success -> ("✓".text().annotate(Markup.Icon(IconType.Success)) spaced
             name.doc() spaced
             "passed".text() spaced
-            numTests.testCount() + dot()).annotate(Markup.Result.Success)
+            numTests.testCount() + dot()).annotate(Markup.Result.Success) +
+            coverage.ifNotEmpty { line() + prettyPrint(numTests) }
     is Result.GivenUp -> ("⚐".text().annotate(Markup.Icon(IconType.GaveUp)) spaced
             name.doc() spaced
             "gave up after".text() +
-            numDiscarded.testCount() + comma() spaced
+            TestCount(numDiscarded.unDiscardCount).testCount() + comma() spaced
             "passed".text() spaced
-            numTests.testCount() + dot()).annotate(Markup.Result.GaveUp)
+            numTests.testCount() + dot()).annotate(Markup.Result.GaveUp) +
+            coverage.ifNotEmpty { line() + prettyPrint(numTests) }
     is Result.Failure -> ("\uD83D\uDFAC".text().annotate(Markup.Icon(IconType.Failure)) spaced
             name.doc() spaced
             "failed after".text() spaced
             numTests.testCount() +
             numDiscarded.discardCount() spaced
-            status.summary.numShrinks.shrinkCount() + dot()).annotate(Markup.Result.Failed) line
+            status.summary.numShrinks.shrinkCount() + dot()).annotate(Markup.Result.Failed) +
+            coverage.ifNotEmpty { line() + prettyPrint(numTests) } line
             status.summary.pretty()
 }
 
-// TODO handle cases without annotations or footnotes better, they have excessive newlines atm
-fun FailureSummary.pretty(): Doc<Markup> = annotations.prettyAnnotations() line
-        failureDoc line
-        footnotes.map { it().annotate(Markup.Footnote) }.vSep()
+fun <A> Coverage<A>.ifNotEmpty(f: Coverage<A>.() -> Doc<Markup>): Doc<Markup> =
+    if (unCoverage.isEmpty()) nil()
+    else f(this)
 
-fun List<() -> Doc<Markup>>.prettyAnnotations(): Doc<Markup> =
-    if (size == 1) ("forAll".text() spaced "=".text() +
-            (line() + first()().annotate(Markup.Annotation)).nest(2)).group()
-    else {
-        val szLen = "$size".length
-        withIndex().map { (i, v) ->
-            ("forAll".text() + (i + 1).doc().fill(szLen) spaced pretty.symbols.equals() +
-                    (line() + v().annotate(Markup.Annotation)).nest(2)).group()
+fun Coverage<CoverCount>.prettyPrint(tests: TestCount): Doc<Markup> =
+    unCoverage.toList().let {
+        if (it.size == 1 && it.first().first.isEmpty()) it.first().second.let { v ->
+            v.values.map { l ->
+                l.pretty(tests, v.values.toList().width(tests))
+            }.vSep()
+        }
+        else it.map { (k, v) ->
+            "┏━━".text() spaced k.fold({ "<top>".text() }, { it.unLabelTable.text() }) line
+                    v.values.map { l ->
+                        "┃".text() spaced l.pretty(tests, v.values.toList().width(tests))
+                    }.vSep()
         }.vSep()
     }
 
-fun Int.testCount(): Doc<Nothing> = plural("test".text(), "tests".text())
+// TODO refractor duplicate code
+fun Label<CoverCount>.pretty(tests: TestCount, width: ColumnWidth): Doc<Markup> {
+    val covered = labelCovered(tests)
+    val icon = if (covered) "  ".text() else "⚠ ".text().annotate(Markup.Icon(IconType.Coverage))
+    val name = name.unLabelName.text().fill(width.name).let { if (!covered) it.annotate(Markup.Coverage) else it }
+    val wmin = min.renderCoverPercentage().text().fill(width.min)
+    val lmin = when {
+        width.min == 0 -> nil()
+        covered.not() -> "✗".text() spaced wmin
+        min.unCoverPercentage == 0.0 -> "".text().fill(width.min)
+        else -> ("✓".text() spaced wmin).annotate(Markup.Result.Success)
+    }
 
-fun Int.shrinkCount(): Doc<Nothing> = plural("shrink".text(), "shrinks".text())
+    return icon spaced name spaced
+            annotation.coverPercentage(tests).renderCoverPercentage().text().fill(6).let {
+                if (!covered) it.annotate(Markup.Coverage) else it
+            } spaced
+            coverageBar(
+                annotation.coverPercentage(tests),
+                min
+            ).let { if (!covered) it.annotate(Markup.Coverage) else it } spaced
+            lmin.let { if (!covered) it.annotate(Markup.Coverage) else it }
+}
 
-fun Int.discardCount(): Doc<Nothing> =
-    if (this == 0) nil()
-    else " with".text() spaced this.doc() spaced "discarded".text()
+fun coverageBar(p: CoverPercentage, min: CoverPercentage): Doc<Markup> {
+    val barWidth = 20
+    val coverageRatio = p.unCoverPercentage / 100.0
+    val coverageWidth = floor(coverageRatio * barWidth).toInt()
+    val minRatio = min.unCoverPercentage / 100.0
+    val minWidth = floor(minRatio * barWidth).toInt()
+    fun <A> List<A>.ind(): Int = floor(((coverageRatio * barWidth) - coverageWidth) * size).toInt()
+    fun <A> List<A>.part() = get(ind())
+    val fillWidth = barWidth - coverageWidth - 1
+    val fillErrWidth = max(0, minWidth - coverageWidth - 1)
+    val fillSurplusWidth = fillWidth - fillErrWidth
+    fun bar(full: Char, parts: List<Char>): Doc<Markup> =
+        listOf(
+            (0..coverageWidth).joinToString("") { "$full" }.text(),
+            if (fillWidth >= 0)
+                if (parts.ind() == 0)
+                    if (fillErrWidth > 0) parts.part().toString().text().annotate(Markup.Style.Failure)
+                    else parts.part().toString().text().annotate(Markup.CoverageFill)
+                else parts.part().toString().text()
+            else nil(),
+            (0..fillErrWidth).joinToString("") { "${parts.first()}" }.text().annotate(Markup.Style.Failure),
+            (0..fillSurplusWidth).joinToString("") { "${parts.first()}" }.text().annotate(Markup.CoverageFill)
+        ).hCat()
+    return bar('█', listOf('·', '▏', '▎', '▍', '▌', '▋', '▊', '▉'))
+}
+
+
+fun List<Label<CoverCount>>.width(tests: TestCount): ColumnWidth = foldMap(ColumnWidth.monoid()) {
+    it.width(tests)
+}
+
+fun Label<CoverCount>.width(tests: TestCount): ColumnWidth = ColumnWidth(
+    percentage = annotation.coverPercentage(tests).renderCoverPercentage().length,
+    min = if (min.unCoverPercentage == 0.0) 0 else min.renderCoverPercentage().length,
+    name = name.unLabelName.length,
+    nameFail = if (labelCovered(tests)) 0 else name.unLabelName.length
+)
+
+fun CoverPercentage.renderCoverPercentage(): String = "$unCoverPercentage%"
+
+// TODO add coverage and reproduce notice
+fun FailureSummary.pretty(): Doc<Markup> = annotations.prettyAnnotations().ifNotEmpty { vSep() + line() } +
+        footnotes.map { it().annotate(Markup.Footnote) }.ifNotEmpty { vSep() + line() } +
+        failureDoc
+
+fun <A> List<Doc<A>>.ifNotEmpty(f: List<Doc<A>>.() -> Doc<A>): Doc<A> =
+    if (isEmpty()) nil()
+    else f(this)
+
+fun List<FailureAnnotation>.prettyAnnotations(): List<Doc<Markup>> =
+    if (size == 1) first().let { fst ->
+        when (fst) {
+            is FailureAnnotation.Annotation -> fst.text().annotate(Markup.Annotation).group()
+            is FailureAnnotation.Input -> ("forAll".text() spaced "=".text() +
+                    (line() + fst.text().annotate(Markup.Annotation)).nest(2)).group()
+        }.let { listOf(it) }
+    } else {
+        val szLen = "$size".length
+        fold(0 toT emptyList<Doc<Markup>>()) { (i, acc), v ->
+            when (v) {
+                is FailureAnnotation.Annotation -> i toT acc + v.text().annotate(Markup.Annotation).group()
+                is FailureAnnotation.Input ->
+                    (i + 1) toT acc + ("forAll".text() + (i + 1).doc().fill(szLen) spaced pretty.symbols.equals() +
+                            (line() + v.text().annotate(Markup.Annotation)).nest(2)).group()
+            }
+        }.b
+    }
+
+fun TestCount.testCount(): Doc<Nothing> = unTestCount.plural("test".text(), "tests".text())
+
+fun ShrinkCount.shrinkCount(): Doc<Nothing> = unShrinkCount.plural("shrink".text(), "shrinks".text())
+
+fun DiscardCount.discardCount(): Doc<Nothing> =
+    if (this.unDiscardCount == 0) nil()
+    else " with".text() spaced this.unDiscardCount.doc() spaced "discarded".text()
 
 fun <A> Int.plural(singular: Doc<A>, plural: Doc<A>): Doc<A> =
     if (this == 1) doc() spaced singular
@@ -138,12 +264,14 @@ fun Doc<Markup>.render(useColor: UseColor): String = alterAnnotations {
             is IconType.Shrinking -> listOf(Style.Ansi(color(Color.Red)))
             is IconType.GaveUp -> listOf(Style.Ansi(colorDull(Color.Yellow)))
             is IconType.Failure -> listOf(Style.Ansi(color(Color.Red)))
+            is IconType.Coverage -> listOf(Style.Ansi(colorDull(Color.Yellow)))
             else -> emptyList()
         }
+        is Markup.Coverage -> listOf(Style.Ansi(colorDull(Color.Yellow)))
+        is Markup.CoverageFill -> listOf(Style.Ansi(color(Color.Black)))
         else -> emptyList()
     }
     else when (it) {
-        is Markup.Diff -> emptyList()
         is Markup.DiffAdded -> listOf(Style.Prefix("+", it.offset))
         is Markup.DiffRemoved -> listOf(Style.Prefix("-", it.offset))
         else -> emptyList()

@@ -32,9 +32,6 @@ data class Property(val config: PropertyConfig, val prop: PropertyT<ForIO, Unit>
     fun mapConfig(f: (PropertyConfig) -> PropertyConfig): Property =
         copy(config = f(config))
 
-    fun withTestLimit(i: TestLimit): Property =
-        mapConfig { PropertyConfig.testLimit.set(it, i) }
-
     fun withDiscardLimit(i: DiscardRatio): Property =
         mapConfig { PropertyConfig.maxDiscardRatio.set(it, i) }
 
@@ -141,8 +138,8 @@ fun <M, A> PropertyT.Companion.lift(FF: Monad<M>, fa: Kind<M, A>): PropertyT<M, 
 // these will be specialised later in syntax interfaces so now worries here
 fun <M, A> forAllWithT(showA: (A) -> Doc<Markup>, gen: GenT<M, A>, MM: Monad<M>): PropertyT<M, A> =
     PropertyT.monadTest(MM).run {
-        PropertyT(gen.lift(MM)).flatTap {
-            annotate { showA(it) }
+        PropertyT(gen.lift(MM)).flatTap { a ->
+            writeLog(JournalEntry.Input { showA(a) })
         }.fix()
     }
 

@@ -23,7 +23,6 @@ import propCheck.pretty.ValueDiffF
 import propCheck.pretty.diff
 import propCheck.pretty.showPretty
 import propCheck.pretty.toDoc
-import propCheck.property.coverage.monoid.monoid
 import propCheck.property.log.monoid.monoid
 
 // ---------------------------- TestT
