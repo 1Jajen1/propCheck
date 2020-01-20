@@ -9,6 +9,7 @@ import arrow.core.extensions.sequence.foldable.foldRight
 import arrow.fx.IO
 import arrow.fx.extensions.fx
 import arrow.fx.extensions.io.functor.unit
+import arrow.fx.extensions.io.monad.flatMap
 import arrow.fx.extensions.io.monad.monad
 import arrow.fx.fix
 import arrow.mtl.OptionTPartialOf
@@ -22,7 +23,6 @@ import kparsec.stream
 import pretty.*
 import propCheck.arbitrary.*
 import propCheck.pretty.KValue
-import propCheck.pretty.clearConsole
 import propCheck.pretty.listParser
 import propCheck.property.*
 import propCheck.property.Failure
@@ -70,59 +70,57 @@ import kotlin.random.Random
  *  - Do a 0.10 release and write tests for the prettyprinter, kparsec and the toString output one
  */
 fun main() {
-    checkNamed("List.reverse", property(PropertyConfig(TerminationCriteria.EarlyTermination(Confidence(), TestLimit(100)))) {
-        val xs = !forAll { int(0..100).list(0..99) }
+    checkGroup(
+        "My tests",
+        "List.reverse" toT property(PropertyConfig(TerminationCriteria.EarlyTermination(Confidence(), TestLimit(100)))) {
+            val xs = !forAll { int(3..3).list(0..99) }
 
-        // cover(80.0, "non-empty list", xs.isEmpty().not()).bind()
-        // cover(1.0, "empty list", xs.isEmpty()).bind()
-        coverTable("Length", 24.0, xs.size.rem(4).toString(), true).bind()
-        // tabulate("Length", xs.size.toString()).bind()
+            cover(80.0, "non-empty list", xs.isEmpty().not()).bind()
+            cover(0.2, "empty list", xs.isEmpty()).bind()
+            coverTable("Length", 30.0, xs.size.rem(4).toString(), true).bind()
 
-        // TODO this is a bug in the parser, it should parse 0ö0 as string 0ö0 instead!
-        xs.map { it.toString() }.roundtrip({ "[" + it.joinToString(", ") + "]" }, {
-            listParser().runParser("", it)
-                .map { (it as KValue.KList); it.vals.map { it.doc().pretty() } }
-                .mapLeft { it.renderPretty(String.stream()) }
-        }, Either.applicative()).bind()
-    }).unsafeRunSync()
+            // TODO this is a bug in the parser, it should parse 0ö0 as string 0ö0 instead!
+            xs.map { it.toString() }.roundtrip({ "[" + it.joinToString(", ") + "]" }, {
+                listParser().runParser("", it)
+                    .map { (it as KValue.KList); it.vals.map { it.doc().pretty() } }
+                    .mapLeft { it.renderPretty(String.stream()) }
+            }, Either.applicative()).bind()
+        },
+        "Option.map" toT property {
+            // TODO add special IdGen overload to forAll etc which offers the extra functions
+            //  like filter, toFunction, etc
+            val opt = !forAll { int(0..100).option() }
+            annotate { "Hello2".text() }.bind()
+            val f = !forAllFn { int(0..100).toGenT().toFunction(Int.func(), Int.coarbitrary()).fromGenT() }
 
-    checkNamed("Option.map") {
-        // TODO add special IdGen overload to forAll etc which offers the extra functions
-        //  like filter, toFunction, etc
-        val opt = !forAll { int(0..100).option() }
-        annotate { "Hello2".text() }.bind()
-        val f = !forAllFn { int(0..100).toGenT().toFunction(Int.func(), Int.coarbitrary()).fromGenT() }
+            annotate { "Hello".text() }.bind()
 
-        annotate { "Hello".text() }.bind()
-
-        opt.map(f).eqv(opt.fold({ None }, { f(it + 1).some() })).bind()
-    }.unsafeRunSync()
-
-    val test = property {
-        val (b, bs) = !forAll {
-            choice(
-                map(
-                    long(Range.constant(0, Long.MIN_VALUE, Long.MAX_VALUE)),
-                    long(Range.constant(0, Long.MIN_VALUE, Long.MAX_VALUE))
-                ) { (l, r) -> l.toBigDecimal() * r.toBigDecimal() },
-                long(Range.constant(0, Long.MIN_VALUE, Long.MAX_VALUE)).map { it.toBigDecimal() }
-            ).product(
-                tupled(
-                    long(Range.constant(0, Long.MIN_VALUE, Long.MAX_VALUE)),
-                    long(Range.constant(0, Long.MIN_VALUE, Long.MAX_VALUE))
+            opt.map(f).eqv(opt.fold({ None }, { f(it + 1).some() })).bind()
+        },
+        "bounds" toT property {
+            val (b, bs) = !forAll {
+                choice(
+                    map(
+                        long(Range.constant(0, Long.MIN_VALUE, Long.MAX_VALUE)),
+                        long(Range.constant(0, Long.MIN_VALUE, Long.MAX_VALUE))
+                    ) { (l, r) -> l.toBigDecimal() * r.toBigDecimal() },
+                    long(Range.constant(0, Long.MIN_VALUE, Long.MAX_VALUE)).map { it.toBigDecimal() }
+                ).product(
+                    tupled(
+                        long(Range.constant(0, Long.MIN_VALUE, Long.MAX_VALUE)),
+                        long(Range.constant(0, Long.MIN_VALUE, Long.MAX_VALUE))
+                    )
                 )
-            )
+            }
+            val (l1, h1) = bs
+            val (l, h) = if (l1 > h1) h1 toT l1 else l1 toT h1
+
+            // TODO this is a good test to check coverage on
+
+            val r = b.clamp(l, h)
+            if (r < l || r >= h) !failWith("out of bounds".doc())
         }
-        val (l1, h1) = bs
-        val (l, h) = if (l1 > h1) h1 toT l1 else l1 toT h1
-
-        // TODO this is a good test to check coverage on
-
-        val r = b.clamp(l, h)
-        if (r < l || r >= h) !failWith("out of bounds".doc())
-    }
-
-    check(test).unsafeRunSync()
+    ).unsafeRunSync()
 }
 
 /**
@@ -182,6 +180,30 @@ fun main() {
  *  - There is also the guarantee that execPar will execute props in a group sequentially
  */
 
+fun checkGroup(groupName: String, vararg props: Tuple2<String, Property>): IO<Boolean> =
+    detectConfig().flatMap { checkGroup(it, groupName, *props) }
+
+fun checkGroup(config: Config, groupName: String, vararg props: Tuple2<String, Property>): IO<Boolean> = IO.fx {
+    !effect { println("━━━ $groupName ━━━") }
+
+    val summary = props.fold(IO { Summary.monoid().empty().copy(waiting = PropertyCount(props.size)) }) { acc, (n, prop) ->
+        IO.fx {
+            val currSummary = acc.bind()
+            val res = checkReport(config, PropertyName(n).some(), prop).bind()
+            Summary.monoid().run {
+                currSummary + empty().copy(waiting = PropertyCount(- 1)) +
+                        when (res.status) {
+                            is Result.Failure -> empty().copy(failed = PropertyCount(1))
+                            is Result.Success -> empty().copy(successful = PropertyCount(1))
+                            is Result.GivenUp -> empty().copy(gaveUp = PropertyCount(1))
+                        }
+            }
+        }
+    }.bind()
+
+    summary.failed.unPropertyCount == 0 && summary.gaveUp.unPropertyCount == 0
+}
+
 fun check(propertyConfig: PropertyConfig = PropertyConfig(), c: suspend PropertyTestSyntax.() -> Unit): IO<Boolean> =
     check(property(propertyConfig, c))
 
@@ -218,7 +240,7 @@ fun recheck(
     recheck(config, size, seed, property(propertyConfig, c))
 
 fun recheck(config: Config, size: Size, seed: RandSeed, prop: Property): IO<Unit> =
-    check(seed, size, config, None, prop).unit()
+    checkReport(seed, size, config, None, prop).unit()
 
 fun checkNamed(
     name: String,
@@ -242,28 +264,31 @@ fun checkNamed(config: Config, name: String, prop: Property): IO<Boolean> =
     check(config, PropertyName(name).some(), prop)
 
 internal fun check(config: Config, name: Option<PropertyName>, prop: Property): IO<Boolean> =
+    checkReport(config, name, prop).map { it.status is Result.Success }
+
+internal fun checkReport(config: Config, name: Option<PropertyName>, prop: Property): IO<Report<Result>> =
     IO { RandSeed(Random.nextLong()) }.flatMap {
-        check(it, Size(0), config, name, prop)
+        checkReport(it, Size(0), config, name, prop)
     }
 
-internal fun check(
+internal fun checkReport(
     seed: RandSeed,
     size: Size,
     config: Config,
     name: Option<PropertyName>,
     prop: Property
-): IO<Boolean> =
+): IO<Report<Result>> =
     IO.fx {
         val report = !runProperty(IO.monad(), size, seed, prop.config, prop.prop) {
             // TODO this needs to be in some terminal lib
             // TODO check if when run by a gradle plugin this actually works
             if (config.verbose is Verbose.Normal)
-                clearConsole().followedBy(IO { print(it.renderProgress(UseColor.EnableColor, name)) })
+                IO { print(it.renderProgress(UseColor.EnableColor, name)) }
             else IO.unit
         }
         // TODO better terminal support, this is quite meh
-        !clearConsole().followedBy(IO { println(report.renderResult(UseColor.EnableColor, name)) })
-        report.status is Result.Success
+        !IO { println(report.renderResult(UseColor.EnableColor, name)) }
+        report
     }.fix()
 
 // ---------------- Running a single property

@@ -255,7 +255,8 @@ interface MonadGen<M, B> : Monad<M>, MonadFilter<M>, Alternative<M> {
     fun long_(range: Range<Long>): Kind<M, Long> =
         generate { randSeed, s ->
             val (min, max) = range.bounds(s)
-            randSeed.nextLong(min, max).a
+            if (min == max) min
+            else randSeed.nextLong(min, max).a
         }
 
     fun long(range: LongRange): Kind<M, Long> = long(Range.constant(range.first, range.last))
@@ -297,7 +298,8 @@ interface MonadGen<M, B> : Monad<M>, MonadFilter<M>, Alternative<M> {
     fun double_(range: Range<Double>): Kind<M, Double> =
         generate { randSeed, s ->
             val (min, max) = range.bounds(s)
-            randSeed.nextDouble(min, max).a
+            if (min == max) min
+            else randSeed.nextDouble(min, max).a
         }
 
     fun double(range: ClosedFloatingPointRange<Double>): Kind<M, Double> =
@@ -688,7 +690,6 @@ fun <A> Gen<A>.printTreeWith(size: Size, randSeed: RandSeed, SA: Show<A> = Show.
         .joinToString("\n")
         .let(::println)
 
-// TODO fix range 3 to 3
 fun main() {
     treeGen()
         .printTreeWith(Size(3), RandSeed(1))

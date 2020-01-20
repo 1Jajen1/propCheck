@@ -52,10 +52,34 @@ sealed class FailureAnnotation {
     data class Annotation(val text: () -> Doc<Markup>) : FailureAnnotation()
 }
 
-data class FullTestReport(
-    val successful: ListK<Report<Result>>,
-    val failure: Option<Report<Result>>
-)
+data class Summary(
+    val waiting: PropertyCount,
+    // val running: PropertyCount, TODO readd once I add execPar
+    val failed: PropertyCount,
+    val gaveUp: PropertyCount,
+    val successful: PropertyCount
+) {
+    companion object {
+        fun monoid() = object: Monoid<Summary> {
+            override fun empty(): Summary = Summary(
+                PropertyCount(0),
+                // PropertyCount(0),
+                PropertyCount(0),
+                PropertyCount(0),
+                PropertyCount(0)
+            )
+            override fun Summary.combine(b: Summary): Summary = Summary(
+                PropertyCount(waiting.unPropertyCount + b.waiting.unPropertyCount),
+                // PropertyCount(running.unPropertyCount + b.running.unPropertyCount),
+                PropertyCount(failed.unPropertyCount + b.failed.unPropertyCount),
+                PropertyCount(gaveUp.unPropertyCount + b.gaveUp.unPropertyCount),
+                PropertyCount(successful.unPropertyCount + b.successful.unPropertyCount)
+            )
+        }
+    }
+}
+
+inline class PropertyCount(val unPropertyCount: Int)
 
 data class ColumnWidth(
     val percentage: Int,

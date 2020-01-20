@@ -171,12 +171,6 @@ inline class GroupName(val unGroupName: String)
 
 inline class Size(val unSize: Int)
 
-// TODO
-data class Group(
-    val name: GroupName,
-    val props: List<Tuple2<PropertyName, Property>>
-)
-
 fun Coverage<CoverCount>.labelsToTotals(): List<Tuple2<Int, Label<CoverCount>>> =
     unCoverage.values.flatMap {
         val total = it.values.sumBy { it.annotation.unCoverCount }
