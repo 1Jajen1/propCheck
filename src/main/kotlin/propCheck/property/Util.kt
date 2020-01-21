@@ -105,11 +105,10 @@ interface CoverageMonoid<A> : Monoid<Coverage<A>> {
     fun SA(): Semigroup<A>
     override fun empty(): Coverage<A> = Coverage(emptyMap())
     override fun Coverage<A>.combine(b: Coverage<A>): Coverage<A> =
-        // TODO this is ugly
         Coverage(
             b.unCoverage.toList().fold(unCoverage) { acc, (k, v) ->
                 if (acc.containsKey(k))
-                    acc + mapOf(k to v.toList().fold(acc[k]!!) { acc, (k2, v2) ->
+                    acc + mapOf(k to v.toList().fold(acc.getValue(k)) { acc, (k2, v2) ->
                         if (acc.containsKey(k2))
                             acc + mapOf(k2 to (Label(v2.table, v2.name, v2.min, SA().run { acc[k2]!!.annotation + v2.annotation })))
                         else acc + mapOf(k2 to v2)
@@ -136,7 +135,6 @@ fun CoverCount.coverPercentage(test: TestCount): CoverPercentage =
 fun Label<CoverCount>.labelCovered(test: TestCount): Boolean =
     annotation.coverPercentage(test).unCoverPercentage >= min.unCoverPercentage
 
-// TODO add functions to modify termination
 @optics
 data class PropertyConfig(
     val terminationCriteria: TerminationCriteria = TerminationCriteria.NoConfidenceTermination(defaultMinTests),

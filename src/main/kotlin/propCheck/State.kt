@@ -19,6 +19,7 @@ import propCheck.property.propertyt.monadTest.succeeded
 import java.util.concurrent.Executors
 import kotlin.math.max
 
+/*
 /**
  * State machine testing rework:
  * Keep current api, it's decent
@@ -221,3 +222,5 @@ internal fun <S, A, R, M> go(
         }.fix()
     }
 }
+
+ */

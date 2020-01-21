@@ -17,13 +17,10 @@ import pretty.Doc
 import propCheck.arbitrary.*
 import propCheck.arbitrary.`fun`.show.show
 import propCheck.property.propertyt.monad.monad
+import propCheck.property.propertyt.monadTrans.monadTrans
 import kotlin.coroutines.startCoroutine
 
-/*
-TODO figure out how to do autobind for all methods without the conflicting overload part
- mainly this means keeping another version of monadtest that autobinds... which sucks
- */
-
+// TODO monadIO once https://github.com/arrow-kt/arrow/pull/1943 is merged
 fun property(propertyConfig: PropertyConfig = PropertyConfig(), c: suspend PropertyTestSyntax.() -> Unit): Property {
     val continuation = PropertyTestContinuation<Unit>()
     val wrapReturn: suspend PropertyTestContinuation<*>.() -> PropertyT<ForIO, Unit> = { just(c()).fix() }
@@ -37,7 +34,7 @@ fun property(propertyConfig: PropertyConfig = PropertyConfig(), c: suspend Prope
 interface PropertyTestSyntax : MonadSyntax<PropertyTPartialOf<ForIO>>, PropertyTest<ForIO> {
     override fun MM(): Monad<ForIO> = IO.monad()
 
-    suspend fun <A> IO<A>.bind(): A = PropertyT.lift(IO.monad(), this).bind()
+    suspend fun <A> IO<A>.bind(): A = PropertyT.monadTrans().run { liftT(IO.monad()) }.bind()
 }
 
 class PropertyTestContinuation<A> : MonadContinuation<PropertyTPartialOf<ForIO>, A>(
@@ -96,7 +93,4 @@ interface PropertyTest<M> : PropertyTMonadTest<M> {
         forAllFn(GenT.monadGen().f().fix(), SA, SB)
 
     fun <A> discard(): PropertyT<M, A> = discard(MM())
-
-    // TODO lift io and effect { }
-    //  implement Monadtrans!
 }

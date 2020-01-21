@@ -1,6 +1,7 @@
 package propCheck.property
 
 import arrow.Kind
+import arrow.Kind2
 import arrow.core.Either
 import arrow.core.Id
 import arrow.core.extensions.id.monad.monad
@@ -11,6 +12,7 @@ import arrow.mtl.EitherT
 import arrow.mtl.WriterT
 import arrow.mtl.WriterTPartialOf
 import arrow.mtl.extensions.writert.functor.functor
+import arrow.mtl.typeclasses.MonadTrans
 import arrow.mtl.value
 import arrow.typeclasses.*
 import pretty.Doc
@@ -20,10 +22,12 @@ import propCheck.arbitrary.`fun`.show.show
 import propCheck.arbitrary.gent.alternative.orElse
 import propCheck.arbitrary.gent.functor.functor
 import propCheck.arbitrary.gent.monad.monad
+import propCheck.arbitrary.gent.monadTrans.monadTrans
 import propCheck.pretty.showPretty
 import propCheck.property.log.monoid.monoid
 import propCheck.property.propertyt.monadTest.monadTest
 import propCheck.property.testt.monad.monad
+import propCheck.property.testt.monadTrans.monadTrans
 
 // -------------- Property
 
@@ -31,6 +35,28 @@ data class Property(val config: PropertyConfig, val prop: PropertyT<ForIO, Unit>
 
     fun mapConfig(f: (PropertyConfig) -> PropertyConfig): Property =
         copy(config = f(config))
+
+    fun withConfidence(c: Confidence): Property =
+        mapConfig {
+            it.copy(
+                terminationCriteria = when (it.terminationCriteria) {
+                    is TerminationCriteria.EarlyTermination -> TerminationCriteria.EarlyTermination(c, it.terminationCriteria.limit)
+                    is TerminationCriteria.NoEarlyTermination -> TerminationCriteria.NoEarlyTermination(c, it.terminationCriteria.limit)
+                    is TerminationCriteria.NoConfidenceTermination -> TerminationCriteria.NoConfidenceTermination(it.terminationCriteria.limit)
+                }
+            )
+        }
+
+    fun withTestLimit(i: TestLimit): Property =
+        mapConfig {
+            it.copy(
+                terminationCriteria = when (it.terminationCriteria) {
+                    is TerminationCriteria.EarlyTermination -> TerminationCriteria.EarlyTermination(it.terminationCriteria.confidence, i)
+                    is TerminationCriteria.NoEarlyTermination -> TerminationCriteria.NoEarlyTermination(it.terminationCriteria.confidence, i)
+                    is TerminationCriteria.NoConfidenceTermination -> TerminationCriteria.NoConfidenceTermination(i)
+                }
+            )
+        }
 
     fun withDiscardLimit(i: DiscardRatio): Property =
         mapConfig { PropertyConfig.maxDiscardRatio.set(it, i) }
@@ -130,15 +156,21 @@ interface PropertyTMonadTest<M> : MonadTest<PropertyTPartialOf<M>>, PropertyTMon
         PropertyT(hoist(GenT.monad(MM())))
 }
 
-fun <M, A> PropertyT.Companion.lift(FF: Monad<M>, fa: Kind<M, A>): PropertyT<M, A> =
-    PropertyT(GenT.lift(FF, fa).lift(FF))
+@extension
+interface PropertyTMonadTrans : MonadTrans<ForPropertyT> {
+    override fun <G, A> Kind<G, A>.liftT(MF: Monad<G>): Kind2<ForPropertyT, G, A> =
+        GenT.monadTrans().run { liftT(MF) }.let {
+            TestT.monadTrans().run { it.liftT(GenT.monad(MF)).fix() }.let(::PropertyT)
+        }
+}
+
 
 // ---------
 
 // these will be specialised later in syntax interfaces so now worries here
 fun <M, A> forAllWithT(showA: (A) -> Doc<Markup>, gen: GenT<M, A>, MM: Monad<M>): PropertyT<M, A> =
     PropertyT.monadTest(MM).run {
-        PropertyT(gen.lift(MM)).flatTap { a ->
+        PropertyT(TestT.monadTrans().run { gen.liftT(GenT.monad(MM)).fix() }).flatTap { a ->
             writeLog(JournalEntry.Input { showA(a) })
         }.fix()
     }

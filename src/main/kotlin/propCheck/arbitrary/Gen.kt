@@ -1,12 +1,14 @@
 package propCheck.arbitrary
 
 import arrow.Kind
+import arrow.Kind2
 import arrow.core.*
 import arrow.core.extensions.id.functor.functor
 import arrow.core.extensions.id.monad.monad
 import arrow.core.extensions.list.traverse.sequence
 import arrow.core.extensions.list.traverse.traverse
 import arrow.core.extensions.listk.functorFilter.filterMap
+import arrow.core.extensions.option.monad.monad
 import arrow.extension
 import arrow.mtl.OptionT
 import arrow.mtl.OptionTPartialOf
@@ -14,7 +16,9 @@ import arrow.mtl.extensions.optiont.alternative.alternative
 import arrow.mtl.extensions.optiont.applicative.applicative
 import arrow.mtl.extensions.optiont.functor.functor
 import arrow.mtl.extensions.optiont.monad.monad
+import arrow.mtl.extensions.optiont.monadTrans.monadTrans
 import arrow.mtl.fix
+import arrow.mtl.typeclasses.MonadTrans
 import arrow.mtl.typeclasses.unnest
 import arrow.mtl.value
 import arrow.syntax.collections.tail
@@ -31,6 +35,7 @@ import propCheck.property.rose.applicative.applicative
 import propCheck.property.rose.birecursive.birecursive
 import propCheck.property.rose.monad.monad
 import propCheck.property.rose.monadFilter.filterMap
+import propCheck.property.rose.monadTrans.monadTrans
 import kotlin.random.Random
 
 // @higherkind boilerplate
@@ -168,9 +173,18 @@ interface GenTMonoid<M, A> : Monoid<GenT<M, A>>, GenTSemigroup<M, A> {
 @extension
 interface GenTAlternative<M> : Alternative<GenTPartialOf<M>>, GenTApplicative<M> {
     override fun MM(): Monad<M>
-    override fun <A> empty(): Kind<GenTPartialOf<M>, A> = GenT { Rose.alternative(OptionT.alternative(MM())).empty<A>().fix() }
+    override fun <A> empty(): Kind<GenTPartialOf<M>, A> = GenT { Rose.alternative(OptionT.alternative(MM()), OptionT.monad(MM())).empty<A>().fix() }
     override fun <A> Kind<GenTPartialOf<M>, A>.orElse(b: Kind<GenTPartialOf<M>, A>): Kind<GenTPartialOf<M>, A> =
-        GenT { t -> (fix().runGen(t).orElse(OptionT.alternative(MM()), b.fix().runGen(t))) }
+        GenT { t -> (fix().runGen(t).orElse(OptionT.alternative(MM()), OptionT.monad(MM()), b.fix().runGen(t))) }
+}
+
+@extension
+interface GenTMonadTrans : MonadTrans<ForGenT> {
+    override fun <G, A> Kind<G, A>.liftT(MF: Monad<G>): Kind2<ForGenT, G, A> = GenT {
+        OptionT.monadTrans().run {
+            liftT(MF)
+        }.let { Rose.monadTrans().run { it.liftT(OptionT.monad(MF)).fix() } }
+    }
 }
 
 fun <M> GenT.Companion.monadGen(MM: Monad<M>): MonadGen<GenTPartialOf<M>, M> = object : MonadGen<GenTPartialOf<M>, M> {
@@ -203,10 +217,6 @@ fun <M, A> Gen<A>.generalize(MM: Monad<M>): GenT<M, A> = GenT { (r, s) ->
                 MM.just(fa.fix().value().value())
             )
     }, OptionT.functor(Id.functor()))
-}
-
-fun <M, A> GenT.Companion.lift(ff: Functor<M>, fa: Kind<M, A>): GenT<M, A> = GenT {
-    Rose.lift(OptionT.functor(ff), OptionT.liftF(ff, fa))
 }
 
 interface MonadGen<M, B> : Monad<M>, MonadFilter<M>, Alternative<M> {
@@ -516,10 +526,11 @@ interface MonadGen<M, B> : Monad<M>, MonadFilter<M>, Alternative<M> {
     fun <A> Kind<M, A>.freeze(): Kind<M, Tuple2<A, Kind<M, A>>> =
         GenT { (r, s) ->
             Rose.monad(roseM()).fx.monad {
-                val mx =
-                    !Rose.lift(roseM(), OptionT.liftF(BM(), toGenT().runGen(r toT s).runRose.fix().value()))
+                val mx = !OptionT.monadTrans().run { toGenT().runGen(r toT s).runRose.fix().value().liftT(BM()) }.let {
+                    Rose.monadTrans().run { it.liftT(OptionT.monad(BM())) }
+                }
                 mx.fold({
-                    !Rose.alternative(OptionT.alternative(BM())).empty<Tuple2<A, Kind<M, A>>>()
+                    !Rose.alternative(OptionT.alternative(BM()), OptionT.monad(BM())).empty<Tuple2<A, Kind<M, A>>>()
                 }, {
                     (it.res toT GenT { _ ->
                         Rose(OptionT.monad(BM()).just(it))

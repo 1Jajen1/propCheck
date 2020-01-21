@@ -1,18 +1,17 @@
 package propCheck.property
 
 import arrow.Kind
+import arrow.Kind2
 import arrow.core.*
 import arrow.core.extensions.fx
 import arrow.core.extensions.sequence.foldable.foldLeft
 import arrow.core.extensions.sequence.foldable.foldRight
 import arrow.core.extensions.sequence.traverse.traverse
 import arrow.extension
-import arrow.mtl.typeclasses.ComposedFunctor
-import arrow.mtl.typeclasses.Nested
-import arrow.mtl.typeclasses.nest
-import arrow.mtl.typeclasses.unnest
+import arrow.mtl.typeclasses.*
 import arrow.recursion.typeclasses.Birecursive
 import arrow.typeclasses.*
+import propCheck.property.rose.monadTrans.monadTrans
 import propCheck.property.rosef.functor.functor
 
 // @higherkind boilerplate
@@ -86,12 +85,6 @@ data class Rose<M, A>(val runRose: Kind<M, RoseF<A, Rose<M, A>>>) :
     companion object {
         fun <M, A> just(AM: Applicative<M>, a: A): Rose<M, A> =
             Rose(AM.just(RoseF(a, emptySequence())))
-
-        fun <M, A> lift(FF: Functor<M>, fa: Kind<M, A>): Rose<M, A> = FF.run {
-            Rose(fa.map { RoseF<A, Rose<M, A>>(it, emptySequence()) })
-        }
-
-
 
         fun <M, A> unfold(MM: Monad<M>, a: A, f: (A) -> Sequence<A>): Rose<M, A> = Rose(
             MM.just(
@@ -189,9 +182,10 @@ interface RoseMonad<M> : Monad<RosePartialOf<M>> {
 @extension
 interface RoseAlternative<M> : Alternative<RosePartialOf<M>>, RoseApplicative<M> {
     fun AM(): Alternative<M>
-    override fun MA(): Applicative<M> = AM()
+    fun MM(): Monad<M>
+    override fun MA(): Applicative<M> = MM()
 
-    override fun <A> empty(): Kind<RosePartialOf<M>, A> = Rose.lift(AM(), AM().empty<A>())
+    override fun <A> empty(): Kind<RosePartialOf<M>, A> = Rose.monadTrans().run { AM().empty<A>().liftT(MM()) }
 
     override fun <A> Kind<RosePartialOf<M>, A>.orElse(b: Kind<RosePartialOf<M>, A>): Kind<RosePartialOf<M>, A> =
         AM().run {
@@ -222,7 +216,7 @@ interface RoseMonadFilter<M> : MonadFilter<RosePartialOf<M>>, RoseFunctorFilter<
     override fun AM(): Alternative<M>
     override fun MM(): Monad<M>
 
-    override fun <A> empty(): Kind<RosePartialOf<M>, A> = Rose.lift(MM(), AM().empty())
+    override fun <A> empty(): Kind<RosePartialOf<M>, A> = Rose.monadTrans().run { AM().empty<A>().liftT(MM()) }
     override fun <A, B> Kind<RosePartialOf<M>, A>.map(f: (A) -> B): Kind<RosePartialOf<M>, B> =
         fix().map(MM(), f)
 
@@ -246,6 +240,13 @@ interface RoseBirecursive<M, A>: Birecursive<Rose<M, A>, Nested<M, RoseFPartialO
 
     override fun Rose<M, A>.projectT(): Kind<Nested<M, RoseFPartialOf<A>>, Rose<M, A>> =
         runRose.nest()
+}
+
+@extension
+interface RoseMonadTrans : MonadTrans<ForRose> {
+    override fun <G, A> Kind<G, A>.liftT(MF: Monad<G>): Kind2<ForRose, G, A> = MF.run {
+        Rose(map { RoseF<A, Rose<G, A>>(it, emptySequence()) })
+    }
 }
 
 fun <M, N, A> Rose<M, A>.hoist(f: FunctionK<M, N>, MF: Functor<M>): Rose<N, A> = Rose(

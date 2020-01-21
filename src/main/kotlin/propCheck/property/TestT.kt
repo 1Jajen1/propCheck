@@ -1,6 +1,7 @@
 package propCheck.property
 
 import arrow.Kind
+import arrow.Kind2
 import arrow.core.*
 import arrow.core.extensions.id.applicative.applicative
 import arrow.core.extensions.id.eq.eq
@@ -12,6 +13,7 @@ import arrow.mtl.WriterTPartialOf
 import arrow.mtl.extensions.writert.applicative.applicative
 import arrow.mtl.extensions.writert.functor.functor
 import arrow.mtl.extensions.writert.monad.monad
+import arrow.mtl.typeclasses.MonadTrans
 import arrow.mtl.value
 import arrow.typeclasses.*
 import pretty.*
@@ -97,12 +99,15 @@ interface TestTMonadTest<M> : MonadTest<TestTPartialOf<M>>, TestTMonad<M> {
     override fun <A> Test<A>.liftTest(): Kind<TestTPartialOf<M>, A> = hoist(MM())
 }
 
-fun <M, A> GenT<M, A>.lift(MM: Monad<M>): TestT<GenTPartialOf<M>, A> = TestT(
-    EitherT.liftF<WriterTPartialOf<GenTPartialOf<M>, Log>, Failure, A>(
-        WriterT.functor(GenT.functor(MM)),
-        WriterT.liftF(this@lift, Log.monoid(), GenT.applicative(MM))
+@extension
+interface TestTMonadTrans : MonadTrans<ForTestT> {
+    override fun <G, A> Kind<G, A>.liftT(MF: Monad<G>): Kind2<ForTestT, G, A> =TestT(
+        EitherT.liftF<WriterTPartialOf<G, Log>, Failure, A>(
+            WriterT.functor(MF),
+            WriterT.liftF(this, Log.monoid(), MF)
+        )
     )
-)
+}
 
 // TODO refractor when https://github.com/arrow-kt/arrow/pull/1767 is merged
 fun <M, A> Test<A>.hoist(MM: Monad<M>): TestT<M, A> = TestT(EitherT(WriterT(MM.just(runTestT.value().value().value()))))

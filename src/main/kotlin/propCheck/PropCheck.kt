@@ -29,36 +29,10 @@ import propCheck.property.Failure
 import kotlin.random.Random
 
 /**
- * Grand plan:
- * 1. Finish state machine testing + Function instances
- * 2. Better interop with kotlin ranges
- * 3. Polish api with syntax sugar
- * 4.1 Gradle test runner
- * 4.2 Test framework integration (kotlintest, spek etc)
- * 5. Write tests for propcheck itself
- * 6. Write ank checked documentation
- * 6.1. Have docs switchable between syntax sugar/fx/flatMap
- * 7. Polish and prepare release notes
- *
- * Somewhere after 6. publish release candidate in arrow channels
- * After 7 release 1.0
- *
- * Problems that need to be solved:
- * - Autobinding syntax sugar
- * - Gradle test runner won't be too easy to get right I think
- *
- * New Grand Plan:
+ * TODO's
  * - state machine testing
  *  - rewrite using rec-scheme
  *  - pretty print results
- * - Functions
- *  - easier access to toFunction
- * - writing gens
- *  - bind overload for `ForId` gens inside `M` genT's.
- *  - shorthand to get into `MonadGen`
- * - writing properties
- *  - look into autobinding eqv/neqv or provide should like alternative syntax which autobinds
- *  - same for success/discard etc
  * - shrinking
  *  - pretty print shrink-trees/gens
  * - toString() output pretty printer
