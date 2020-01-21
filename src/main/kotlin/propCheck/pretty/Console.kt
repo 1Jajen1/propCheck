@@ -6,6 +6,7 @@ import arrow.core.extensions.list.traverse.traverse
 import arrow.core.extensions.listk.foldable.foldMap
 import arrow.core.extensions.listk.monoid.monoid
 import arrow.core.extensions.monoid
+import arrow.core.extensions.option.semigroup.maybeCombine
 import arrow.core.extensions.sequence.zip.zipWith
 import arrow.fx.*
 import arrow.fx.extensions.fx
@@ -13,9 +14,12 @@ import arrow.fx.extensions.io.applicative.applicative
 import arrow.fx.extensions.io.concurrent.concurrent
 import arrow.fx.extensions.io.dispatchers.dispatchers
 import arrow.fx.extensions.io.monad.monad
+import arrow.fx.extensions.io.monadDefer.Ref
 import arrow.fx.typeclasses.ExitCase
 import arrow.fx.typeclasses.Fiber
 import arrow.fx.typeclasses.seconds
+import arrow.typeclasses.Monoid
+import arrow.typeclasses.Semigroup
 import java.io.PrintStream
 
 /*
@@ -63,7 +67,15 @@ data class Region(
 )
 
 sealed class RegionChange {
-    data class BufferChange(val buff: ByteArray, val limit: Int) : RegionChange()
+    data class BufferChange(val buff: ByteArray) : RegionChange() {
+        companion object {
+            fun monoid() = object: Monoid<BufferChange> {
+                override fun empty(): BufferChange = BufferChange(ByteArray(0))
+                override fun BufferChange.combine(b: BufferChange): BufferChange =
+                    BufferChange(buff + b.buff)
+            }
+        }
+    }
     object RegionContent : RegionChange()
     object ShutDown : RegionChange()
 }
@@ -75,8 +87,8 @@ fun displayConcurrently(
         setRegion: (Region, String) -> IO<Unit>,
         closeRegion: (Region, String) -> IO<Unit>
     ) -> IO<Unit>
-): IO<Unit> = setup().bracket({ (_, _, _, r, f, w, n, q) ->
-    cleanup(r, f, w, n, q)
+): IO<Unit> = setup().bracket({ (_, _, _, r, f, w, n) ->
+    cleanup(r, f, w, n)
 }, { (create, set, close) -> f(create, set, close) })
 
 fun setup() = IO.fx {
@@ -87,15 +99,13 @@ fun setup() = IO.fx {
     // native sysout
     val nativeOut = System.out
 
-    val queue = Queue.unbounded<ForIO, RegionChange>(IO.concurrent()).bind()
+    val bufferChange = MVar.empty<ForIO, RegionChange.BufferChange>(IO.concurrent()).bind()
     val redraw = MVar.empty<ForIO, Unit>(IO.concurrent()).bind()
 
     fun update(currentOut: List<String>): IO<Unit> = IO.fx {
         val change = IO.fx {
-            val sz = queue.size().bind()
-            // make sure queue is empty before closing
-            // if (sz != 0) queue.take().bind()
-            /* else */ IO.dispatchers().default().raceN(effect { "??" }, effect { "!!" }).bind().fold(
+            // TODO race mvar take here
+            IO.dispatchers().default().raceN(effect { "??" }, effect { "!!" }).bind().fold(
                 { RegionChange.RegionContent }, { RegionChange.ShutDown }
             )
         }.bind()
@@ -104,7 +114,7 @@ fun setup() = IO.fx {
             is RegionChange.BufferChange -> {
                 val clear = cursorUp(currentOut.size) + setCursorColumn(0) + clearFromCursorToScreenEndCode
                 effect { nativeOut.print(clear) }.bind()
-                effect { nativeOut.write(change.buff, 0, change.limit) }.bind()
+                effect { nativeOut.write(change.buff) }.bind()
                 effect { if (currentOut.isNotEmpty()) nativeOut.println(currentOut.joinToString("\n")) }.bind()
                 effect { nativeOut.flush() }.bind()
 
@@ -132,24 +142,22 @@ fun setup() = IO.fx {
     val fiber = update(emptyList()).fork(dispatchers().io()).bind()
 
     val newOutStream: PrintStream = object : PrintStream(nativeOut, true) {
-        var buffer: ByteArray = ByteArray(1024)
-        var offset = 0
+        var buffer: ByteArray = ByteArray(0)
 
         override fun write(p0: ByteArray, p1: Int, p2: Int) {
-            // TODO ensure size?!
-            p0.copyInto(buffer, offset, p1, p2)
-            offset += p2 - p1
+            buffer + p0.slice(p1..p2)
         }
 
         override fun flush() {
             nativeOut.println("Flush start")
-            val change = RegionChange.BufferChange(buffer.copyOf(), offset)
-            nativeOut.println("Flushing: ${buffer.slice(0..offset).joinToString("") { it.toChar().toString() }}")
-            queue.offer(change).fix().unsafeRunSync()
+            val change = RegionChange.BufferChange(buffer)
+            nativeOut.println("Flushing: ${buffer.joinToString("") { it.toChar().toString() }}")
+            IO.fx {
+
+            }
             nativeOut.println("Flush end")
             // Ugly stuff ^^
-            buffer = ByteArray(1024)
-            offset = 0
+            buffer = ByteArray(0)
         }
     }
 
@@ -178,10 +186,10 @@ fun setup() = IO.fx {
         effect { newOutStream.flush() }.bind()
     }
 
-    Tuple8(::createRegion, ::setRegion, ::closeRegion, endPromise, fiber, newOutStream, nativeOut, queue)
+    Tuple7(::createRegion, ::setRegion, ::closeRegion, endPromise, fiber, newOutStream, nativeOut)
 }
 
-fun cleanup(promise: Promise<ForIO, Unit>, fiber: Fiber<ForIO, Unit>, wrapped: PrintStream, nativeOut: PrintStream, queue: Queue<ForIO, RegionChange>): IO<Unit> = IO.fx {
+fun cleanup(promise: Promise<ForIO, Unit>, fiber: Fiber<ForIO, Unit>, wrapped: PrintStream, nativeOut: PrintStream): IO<Unit> = IO.fx {
     // TODO bracket wrapping and unwrapping of stdout because this should not actually run in here!
     effect { wrapped.flush() }.bind()
     effect { System.setOut(nativeOut) }.bind()

@@ -193,6 +193,9 @@ fun <M> GenT.Companion.monadGen(MM: Monad<M>): MonadGen<GenTPartialOf<M>, M> = o
     }
 }
 
+// for convenience and to not throw on non-arrow users
+fun GenT.Companion.monadGen(): MonadGen<GenTPartialOf<ForId>, ForId> = monadGen(Id.monad())
+
 fun <M, A> Gen<A>.generalize(MM: Monad<M>): GenT<M, A> = GenT { (r, s) ->
     runGen(r toT s).hoist(object : FunctionK<OptionTPartialOf<ForId>, OptionTPartialOf<M>> {
         override fun <A> invoke(fa: Kind<OptionTPartialOf<ForId>, A>): Kind<OptionTPartialOf<M>, A> =

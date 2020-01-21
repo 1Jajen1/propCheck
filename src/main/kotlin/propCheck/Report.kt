@@ -106,8 +106,6 @@ fun Option<PropertyName>.doc(): Doc<Markup> = fold({
     "<interactive>".text()
 }, { s -> s.unPropertyName.doc() })
 
-// TODO add coverage
-// TODO add discards in the shrink case
 fun Report<Progress>.prettyProgress(name: Option<PropertyName>): Doc<Markup> = when (status) {
     is Progress.Running -> (bullet().annotate(Markup.Icon(IconType.Running)) spaced
             name.doc() spaced
@@ -119,7 +117,8 @@ fun Report<Progress>.prettyProgress(name: Option<PropertyName>): Doc<Markup> = w
     is Progress.Shrinking -> ("↯".text().annotate(Markup.Icon(IconType.Shrinking)) spaced
             name.doc() spaced
             "failed after".text() spaced
-            numTests.testCount() spaced
+            numTests.testCount() +
+            numDiscarded.discardCount() spaced
             "(shrinking)".text()).annotate(Markup.Progress.Shrinking)
 }
 
@@ -229,7 +228,7 @@ fun Label<CoverCount>.width(tests: TestCount): ColumnWidth = ColumnWidth(
 
 fun CoverPercentage.renderCoverPercentage(): String = "$unCoverPercentage%"
 
-// TODO add coverage and reproduce notice
+// TODO add reproduce notice
 fun FailureSummary.pretty(): Doc<Markup> = annotations.prettyAnnotations().ifNotEmpty { vSep() + line() } +
         footnotes.map { it().annotate(Markup.Footnote) }.ifNotEmpty { vSep() + line() } +
         failureDoc
@@ -315,6 +314,7 @@ sealed class Style {
     data class Ansi(val st: AnsiStyle) : Style()
 }
 
+// TODO this could be implemented with renderDecorated if that had nicer types
 fun SimpleDoc<Style>.renderMarkup(): String {
     tailrec fun SimpleDoc<Style>.go(
         xs: List<Style>,

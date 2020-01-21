@@ -15,6 +15,7 @@ import arrow.typeclasses.MonadSyntax
 import arrow.typeclasses.Show
 import pretty.Doc
 import propCheck.arbitrary.*
+import propCheck.arbitrary.`fun`.show.show
 import propCheck.property.propertyt.monad.monad
 import kotlin.coroutines.startCoroutine
 
@@ -92,9 +93,10 @@ interface PropertyTest<M> : PropertyTMonadTest<M> {
         forAll(GenT.monadGen(Id.monad()).f().fix(), SA)
 
     fun <A, B> forAllFn(SA: Show<A> = Show.any(), SB: Show<B> = Show.any(), f: MonadGen<GenTPartialOf<ForId>, ForId>.() -> GenTOf<ForId, Fun<A, B>>) =
-        forAllFn(GenT.monadGen(Id.monad()).f().fix(), SA, SB)
+        forAllFn(GenT.monadGen().f().fix(), SA, SB)
 
     fun <A> discard(): PropertyT<M, A> = discard(MM())
 
     // TODO lift io and effect { }
+    //  implement Monadtrans!
 }

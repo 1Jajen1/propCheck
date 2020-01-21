@@ -118,25 +118,14 @@ interface FnFunctor<C> : Functor<FnPartialOf<C>> {
     }
 }
 
-// TODO move
-fun <M, A, B> forAllFn(
-    MM: Monad<M>,
-    G: Gen<Fun<A, B>>,
-    SA: Show<A> = Show.any(),
-    SB: Show<B> = Show.any()
-): PropertyT<M, (A) -> B> =
-    PropertyT.monad(MM).run {
-        forAll(G, MM, Fun.show(SA, SB)).map { (f) -> f }.fix()
-    }
-
 // fn gen
-fun <A, B> Gen<B>.toFunction(AF: Func<A>, AC: Coarbitrary<A>): Gen<Fun<A, B>> =
+fun <A, B> GenTOf<ForId, B>.toFunction(AF: Func<A>, AC: Coarbitrary<A>): Gen<Fun<A, B>> =
     Gen.applicative(Id.monad()).map(
         this@toFunction,
         Gen { (s, sz) ->
             Rose.unfold(
                 OptionT.monad(Id.monad()),
-                AF.function { a -> AC.run { this@toFunction.coarbitrary(a) } }.map { it.runGen(s toT sz) }
+                AF.function { a -> AC.run { this@toFunction.fix().coarbitrary(a) } }.map { it.runGen(s toT sz) }
             ) {
                 shrinkFun(it) { it.runRose.value().value().fold({ emptySequence() }, { it.shrunk }) }
             }

@@ -87,13 +87,11 @@ fun main() {
             }, Either.applicative()).bind()
         },
         "Option.map" toT property {
-            // TODO add special IdGen overload to forAll etc which offers the extra functions
-            //  like filter, toFunction, etc
             val opt = !forAll { int(0..100).option() }
-            annotate { "Hello2".text() }.bind()
-            val f = !forAllFn { int(0..100).toGenT().toFunction(Int.func(), Int.coarbitrary()).fromGenT() }
+            footnote { "Hello2".text() }.bind()
+            val f = !forAllFn { int(0..100).toFunction(Int.func(), Int.coarbitrary()) }
 
-            annotate { "Hello".text() }.bind()
+            footnote { "Hello".text() }.bind()
 
             opt.map(f).eqv(opt.fold({ None }, { f(it + 1).some() })).bind()
         },
@@ -122,63 +120,6 @@ fun main() {
         }
     ).unsafeRunSync()
 }
-
-/**
- * Running properties:
- * Entry points: execPar/execSeq both take a config
- *  - execPar has a max worker options which defaults to availableThreads
- *  - both take a config which specifies pretty-print settings like ribbon- and max-width, color
- *     other options are short-circuit on failure
- *  - both run tests according to the config and accumulate results
- *   - (ListK<Report>, Option<Report>) contains all necessary information, passed tests + optional failure
- *    - at runtime I might want to use Either<Report, Unit> to have short-circuiting
- *  - both call into lifecycle methods:
- *   - I need some global state that tracks current running tests and stores their state
- *   - Test can either be:
- *      Scheduled(id: Int) // show as not yet running
- *      Ignored(reason: String) // show greyed out as skipped
- *      Running(iteration: Int) // show as running and update from 0..testLimit + some smart way to show discards
- *      Shrinking(iteration: Int) // show as failed + shrinking with the shrunkAttempts without showing max, completion is non-det
- *      GaveUp, Failed, Passed (all +report) // show properly
- *    - These also mix well with gradle/intellij reporting
- *  - Neither method actually prints directly to some accumulated console report, they only update the console
- *   - Progress updates can be configured in the config (passing handle like IO methods)
- *    - This means you can easily disable/enable different output handles
- *  - Neither method throws on test failure, this behaviour can be added back by a combinator on exec*.withException()
- * Other entry points:
- *  - recheck runs a single property with a specified seed and size (maybe integrate it with execSeq, execPar)
- *
- * execSeq:
- * - traverse { p -> genSeed().flatTap { s -> p.checkProperty(s) }.lift() // lift into EitherT<WriterT> }
- *  - Property.checkProperty(seed: RandSeed, hooks: Hooks): IO<Report>
- *   - update lifecycle hook scheduled -> running(0)
- *   - setup start state and unfold using elgotM with IO
- *    - the fold just unpacks the Id into IO
- *    - unfold:
- *     - update lifecycle hook Running(numTests + 1)
- *     - stop if any stop condition was reached
- *      - maxTests: lifecycle hook Passed(report)
- *      - gaveUp: lifecycle hook GaveUp(report)
- *     - run a single test
- *      - failed:
- *       - update lifecycle hook Shrinking(0)
- *       - start shrinking
- *        - setup shrink state
- *        - elgotM
- *         - unfold:
- *          - update lifecycle hook Shrinking(numShrinks + 1)
- *          - run a single shrink it
- *       - update lifecycle hook Failed(report)
- *       - return shrunk result
- *      - success:
- *       - recur
- *
- * execPar:
- *  Same as traverse but singular test runs are run in parallel
- * exec* overfloads that take [(String, Prop)], [(String, [Prop])] and [(String, [(String, Prop])]
- *  - those denote named properties, grouped properties and named grouped properties.
- *  - There is also the guarantee that execPar will execute props in a group sequentially
- */
 
 fun checkGroup(groupName: String, vararg props: Tuple2<String, Property>): IO<Boolean> =
     detectConfig().flatMap { checkGroup(it, groupName, *props) }
