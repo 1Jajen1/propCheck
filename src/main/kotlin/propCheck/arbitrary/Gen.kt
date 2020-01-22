@@ -703,27 +703,3 @@ fun <A> Gen<A>.printTreeWith(size: Size, randSeed: RandSeed, SA: Show<A> = Show.
         }
         .joinToString("\n")
         .let(::println)
-
-fun main() {
-    treeGen()
-        .printTreeWith(Size(3), RandSeed(1))
-}
-
-sealed class Tree<A> {
-    data class Leaf<A>(val a: A) : Tree<A>()
-    data class Branch<A>(val l: Tree<A>, val r: Tree<A>) : Tree<A>()
-}
-
-fun treeGen(): Gen<Tree<Int>> = Gen.monadGen(Id.monad()).run {
-    recursive(
-        { els -> choice(*els.toTypedArray()) },
-        listOf(
-            int(0..10).map(Id.monad()) { Tree.Leaf(it) as Tree<Int> }.fix()
-        ), {
-            listOf(
-                //Gen.applicative(Id.monad()).map(treeGen(), treeGen()) { (l, r) -> Tree.Branch(l, r) }.fix()
-                subterm2(treeGen(), treeGen()) { l, r -> Tree.Branch(l, r) }.fix()
-            )
-        }
-    ).fix()
-}

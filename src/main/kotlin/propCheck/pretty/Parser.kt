@@ -42,8 +42,7 @@ sealed class KValue {
     }
 
     private fun <A> List<Doc<A>>.newLineTupled() =
-    // Special case this because here the highest layout for [] is actually [\n\n]
-        //  and in the worst case that will get chosen
+    // Special case this because here the highest layout for () is actually (\n\n) and in the worst case that will get chosen
         if (isEmpty()) lParen() + rParen()
         else encloseSep(
             lParen() + lineBreak() + (space() + space()).flatAlt(nil()),
@@ -52,8 +51,7 @@ sealed class KValue {
         ).group()
 
     private fun <A> List<Doc<A>>.newLineList() =
-    // Special case this because here the highest layout for [] is actually [\n\n]
-        //  and in the worst case that will get chosen
+    // Special case this because here the highest layout for [] is actually [\n\n] and in the worst case that will get chosen
         if (isEmpty()) lBracket() + rBracket()
         else encloseSep(
             lBracket() + lineBreak() + (space() + space()).flatAlt(nil()),
@@ -70,11 +68,6 @@ fun <A> A.showPretty(SA: Show<A> = Show.any()): Doc<Nothing> = SA.run {
         KValue.RawString(str)
     }, ::identity)
 }.doc().group()
-
-@extension
-interface KValueShow : Show<KValue> {
-    override fun KValue.show(): String = doc().renderPretty().renderString()
-}
 
 @extension
 interface KValueEq : Eq<KValue> {

@@ -29,8 +29,6 @@ def arrow_version = "0.10.5-SNAPSHOT"
 dependencies {
     implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8"
 
-    implementation 'com.github.ajalt:mordant:1.2.1' // for colorful terminal output
-
     kapt "io.arrow-kt:arrow-meta:$arrow_version" // auto generation for @extension and @higherkind
 
     implementation "io.arrow-kt:arrow-fx:$arrow_version" // IO and arrow fx

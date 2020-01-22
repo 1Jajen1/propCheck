@@ -6,8 +6,11 @@ import arrow.core.extensions.either.applicative.applicative
 import arrow.core.extensions.id.traverse.traverse
 import arrow.core.extensions.list.functorFilter.filterMap
 import arrow.core.extensions.sequence.foldable.foldRight
+import arrow.core.extensions.sequencek.traverse.traverse
 import arrow.fx.IO
 import arrow.fx.extensions.fx
+import arrow.fx.extensions.io.applicative.applicative
+import arrow.fx.extensions.io.concurrent.parTraverse
 import arrow.fx.extensions.io.functor.unit
 import arrow.fx.extensions.io.monad.flatMap
 import arrow.fx.extensions.io.monad.monad
@@ -32,9 +35,6 @@ import kotlin.random.Random
  * TODO Unsigned type instances for coarbitrary and function. Also generators for unsigned types
  * TODO Gen's and instances for arrow types
  * TODO's
- * - state machine testing
- *  - rewrite using rec-scheme
- *  - pretty print results
  * - shrinking
  *  - pretty print shrink-trees/gens
  * - toString() output pretty printer
@@ -49,13 +49,13 @@ fun main() {
     checkGroup(
         "My tests",
         "List.reverse" toT property(PropertyConfig(TerminationCriteria.EarlyTermination(Confidence(), TestLimit(100)))) {
-            val xs = !forAll { int(3..3).list(0..99) }
+            val xs = !forAll { int(3..3).list(0..99).map { it.k() } }
 
-            coverTable("Length", 1.0, xs.size.rem(4).toString(), true).bind()
+            coverTable("Length.rem(4)", 10.0, xs.size.rem(4).toString(), true).bind()
 
-            xs.map { it.toString() }.roundtrip({ "[" + it.joinToString("ö") + "]" }, {
+            xs.map { it.toString() }.roundtrip({ "(" + it.joinToString(", ") + ")" }, {
                 listParser().runParser("", it)
-                    .map { (it as KValue.KList); it.vals.map { it.doc().pretty() } }
+                    .map { (it as KValue.KList); it.vals.map { it.doc().pretty() }.k() }
                     .mapLeft { it.renderPretty(String.stream()) }
             }, Either.applicative()).bind()
         },
