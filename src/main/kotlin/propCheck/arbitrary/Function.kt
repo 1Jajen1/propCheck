@@ -307,7 +307,6 @@ interface LongFunc : Func<Long> {
 
 fun Long.Companion.func(): Func<Long> = object : LongFunc {}
 
-// TODO: do the other unsigned types
 interface UByteFunc : Func<UByte> {
     override fun <B> function(f: (UByte) -> B): Fn<UByte, B> =
         funList((UByte.MIN_VALUE..UByte.MAX_VALUE).map { it.toUByte() }, f)

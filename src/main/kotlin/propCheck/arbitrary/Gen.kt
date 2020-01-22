@@ -654,6 +654,7 @@ fun <A> Gen<A>.printWith(size: Size, r: RandSeed, SA: Show<A> = Show.any()): Uni
 fun <A> Gen<A>.printTree(SA: Show<A> = Show.any()): Unit =
     printTreeWith(Size(30), RandSeed(Random.nextLong()), SA)
 
+// TODO I did write a prettyprinter library for propCheck so I should maybe use it? :)
 fun <A> Gen<A>.printTreeWith(size: Size, randSeed: RandSeed, SA: Show<A> = Show.any()) =
     runGen(randSeed toT size)
         .let {
@@ -665,7 +666,6 @@ fun <A> Gen<A>.printTreeWith(size: Size, randSeed: RandSeed, SA: Show<A> = Show.
                         .fold({
                             listOf("<discarded>")
                         }, { r ->
-                            // TODO wooo ugly code, refractor to a seperate method
                             SA.run {
                                 listOf(
                                     r.fix().res.show()

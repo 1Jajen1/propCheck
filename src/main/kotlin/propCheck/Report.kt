@@ -320,9 +320,11 @@ fun SimpleDoc<Style>.renderMarkup(): String {
         xs: List<Style>,
         cont: (String) -> String
     ): String = when (val dF = unDoc.value()) {
-        is SimpleDocF.Fail -> TODO("Better error")
+        is SimpleDocF.Fail -> throw IllegalStateException("Encountered Fail in doc render. Please report this!")
         is SimpleDocF.Nil -> cont("")
         is SimpleDocF.Line -> dF.doc.go(xs, AndThen(cont).compose { str ->
+            // This is quite the hack, but it works ^^
+            // Maybe implement it as filter and get all Style.Prefix if in the future there can be more than one
             xs.firstOrNull { it is Style.Prefix }.toOption().fold({
                 "\n${spaces(dF.i)}$str"
             }, {

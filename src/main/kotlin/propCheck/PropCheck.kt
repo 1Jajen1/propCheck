@@ -29,6 +29,8 @@ import propCheck.property.Failure
 import kotlin.random.Random
 
 /**
+ * TODO Unsigned type instances for coarbitrary and function. Also generators for unsigned types
+ * TODO Gen's and instances for arrow types
  * TODO's
  * - state machine testing
  *  - rewrite using rec-scheme
@@ -49,12 +51,9 @@ fun main() {
         "List.reverse" toT property(PropertyConfig(TerminationCriteria.EarlyTermination(Confidence(), TestLimit(100)))) {
             val xs = !forAll { int(3..3).list(0..99) }
 
-            cover(80.0, "non-empty list", xs.isEmpty().not()).bind()
-            cover(0.2, "empty list", xs.isEmpty()).bind()
-            coverTable("Length", 30.0, xs.size.rem(4).toString(), true).bind()
+            coverTable("Length", 1.0, xs.size.rem(4).toString(), true).bind()
 
-            // TODO this is a bug in the parser, it should parse 0ö0 as string 0ö0 instead!
-            xs.map { it.toString() }.roundtrip({ "[" + it.joinToString(", ") + "]" }, {
+            xs.map { it.toString() }.roundtrip({ "[" + it.joinToString("ö") + "]" }, {
                 listParser().runParser("", it)
                     .map { (it as KValue.KList); it.vals.map { it.doc().pretty() } }
                     .mapLeft { it.renderPretty(String.stream()) }
@@ -195,13 +194,9 @@ internal fun checkReport(
 ): IO<Report<Result>> =
     IO.fx {
         val report = !runProperty(IO.monad(), size, seed, prop.config, prop.prop) {
-            // TODO this needs to be in some terminal lib
-            // TODO check if when run by a gradle plugin this actually works
-            if (config.verbose is Verbose.Normal)
-                IO { print(it.renderProgress(UseColor.EnableColor, name)) }
-            else IO.unit
+            // TODO Live update will come back once I finish concurrent output
+            IO.unit
         }
-        // TODO better terminal support, this is quite meh
         !IO { println(report.renderResult(UseColor.EnableColor, name)) }
         report
     }.fix()
@@ -215,7 +210,6 @@ data class State(
     val coverage: Coverage<CoverCount>
 )
 
-// Change these methods to be polymorphic over m
 // TODO also clean this up... split it apart etc
 fun <M> runProperty(
     MM: Monad<M>,
@@ -280,7 +274,7 @@ fun <M> runProperty(
                             is TerminationCriteria.NoEarlyTermination -> confidenceReport
                             is TerminationCriteria.NoConfidenceTermination ->
                                 if (labelsCovered) successRep
-                                else failureRep("Labels not sufficently covered after".text() spaced numTests.testCount())
+                                else failureRep("Labels not sufficiently covered after".text() spaced numTests.testCount())
                         }
                         MM.just(finalRep.left())
                     }

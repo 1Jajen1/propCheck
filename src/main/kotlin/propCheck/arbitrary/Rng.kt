@@ -120,7 +120,7 @@ class RandSeed private constructor(
             if (r >= bound)
             // correct for rounding
             r = (bound.toLong() - 1).toDouble()
-            // TODO Check if those two are equal!
+            // Not sure if the above is equal to this java code
             // r = java.lang.Double.longBitsToDouble(java.lang.Double.doubleToLongBits(bound) - 1)
         }
         return r toT s

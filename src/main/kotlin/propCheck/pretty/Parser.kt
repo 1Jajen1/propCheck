@@ -2,15 +2,15 @@ package propCheck.pretty
 
 import arrow.core.*
 import arrow.core.extensions.id.monad.monad
+import arrow.core.extensions.listk.foldable.foldable
 import arrow.extension
 import arrow.typeclasses.Eq
 import arrow.typeclasses.Show
+import arrow.typeclasses.altSum
 import kparsec.*
 import kparsec.string.*
 import pretty.*
 import pretty.symbols.*
-import propCheck.UseColor
-import propCheck.render
 import kotlin.math.min
 
 sealed class KValue {
@@ -42,7 +42,7 @@ sealed class KValue {
     }
 
     private fun <A> List<Doc<A>>.newLineTupled() =
-        // Special case this because here the highest layout for [] is actually [\n\n]
+    // Special case this because here the highest layout for [] is actually [\n\n]
         //  and in the worst case that will get chosen
         if (isEmpty()) lParen() + rParen()
         else encloseSep(
@@ -52,7 +52,7 @@ sealed class KValue {
         ).group()
 
     private fun <A> List<Doc<A>>.newLineList() =
-        // Special case this because here the highest layout for [] is actually [\n\n]
+    // Special case this because here the highest layout for [] is actually [\n\n]
         //  and in the worst case that will get chosen
         if (isEmpty()) lBracket() + rBracket()
         else encloseSep(
@@ -71,31 +71,6 @@ fun <A> A.showPretty(SA: Show<A> = Show.any()): Doc<Nothing> = SA.run {
     }, ::identity)
 }.doc().group()
 
-data class Test(val llllllllllllllll: Int, val reee: Double, val e: List<Test>)
-
-fun main() {
-    val d = Test(500, 0.175, emptyList())
-    val c2 = Test(50, 0.75, listOf(Test(51100, 0.1756, emptyList())))
-    val c = Test(50, 0.75, listOf(d, d, d, d, d, d, d, d))
-    val b = Test(30, 0.5, listOf(c, c, c))
-    val a = Test(10, 0.10, listOf(d, c2, d/*, b, b, b, c, d, d, d, c, b*/)).toString().also(::println)
-
-    val h = "Hello World"
-
-    // outputParser().runParsecT(State(a, 0)).fix().value()
-    // .also(::println)
-
-    "1".diff("2")
-        .toDoc()
-        .indent(20)
-        .render(UseColor.EnableColor).also(::println)
-
-    a.toString().diff(c.toString())
-        .toDoc()
-        .indent(20)
-        .render(UseColor.EnableColor).also(::println)
-}
-
 @extension
 interface KValueShow : Show<KValue> {
     override fun KValue.show(): String = doc().renderPretty().renderString()
@@ -112,23 +87,27 @@ fun parser() = KParsecT.monadParsec<Nothing, String, Char, String, ForId>(String
 
 // Top level parser
 fun outputParser(): Parser<KValue> = parser().run {
-    valueParser { true }.apTap(eof()).fix()
+    valueParser { true }.k().altSum(this, ListK.foldable()).apTap(eof()).fix()
 }
 
-fun valueParser(pred: (Char) -> Boolean): Parser<KValue> = parser().run {
-    listParser()
-        .orElse(recordParser())
-        .orElse(tupleParser())
-        .orElse(consParser())
-        .orElse(signedDouble(double()).map { KValue.Rational(it) })
-        .orElse(signedLong(decimal()).map { KValue.Decimal(it) }).fix()
-        .orElse(stringValueParser(pred)).fix()
+fun valueParser(pred: (Char) -> Boolean): List<Parser<KValue>> = parser().run {
+    listOf(
+        listParser(),
+        recordParser(),
+        tupleParser(),
+        consParser(),
+        signedLong(decimal()).map { KValue.Decimal(it) }.fix(),
+        signedDouble(double()).map { KValue.Rational(it) }.fix(),
+        stringValueParser(pred)
+    ) as List<Parser<KValue>>
 }
 
 fun listParser(): Parser<KValue> = parser().run {
     unit().fix().flatMap {
-        valueParser { it != ',' && it != ']' }.withSeparator(',').between('[', ']')
-            .map { KValue.KList(it.toList()) }
+        char('[').followedBy(
+            valueParser { it != ',' && it != ']' }.map { it.withSeparator(',').apTap(char(']')).fix() }.k()
+                .altSum(this@run, ListK.foldable()).fix()
+        ).map { KValue.KList(it.toList()) }.fix()
     }.fix()
 }
 
@@ -151,7 +130,7 @@ fun propertyParser(): Parser<Tuple2<String, KValue>> = parser().run {
         val propName = takeAtLeastOneWhile("property name".some()) { it != '=' }.bind()
         val value = char('=').label("equals").fix()
             .flatMap { space().fix() }
-            .flatMap { valueParser { it != ',' && it != ')' } }.bind()
+            .flatMap { valueParser { it != ',' && it != ')' }.k().altSum(this@run, ListK.foldable()).fix() }.bind()
         propName toT value
     }.fix()
 }
@@ -180,8 +159,10 @@ fun stringValueParser(pred: (Char) -> Boolean): Parser<KValue> = parser().run {
 
 fun tupleParser(): Parser<KValue> = parser().run {
     unit().fix().flatMap {
-        valueParser { it != ',' && it != ')' }.withSeparator(',').between('(', ')')
-            .map { KValue.KTuple(it.toList()) }
+        char('(').followedBy(
+            valueParser { it != ',' && it != ')' }.map { it.withSeparator(',').apTap(char(')')) }.k()
+                .altSum(this@run, ListK.foldable()).fix()
+        ).map { KValue.KTuple(it.toList()) }.fix()
     }.fix()
 }
 
