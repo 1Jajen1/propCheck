@@ -4,8 +4,7 @@
 [![License](https://img.shields.io/badge/License-BSD%203--Clause-blue.svg)](https://opensource.org/licenses/BSD-3-Clause)
 [![Download](https://api.bintray.com/packages/jannis/propCheck-kt/propCheck-kt/images/download.svg) ](https://bintray.com/jannis/propCheck-kt/propCheck-kt/_latestVersion)
 
-> A small library built upon kotlintest that aims to adopt haskell [Quickcheck's](https://github.com/nick8325/quickcheck) functionality.
-It started out as a straight port of quickcheck and was adapted slightly to work better with kotlin
+> Never write test data by hand again. Generate it!
 
 ## Table of contents
 
@@ -28,6 +27,12 @@ It started out as a straight port of quickcheck and was adapted slightly to work
    
 ## Usage
 
+---
+
+The latest version `0.10.x` includes major changes and is experimental. I will write a migration guide at soon when I consider it stable, but up untill then I'd suggest sticking to `0.9.6`.
+
+---
+
 Add the following to your `build.gradle`:
 ```groovy
 repositories {
@@ -35,7 +40,7 @@ repositories {
 }
 
 dependencies {
-    testImplementation: 'propCheck:propCheck-kt:0.9.6'
+    testImplementation 'propCheck:propCheck-kt:0.9.6'
 }
 ```
 

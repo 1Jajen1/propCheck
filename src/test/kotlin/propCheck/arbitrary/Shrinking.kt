@@ -1,52 +1,92 @@
 package propCheck.arbitrary
 
-import propCheck.*
-import propCheck.property.testable.testable
+import arrow.core.toT
+import pretty.spaced
+import pretty.text
+import propCheck.pretty.showPretty
+import propCheck.property.property
+import propCheck.util.PropertySpec
 
-class IntegralShrinkSpec : PropertySpec({
-    "shrinking ints should yield a sorted list of integers"(Args(maxSuccess = 10000)) {
-        forAll(arbitraryBoundedInt(), Property.testable()) { i: Int ->
-            shrinkInt(i).take(100).toList().let {
-                counterexample(
-                    { "$it" },
-                    it.sorted() == it || it.sorted().reversed() == it
-                )
-            }
-        }
-    }
-    "shrinking longs should yield a sorted list of longs"(Args(maxSuccess = 10000)) {
-        forAll(arbitraryBoundedLong(), Property.testable()) { i: Long ->
-            shrinkLong(i).take(100).toList().let {
-                counterexample(
-                    { "$it" },
-                    it.sorted() == it || it.sorted().reversed() == it
-                )
-            }
-        }
-    }
-    "shrinking bytes should yield a sorted list of byte"(Args(maxSuccess = 10000)) {
-        forAll(arbitraryBoundedByte(), Property.testable()) { i: Byte ->
-            shrinkByte(i).take(100).toList().let {
-                counterexample(
-                    { "$it" },
-                    it.sorted() == it || it.sorted().reversed() == it
-                )
-            }
-        }
-    }
-})
+class ShrinkingSpec : PropertySpec({
+    "Shrinking"(listOf(
+        "Long.shrinktowards should produce an ordered list of values approaching the target" toT property {
+            val (l, target) = forAll {
+                long(Range.constant(0L, Long.MIN_VALUE, Long.MAX_VALUE)).let {
+                    tupledN(
+                        it,
+                        it
+                    )
+                }
+            }.bind()
 
-class ShrinkListSpec : PropertySpec({
-    "shrinkList should generate an ordered sequence of smaller lists"(Args(maxSuccess = 1000)) {
-        forAll { l: List<Int> ->
-            shrinkList(l) { shrinkInt(it) }.take(100).toList().let {
-                counterexample(
-                    { "$it" },
-                    it.zipWithNext().fold(true) { acc, (l, r) ->
-                        acc && (l.size <= r.size)
-                    }
-                )
+            // only checking first 100 because all would take too long
+            val first100 = l.shrinkTowards(target).take(100).toList()
+
+            annotate { "First 100:".text() spaced first100.showPretty() }.bind()
+
+            // order
+            if (l > target) {
+                val ordered = first100.zipWithNext().filter { (a, b) -> a >= b }
+                if (ordered.isNotEmpty()) {
+                    footnote { "Unordered: Decreasing expected".text() }.bind()
+                    val (f, s) = ordered.unzip()
+                    diff(f, s) { _, _ -> false }.bind()
+                }
+            } else if (l == target) {
+                if (first100.isNotEmpty()) failWith("Expected no shrunk values, but got some!").bind()
+            } else {
+                val ordered = first100.zipWithNext().filter { (a, b) -> a <= b }
+                if (ordered.isNotEmpty()) {
+                    footnote { "Unordered: Increasing expected".text() }.bind()
+                    val (f, s) = ordered.unzip()
+                    diff(f, s) { _, _ -> false }.bind()
+                }
+            }
+        },
+        // TODO this fails because of floating point precision. Is that bad? Should that be solved?
+        /*
+        "Double.shrinktowards should produce an ordered list of values approaching the target" {
+            val (l, target) = forAll { double(Range.constant(0.0, Double.MIN_VALUE, Double.MAX_VALUE)).let { tupledN(it, it) } }.bind()
+
+            // only checking first 100 because all would take too long
+            val first100 = l.shrinkTowards(target).take(100).toList()
+
+            annotate { "First 100:".text() spaced first100.showPretty() }.bind()
+
+            // order
+            if (l > target) {
+                val ordered = first100.zipWithNext().filter { (a, b) -> a > b }
+                if (ordered.isNotEmpty()) {
+                    footnote { "Unordered: Decreasing expected".text() }.bind()
+                    val (f, s) = ordered.unzip()
+                    diff(f, s) { _, _ -> false }.bind()
+                }
+            } else if (l == target) {
+                if (first100.isNotEmpty()) failWith("Expected no shrunk values, but got some!").bind()
+            } else {
+                val ordered = first100.zipWithNext().filter { (a, b) -> a < b }
+                if (ordered.isNotEmpty()) {
+                    footnote { "Unordered: Increasing expected".text() }.bind()
+                    val (f, s) = ordered.unzip()
+                    diff(f, s) { _, _ -> false }.bind()
+                }
             }
         }
-    }
+         */
+        "List.shrink should produce a sequence of smaller or equal sized lists" toT property {
+            val l = forAll { int(-100..100).list(0..100) }.bind()
+
+            // only checking first 100 because all would take too long
+            val first100 = l.shrink().take(100).toList()
+
+            annotate { "First 100:".text() spaced first100.showPretty() }.bind()
+
+            // order
+            val ordered = first100.zipWithNext().filter { (a, b) -> a.size > b.size }
+            if (ordered.isNotEmpty()) {
+                val (f, s) = ordered.unzip()
+                diff(f, s) { _, _ -> false }.bind()
+            }
+        }
+    ))
 })

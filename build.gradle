@@ -7,7 +7,7 @@ buildscript {
     }
 }
 plugins {
-    id 'org.jetbrains.kotlin.jvm' version '1.3.11'
+    id 'org.jetbrains.kotlin.jvm' version '1.3.50'
     id "com.github.johnrengelman.shadow" version "2.0.2"
     id 'maven-publish'
     id "com.jfrog.bintray" version "1.8.0"
@@ -16,26 +16,30 @@ plugins {
 repositories {
     jcenter()
     maven { url 'https://oss.jfrog.org/artifactory/oss-snapshot-local' }
+    maven { url 'https://dl.bintray.com/jannis/kotlin-pretty' }
+    maven { url 'https://dl.bintray.com/jannis/kparsec' }
 }
 
 apply plugin: 'kotlin-kapt'
 
 group 'propCheck'
-version '0.9.6'
+version '0.10.0'
 
-def arrow_version = "0.10.0"
+def arrow_version = "0.10.5-SNAPSHOT"
 dependencies {
-    implementation "org.jetbrains.kotlin:kotlin-reflect:1.3.21" // For forAll instance lookups
     implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8"
-
-    implementation "org.apache.commons:commons-math3:3.6.1" // For floating point error function
 
     kapt "io.arrow-kt:arrow-meta:$arrow_version" // auto generation for @extension and @higherkind
 
     implementation "io.arrow-kt:arrow-fx:$arrow_version" // IO and arrow fx
+    implementation "io.arrow-kt:arrow-free:$arrow_version" // Trampoline for stacksafety tests
     implementation "io.arrow-kt:arrow-optics:$arrow_version" // lenses and @optics                
     implementation "io.arrow-kt:arrow-syntax:$arrow_version" // helper functions like curried...
     implementation "io.arrow-kt:arrow-mtl:$arrow_version" // StateT, Reader, Writer...
+    implementation "io.arrow-kt:arrow-recursion:$arrow_version" // Recursion schemes
+    implementation "kotlin-pretty:kotlin-pretty:0.5.0" // Pretty printing diffs
+    implementation "kotlin-pretty:kotlin-pretty-ansi:0.5.0" // Ansi terminal support with colors
+    implementation "kparsec:kparsec:0.2.1" // Parser combinators to create toString-output parser
 
     testImplementation("io.kotlintest:kotlintest-runner-junit5:3.4.2") {
         exclude group: "io.arrow-kt"
@@ -95,7 +99,7 @@ publishing {
             }
             groupId 'propCheck'
             artifactId 'propCheck-kt'
-            version '0.9.6'
+            version '0.10.0'
             pom.withXml {
                 def root = asNode()
                 root.appendNode('description', 'Property based testing for kotlin')
@@ -118,7 +122,7 @@ bintray {
         licenses = ['BSD 3-Clause']
         vcsUrl = 'https://github.com/1Jajen1/propCheck'
         version {
-            name = '0.9.6'
+            name = '0.10.0'
             released  = new Date()
         }
     }
