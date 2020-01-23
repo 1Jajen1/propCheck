@@ -36,27 +36,8 @@ data class Property(val config: PropertyConfig, val prop: PropertyT<ForIO, Unit>
     fun mapConfig(f: (PropertyConfig) -> PropertyConfig): Property =
         copy(config = f(config))
 
-    fun withConfidence(c: Confidence): Property =
-        mapConfig {
-            it.copy(
-                terminationCriteria = when (it.terminationCriteria) {
-                    is TerminationCriteria.EarlyTermination -> TerminationCriteria.EarlyTermination(c, it.terminationCriteria.limit)
-                    is TerminationCriteria.NoEarlyTermination -> TerminationCriteria.NoEarlyTermination(c, it.terminationCriteria.limit)
-                    is TerminationCriteria.NoConfidenceTermination -> TerminationCriteria.NoConfidenceTermination(it.terminationCriteria.limit)
-                }
-            )
-        }
-
-    fun withTestLimit(i: TestLimit): Property =
-        mapConfig {
-            it.copy(
-                terminationCriteria = when (it.terminationCriteria) {
-                    is TerminationCriteria.EarlyTermination -> TerminationCriteria.EarlyTermination(it.terminationCriteria.confidence, i)
-                    is TerminationCriteria.NoEarlyTermination -> TerminationCriteria.NoEarlyTermination(it.terminationCriteria.confidence, i)
-                    is TerminationCriteria.NoConfidenceTermination -> TerminationCriteria.NoConfidenceTermination(i)
-                }
-            )
-        }
+    fun withTerminationCriteria(i: TerminationCriteria): Property =
+        mapConfig { PropertyConfig.terminationCriteria.set(it, i) }
 
     fun withDiscardLimit(i: DiscardRatio): Property =
         mapConfig { PropertyConfig.maxDiscardRatio.set(it, i) }

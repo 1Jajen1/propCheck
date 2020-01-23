@@ -137,7 +137,7 @@ fun Label<CoverCount>.labelCovered(test: TestCount): Boolean =
 
 @optics
 data class PropertyConfig(
-    val terminationCriteria: TerminationCriteria = TerminationCriteria.NoConfidenceTermination(defaultMinTests),
+    val terminationCriteria: TerminationCriteria = NoConfidenceTermination(),
     val maxDiscardRatio: DiscardRatio = DiscardRatio(10.0),
     val shrinkLimit: ShrinkLimit = ShrinkLimit(1000),
     val shrinkRetries: ShrinkRetries = ShrinkRetries(0)
@@ -149,11 +149,10 @@ val defaultMinTests = TestLimit(100)
 
 data class Confidence(val certainty: Long = 10.0.pow(9.0).toLong(), val tolerance: Double = 0.9)
 
-sealed class TerminationCriteria {
-    data class EarlyTermination(val confidence: Confidence, val limit: TestLimit): TerminationCriteria()
-    data class NoEarlyTermination(val confidence: Confidence, val limit: TestLimit): TerminationCriteria()
-    data class NoConfidenceTermination(val limit: TestLimit): TerminationCriteria()
-}
+sealed class TerminationCriteria
+data class EarlyTermination(val confidence: Confidence = Confidence(), val limit: Int = 100): TerminationCriteria()
+data class NoEarlyTermination(val confidence: Confidence = Confidence(), val limit: Int = 100): TerminationCriteria()
+data class NoConfidenceTermination(val limit: Int = 100): TerminationCriteria()
 
 inline class TestLimit(val unTestLimit: Int)
 inline class DiscardRatio(val unDiscardRatio: Double)

@@ -2,6 +2,7 @@ package propCheck.arbitrary
 
 import arrow.Kind
 import arrow.core.*
+import arrow.core.extensions.eval.monad.flatten
 import arrow.core.extensions.id.monad.monad
 import arrow.core.extensions.list.functorFilter.filterMap
 import arrow.extension
@@ -10,6 +11,7 @@ import arrow.mtl.OptionTPartialOf
 import arrow.mtl.extensions.optiont.applicative.applicative
 import arrow.mtl.extensions.optiont.monad.monad
 import arrow.mtl.value
+import arrow.recursion.pattern.ListF
 import arrow.syntax.collections.tail
 import arrow.typeclasses.Functor
 import arrow.typeclasses.Monad
@@ -43,7 +45,7 @@ inline fun <A, B> FunOf<A, B>.fix(): Fun<A, B> =
 class Fun<A, B>(val d: B, val fn: Fn<A, Rose<OptionTPartialOf<ForId>, B>>) : FunOf<A, B> {
     operator fun component1(): (A) -> B =
         abstract(fn, Rose.just(OptionT.applicative(Id.monad()), d)).map {
-            it.runRose.value().value()
+            it.value().runRose.value().value()
                 .fold({ throw IllegalStateException("Empty generator in function") }, { it.res })
         }.f
 
@@ -91,7 +93,9 @@ sealed class Fn<A, B> : FnOf<A, B> {
 
     class PairFn<A, B, C>(val fn: Fn<A, Fn<B, C>>) : Fn<Tuple2<A, B>, C>()
 
+    // TODO clean this up
     class MapFn<A, B, C>(val f: (A) -> B, val cF: (B) -> A, val g: Fn<B, C>) : Fn<A, C>()
+    class MapFnRec<A, B, C>(val f: (A) -> Eval<B>, val cF: (B) -> A, val g: Fn<B, C>) : Fn<A, C>()
 
     class TableFn<A, B>(val m: Map<A, Eval<B>>) : Fn<A, B>()
 
@@ -115,6 +119,11 @@ interface FnFunctor<C> : Functor<FnPartialOf<C>> {
             t.cF as (C) -> Any?,
             (t.g as Fn<C, A>).map(f).fix()
         ) as Fn<C, B>
+        is Fn.MapFnRec<*, *, A> -> Fn.MapFnRec(
+            t.f as (Any?) -> Eval<C>,
+            t.cF as (C) -> Any?,
+            (t.g as Fn<C, A>).map(f).fix()
+        ) as Fn<C, B>
     }
 }
 
@@ -132,23 +141,26 @@ fun <A, B> GenTOf<ForId, B>.toFunction(AF: Func<A>, AC: Coarbitrary<A>): Gen<Fun
         }
     ) { (d, fn) -> Fun(d, fn) }.fix()
 
-fun <A, B> abstract(fn: Fn<A, B>, d: B): Function1<A, B> = when (fn) {
-    is Fn.UnitFn -> Function1 { fn.b }
-    is Fn.NilFn -> Function1 { d }
+fun <A, B> abstract(fn: Fn<A, B>, d: B): Function1<A, Eval<B>> = when (fn) {
+    is Fn.UnitFn -> Function1 { Eval.now(fn.b) }
+    is Fn.NilFn -> Function1 { Eval.now(d) }
     is Fn.PairFn<*, *, B> -> Function1 { (x, y): Tuple2<Any?, Any?> ->
         Fn.functor<B>().run {
-            abstract(fn.fn.map { (abstract(it, d).f as (Any?) -> B)(y) }, d).f(x)
+            abstract(fn.fn.map { (abstract(it, d).f as (Any?) -> Eval<B>)(y) }, Eval.now(d)).f(x).flatten().fix()
         }
-    } as Function1<A, B>
+    } as Function1<A, Eval<B>>
     is Fn.EitherFn<*, *, B> -> Function1 { e: Either<Any?, Any?> ->
         e.fold({
-            (abstract(fn.l, d).f as (Any?) -> B)(it)
+            (abstract(fn.l, d).f as (Any?) -> Eval<B>)(it)
         }, {
-            (abstract(fn.r, d).f as (Any?) -> B)(it)
+            (abstract(fn.r, d).f as (Any?) -> Eval<B>)(it)
         })
-    } as Function1<A, B>
-    is Fn.MapFn<*, *, B> -> Function1 { (abstract(fn.g, d).f as (Any?) -> B)((fn.f as (A) -> Any?)(it)) }
-    is Fn.TableFn -> Function1 { fn.m.getOrDefault(it, Eval.now(d)).value() }
+    } as Function1<A, Eval<B>>
+    is Fn.MapFn<*, *, B> -> Function1 { (abstract(fn.g, d).f as (Any?) -> Eval<B>)((fn.f as (A) -> Any?)(it)) }
+    is Fn.MapFnRec<*, *, B> -> Function1 {
+        (fn.f as (A) -> Eval<Any?>)(it).flatMap { (abstract(fn.g, d).f as (Any?) -> Eval<B>)(it) }
+    }
+    is Fn.TableFn -> Function1 { fn.m.getOrDefault(it, Eval.now(d)) }
 }
 
 fun <A, B> Fn<A, B>.table(): Map<A, B> = when (this) {
@@ -160,6 +172,7 @@ fun <A, B> Fn<A, B>.table(): Map<A, B> = when (this) {
     }.toMap() as Map<A, B>
     is Fn.TableFn -> m.mapValues { it.value.value() }
     is Fn.MapFn<*, *, B> -> g.table().mapKeys { (cF as (Any?) -> A).invoke(it.key) }
+    is Fn.MapFnRec<*, *, B> -> g.table().mapKeys { (cF as (Any?) -> A).invoke(it.key) }
 }
 
 fun <A, B> shrinkFun(fn: Fn<A, B>, shrinkB: (B) -> Sequence<B>): Sequence<Fn<A, B>> = when (fn) {
@@ -180,6 +193,12 @@ fun <A, B> shrinkFun(fn: Fn<A, B>, shrinkB: (B) -> Sequence<B>): Sequence<Fn<A, 
         when (it) {
             is Fn.NilFn -> Fn.NilFn<A, B>()
             else -> Fn.MapFn(fn.f, fn.cF as (Any?) -> A, it as Fn<Any?, B>)
+        }
+    }
+    is Fn.MapFnRec<A, *, B> -> shrinkFun(fn.g, shrinkB).map {
+        when (it) {
+            is Fn.NilFn -> Fn.NilFn<A, B>()
+            else -> Fn.MapFnRec(fn.f, fn.cF as (Any?) -> A, it as Fn<Any?, B>)
         }
     }
     is Fn.TableFn -> shrinkList(fn.m.toList()) { (a, evalB) ->
@@ -224,6 +243,10 @@ interface Func<A> {
 
 fun <A, B, C> funMap(fb: Func<B>, f: (A) -> B, cF: (B) -> A, g: (A) -> C): Fn<A, C> = fb.run {
     Fn.MapFn(f, cF, function(AndThen(cF).andThen(g)))
+}
+
+fun <A, B, C> funMapRec(fb: Func<B>, f: (A) -> Eval<B>, cF: (B) -> A, g: (A) -> C): Fn<A, C> = fb.run {
+    Fn.MapFnRec(f, cF, function(AndThen(cF).andThen(g)))
 }
 
 private fun <A, B, C> ((Tuple2<A, B>) -> C).curry(): ((A) -> ((B) -> C)) =
@@ -341,17 +364,47 @@ interface OptionFunc<A> : Func<Option<A>> {
         }, f)
 }
 
+// TODO Move
+// Model haskell lists to prevent overflows with strict lists
+// This is a bit wasteful, maybe there is a better solution?
+data class Stream<A>(val unStream: ListF<A, Eval<Stream<A>>>) {
+    fun <B> foldRight(lb: Eval<B>, f: (A, Eval<B>) -> Eval<B>): Eval<B> = when (unStream) {
+        is ListF.NilF -> lb
+        is ListF.ConsF -> f(unStream.a, unStream.tail.flatMap { it.foldRight(lb, f) })
+    }
+    companion object {
+        fun <A> func(AF: Func<A>): Func<Stream<A>> = object: StreamFunc<A> {
+            override fun AF(): Func<A> = AF
+        }
+        fun <A> fromList(ls: List<A>): Stream<A> =
+            if (ls.isEmpty()) Stream(ListF.NilF())
+            else Stream<A>(ListF.ConsF(ls.first(), Eval.later { fromList(ls.tail()) }))
+    }
+}
+
+interface StreamFunc<A> : Func<Stream<A>> {
+    fun AF(): Func<A>
+    override fun <B> function(f: (Stream<A>) -> B): Fn<Stream<A>, B> =
+        funMapRec(Option.func(Tuple2.func(AF(), this)), {
+            when (val l = it.unStream) {
+                is ListF.NilF -> Eval.now(None)
+                is ListF.ConsF -> l.tail.map { Tuple2(l.a, it).some() }
+            }
+        }, {
+            it.fold({ Stream<A>(ListF.NilF()) }, { (head, tail) ->
+                Stream<A>(ListF.ConsF(head, Eval.later { tail }))
+            })
+        }, f)
+}
+
 @extension
 interface ListKFunc<A> : Func<ListK<A>> {
     fun AF(): Func<A>
     override fun <B> function(f: (ListK<A>) -> B): Fn<ListK<A>, B> =
-        funMap(Option.func(Tuple2.func(AF(), this)), {
-            if (it.isEmpty()) None
-            else (it.first() toT it.tail().k()).some()
-        }, {
-            it.fold({ ListK.empty() }, { (head, tail) ->
-                (listOf(head) + tail).k()
-            })
+        funMap(Stream.func(AF()), { Stream.fromList(it) }, {
+            it.foldRight<ListK<A>>(Eval.now(ListK.empty())) { v, acc ->
+                acc.map { (listOf(v) + it).k() }
+            }.value()
         }, f)
 }
 

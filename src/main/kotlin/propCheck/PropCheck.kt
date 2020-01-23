@@ -6,13 +6,9 @@ import arrow.core.extensions.either.applicative.applicative
 import arrow.core.extensions.id.traverse.traverse
 import arrow.core.extensions.list.functorFilter.filterMap
 import arrow.core.extensions.sequence.foldable.foldRight
-import arrow.core.extensions.sequencek.traverse.traverse
 import arrow.fx.IO
 import arrow.fx.extensions.fx
-import arrow.fx.extensions.io.applicative.applicative
-import arrow.fx.extensions.io.concurrent.parTraverse
 import arrow.fx.extensions.io.functor.unit
-import arrow.fx.extensions.io.monad.flatMap
 import arrow.fx.extensions.io.monad.monad
 import arrow.fx.fix
 import arrow.mtl.OptionTPartialOf
@@ -39,81 +35,28 @@ import kotlin.random.Random
  *  - pretty print shrink-trees/gens
  * - toString() output pretty printer
  *  - move to new lib to allow independent use
- * - helpers
- *  - kotlin receiver syntax magic to define tests
- * - write a bunch of tests and try to notice flaws
- *  - Write tests for propCheck itself
- *  - Do a 0.10 release and write tests for the prettyprinter, kparsec and the toString output one
  */
-fun main() {
-    checkGroup(
-        "My tests",
-        "List.reverse" toT property(PropertyConfig(TerminationCriteria.EarlyTermination(Confidence(), TestLimit(100)))) {
-            val xs = !forAll { int(3..3).list(0..99).map { it.k() } }
+fun checkGroup(groupName: String, props: List<Tuple2<String, Property>>): IO<Boolean> =
+    detectConfig().flatMap { checkGroup(it, groupName, props) }
 
-            coverTable("Length.rem(4)", 10.0, xs.size.rem(4).toString(), true).bind()
-
-            xs.map { it.toString() }.roundtrip({ "(" + it.joinToString(", ") + ")" }, {
-                listParser().runParser("", it)
-                    .map { (it as KValue.KList); it.vals.map { it.doc().pretty() }.k() }
-                    .mapLeft { it.renderPretty(String.stream()) }
-            }, Either.applicative()).bind()
-        },
-        "Option.map" toT property {
-            val opt = !forAll { int(0..100).option() }
-            footnote { "Hello2".text() }.bind()
-            val f = !forAllFn { int(0..100).toFunction(Int.func(), Int.coarbitrary()) }
-
-            footnote { "Hello".text() }.bind()
-
-            opt.map(f).eqv(opt.fold({ None }, { f(it + 1).some() })).bind()
-        },
-        "bounds" toT property {
-            val (b, bs) = !forAll {
-                choice(
-                    map(
-                        long(Range.constant(0, Long.MIN_VALUE, Long.MAX_VALUE)),
-                        long(Range.constant(0, Long.MIN_VALUE, Long.MAX_VALUE))
-                    ) { (l, r) -> l.toBigDecimal() * r.toBigDecimal() },
-                    long(Range.constant(0, Long.MIN_VALUE, Long.MAX_VALUE)).map { it.toBigDecimal() }
-                ).product(
-                    tupled(
-                        long(Range.constant(0, Long.MIN_VALUE, Long.MAX_VALUE)),
-                        long(Range.constant(0, Long.MIN_VALUE, Long.MAX_VALUE))
-                    )
-                )
-            }
-            val (l1, h1) = bs
-            val (l, h) = if (l1 > h1) h1 toT l1 else l1 toT h1
-
-            // TODO this is a good test to check coverage on
-
-            val r = b.clamp(l, h)
-            if (r < l || r >= h) !failWith("out of bounds".doc())
-        }
-    ).unsafeRunSync()
-}
-
-fun checkGroup(groupName: String, vararg props: Tuple2<String, Property>): IO<Boolean> =
-    detectConfig().flatMap { checkGroup(it, groupName, *props) }
-
-fun checkGroup(config: Config, groupName: String, vararg props: Tuple2<String, Property>): IO<Boolean> = IO.fx {
+fun checkGroup(config: Config, groupName: String, props: List<Tuple2<String, Property>>): IO<Boolean> = IO.fx {
     !effect { println("━━━ $groupName ━━━") }
 
-    val summary = props.fold(IO { Summary.monoid().empty().copy(waiting = PropertyCount(props.size)) }) { acc, (n, prop) ->
-        IO.fx {
-            val currSummary = acc.bind()
-            val res = checkReport(config, PropertyName(n).some(), prop).bind()
-            Summary.monoid().run {
-                currSummary + empty().copy(waiting = PropertyCount(- 1)) +
-                        when (res.status) {
-                            is Result.Failure -> empty().copy(failed = PropertyCount(1))
-                            is Result.Success -> empty().copy(successful = PropertyCount(1))
-                            is Result.GivenUp -> empty().copy(gaveUp = PropertyCount(1))
-                        }
+    val summary =
+        props.fold(IO { Summary.monoid().empty().copy(waiting = PropertyCount(props.size)) }) { acc, (n, prop) ->
+            IO.fx {
+                val currSummary = acc.bind()
+                val res = checkReport(config, PropertyName(n).some(), prop).bind()
+                Summary.monoid().run {
+                    currSummary + empty().copy(waiting = PropertyCount(-1)) +
+                            when (res.status) {
+                                is Result.Failure -> empty().copy(failed = PropertyCount(1))
+                                is Result.Success -> empty().copy(successful = PropertyCount(1))
+                                is Result.GivenUp -> empty().copy(gaveUp = PropertyCount(1))
+                            }
+                }
             }
-        }
-    }.bind()
+        }.bind()
 
     summary.failed.unPropertyCount == 0 && summary.gaveUp.unPropertyCount == 0
 }
@@ -177,10 +120,18 @@ fun checkNamed(
 fun checkNamed(config: Config, name: String, prop: Property): IO<Boolean> =
     check(config, PropertyName(name).some(), prop)
 
-internal fun check(config: Config, name: Option<PropertyName>, prop: Property): IO<Boolean> =
+
+fun check(config: Config, name: Option<PropertyName>, prop: Property): IO<Boolean> =
     checkReport(config, name, prop).map { it.status is Result.Success }
 
-internal fun checkReport(config: Config, name: Option<PropertyName>, prop: Property): IO<Report<Result>> =
+fun checkReport(name: Option<PropertyName>, prop: Property): IO<Report<Result>> =
+    detectConfig().flatMap { c ->
+        IO { RandSeed(Random.nextLong()) }.flatMap {
+            checkReport(it, Size(0), c, name, prop)
+        }
+    }
+
+fun checkReport(config: Config, name: Option<PropertyName>, prop: Property): IO<Report<Result>> =
     IO { RandSeed(Random.nextLong()) }.flatMap {
         checkReport(it, Size(0), config, name, prop)
     }
@@ -197,7 +148,7 @@ internal fun checkReport(
             // TODO Live update will come back once I finish concurrent output
             IO.unit
         }
-        !IO { println(report.renderResult(UseColor.EnableColor, name)) }
+        !IO { println(report.renderResult(config.useColor, name)) }
         report
     }.fix()
 
@@ -220,9 +171,9 @@ fun <M> runProperty(
     hook: (Report<Progress>) -> Kind<M, Unit>
 ): Kind<M, Report<Result>> {
     val (confidence, minTests) = when (config.terminationCriteria) {
-        is TerminationCriteria.EarlyTermination -> config.terminationCriteria.confidence.some() to config.terminationCriteria.limit
-        is TerminationCriteria.NoEarlyTermination -> config.terminationCriteria.confidence.some() to config.terminationCriteria.limit
-        is TerminationCriteria.NoConfidenceTermination -> None to config.terminationCriteria.limit
+        is EarlyTermination -> config.terminationCriteria.confidence.some() to TestLimit(config.terminationCriteria.limit)
+        is NoEarlyTermination -> config.terminationCriteria.confidence.some() to TestLimit(config.terminationCriteria.limit)
+        is NoConfidenceTermination -> None to TestLimit(config.terminationCriteria.limit)
     }
 
     fun successVerified(testCount: TestCount, coverage: Coverage<CoverCount>): Boolean =
@@ -244,12 +195,12 @@ fun <M> runProperty(
                 val coverageUnreachable = failureVerified(numTests, currCoverage)
 
                 val enoughTestsRun = when (config.terminationCriteria) {
-                    is TerminationCriteria.EarlyTermination ->
+                    is EarlyTermination ->
                         numTests.unTestCount >= defaultMinTests.unTestLimit &&
                                 (coverageReached || coverageUnreachable)
-                    is TerminationCriteria.NoEarlyTermination ->
+                    is NoEarlyTermination ->
                         numTests.unTestCount >= minTests.unTestLimit
-                    is TerminationCriteria.NoConfidenceTermination ->
+                    is NoConfidenceTermination ->
                         numTests.unTestCount >= minTests.unTestLimit
                 }
 
@@ -259,10 +210,13 @@ fun <M> runProperty(
                     enoughTestsRun -> {
                         fun failureRep(msg: Doc<Markup>): Report<Result> = Report(
                             numTests, numDiscards, currCoverage,
-                            Result.Failure(FailureSummary(
-                                size, seed, ShrinkCount(0), msg, emptyList(), emptyList()
-                            ))
+                            Result.Failure(
+                                FailureSummary(
+                                    size, seed, ShrinkCount(0), msg, emptyList(), emptyList()
+                                )
+                            )
                         )
+
                         val successRep = Report(numTests, numDiscards, currCoverage, Result.Success)
                         val labelsCovered = currCoverage.coverageSuccess(numTests)
                         val confidenceReport =
@@ -270,9 +224,9 @@ fun <M> runProperty(
                             else failureRep("Test coverage cannot be reached after".text() spaced numTests.testCount())
 
                         val finalRep = when (config.terminationCriteria) {
-                            is TerminationCriteria.EarlyTermination -> confidenceReport
-                            is TerminationCriteria.NoEarlyTermination -> confidenceReport
-                            is TerminationCriteria.NoConfidenceTermination ->
+                            is EarlyTermination -> confidenceReport
+                            is NoEarlyTermination -> confidenceReport
+                            is NoConfidenceTermination ->
                                 if (labelsCovered) successRep
                                 else failureRep("Labels not sufficiently covered after".text() spaced numTests.testCount())
                         }
@@ -392,7 +346,9 @@ fun <M> shrinkResult(
 
                     if (numShrinks.unShrinkCount >= shrinkLimit)
                         Result.Failure(summary).left()
-                    else curr.shrunk.foldRight<Rose<M, Option<Tuple2<Log, Either<Failure, Unit>>>>, Kind<M, Either<Result, Id<ShrinkState<M>>>>>(Eval.now(MM.just(Result.Failure(summary).left()))) { v, acc ->
+                    else curr.shrunk.foldRight<Rose<M, Option<Tuple2<Log, Either<Failure, Unit>>>>, Kind<M, Either<Result, Id<ShrinkState<M>>>>>(
+                        Eval.now(MM.just(Result.Failure(summary).left()))
+                    ) { v, acc ->
                         Eval.now(
                             MM.fx.monad {
                                 val r = v.runTreeN(MM, shrinkRetries).bind()
@@ -418,9 +374,10 @@ fun <M, A, L, W> Rose<M, Option<Tuple2<W, Either<L, A>>>>.runTreeN(
         else r
     }
 
-fun <M, A> Option<RoseF<A, Rose<OptionTPartialOf<M>, A>>>.unwrap(FF: Functor<M>): RoseF<Option<A>, Rose<M, Option<A>>> = fold({
-    RoseF(None, emptySequence())
-}, { RoseF(it.res.some(), it.shrunk.map { FF.run { Rose(it.runRose.value().map { it.unwrap(FF) }) } }) })
+fun <M, A> Option<RoseF<A, Rose<OptionTPartialOf<M>, A>>>.unwrap(FF: Functor<M>): RoseF<Option<A>, Rose<M, Option<A>>> =
+    fold({
+        RoseF(None, emptySequence())
+    }, { RoseF(it.res.some(), it.shrunk.map { FF.run { Rose(it.runRose.value().map { it.unwrap(FF) }) } }) })
 
 fun <M, A, L, W> RoseF<Option<Tuple2<W, Either<L, A>>>, M>.isFailure(): Boolean =
     res.fold({ false }, { it.b.isLeft() })

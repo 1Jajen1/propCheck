@@ -130,7 +130,7 @@ fun Report<Result>.prettyResult(name: Option<PropertyName>): Doc<Markup> = when 
             coverage.ifNotEmpty { line() + prettyPrint(numTests) }
     is Result.GivenUp -> ("⚐".text().annotate(Markup.Icon(IconType.GaveUp)) spaced
             name.doc() spaced
-            "gave up after".text() +
+            "gave up after".text() spaced
             TestCount(numDiscarded.unDiscardCount).testCount() + comma() spaced
             "passed".text() spaced
             numTests.testCount() + dot()).annotate(Markup.Result.GaveUp) +
@@ -240,7 +240,7 @@ fun <A> List<Doc<A>>.ifNotEmpty(f: List<Doc<A>>.() -> Doc<A>): Doc<A> =
 fun List<FailureAnnotation>.prettyAnnotations(): List<Doc<Markup>> =
     if (size == 1) first().let { fst ->
         when (fst) {
-            is FailureAnnotation.Annotation -> fst.text().annotate(Markup.Annotation).group()
+            is FailureAnnotation.Annotation -> fst.text().group().annotate(Markup.Annotation)
             is FailureAnnotation.Input -> ("forAll".text() spaced "=".text() +
                     (line() + fst.text().annotate(Markup.Annotation)).nest(2)).group()
         }.let { listOf(it) }
@@ -248,7 +248,7 @@ fun List<FailureAnnotation>.prettyAnnotations(): List<Doc<Markup>> =
         val szLen = "$size".length
         fold(0 toT emptyList<Doc<Markup>>()) { (i, acc), v ->
             when (v) {
-                is FailureAnnotation.Annotation -> i toT acc + v.text().annotate(Markup.Annotation).group()
+                is FailureAnnotation.Annotation -> i toT acc + v.text().group().annotate(Markup.Annotation)
                 is FailureAnnotation.Input ->
                     (i + 1) toT acc + ("forAll".text() + (i + 1).doc().fill(szLen) spaced pretty.symbols.equals() +
                             (line() + v.text().annotate(Markup.Annotation)).nest(2)).group()

@@ -8,6 +8,7 @@ import arrow.typeclasses.Contravariant
 import arrow.typeclasses.Decidable
 import arrow.typeclasses.Divide
 import arrow.typeclasses.Divisible
+import propCheck.arbitrary.either.coarbitrary.coarbitrary
 import propCheck.arbitrary.listk.coarbitrary.coarbitrary
 import propCheck.arbitrary.tuple2.coarbitrary.coarbitrary
 
@@ -49,6 +50,14 @@ interface Tuple2Coarbitrary<A, B> : Coarbitrary<Tuple2<A, B>> {
 fun unitCoarbitrary(): Coarbitrary<Unit> = object : Coarbitrary<Unit> {
     override fun <M, B> GenT<M, B>.coarbitrary(a: Unit): GenT<M, B> = this
 }
+
+interface BooleanCoarbitrary: Coarbitrary<Boolean> {
+    override fun <M, B> GenT<M, B>.coarbitrary(a: Boolean): GenT<M, B> =
+        Either.coarbitrary(unitCoarbitrary(), unitCoarbitrary()).run {
+            coarbitrary(if (a) Unit.left() else Unit.right())
+        }
+}
+fun Boolean.Companion.coarbitrary(): Coarbitrary<Boolean> = object: BooleanCoarbitrary {}
 
 interface LongCoarbitrary : Coarbitrary<Long> {
     override fun <M, B> GenT<M, B>.coarbitrary(a: Long): GenT<M, B> = variant(a)

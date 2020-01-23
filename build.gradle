@@ -23,7 +23,7 @@ repositories {
 apply plugin: 'kotlin-kapt'
 
 group 'propCheck'
-version '0.9.6'
+version '0.10.0'
 
 def arrow_version = "0.10.5-SNAPSHOT"
 dependencies {
@@ -99,7 +99,7 @@ publishing {
             }
             groupId 'propCheck'
             artifactId 'propCheck-kt'
-            version '0.9.6'
+            version '0.10.0'
             pom.withXml {
                 def root = asNode()
                 root.appendNode('description', 'Property based testing for kotlin')
@@ -122,7 +122,7 @@ bintray {
         licenses = ['BSD 3-Clause']
         vcsUrl = 'https://github.com/1Jajen1/propCheck'
         version {
-            name = '0.9.6'
+            name = '0.10.0'
             released  = new Date()
         }
     }

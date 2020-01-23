@@ -3,6 +3,7 @@ package propCheck.arbitrary
 import arrow.Kind
 import arrow.Kind2
 import arrow.core.*
+import arrow.core.extensions.eval.monad.monad
 import arrow.core.extensions.id.functor.functor
 import arrow.core.extensions.id.monad.monad
 import arrow.core.extensions.list.traverse.sequence
@@ -86,6 +87,7 @@ class GenT<M, A>(val runGen: (Tuple2<RandSeed, Size>) -> Rose<OptionTPartialOf<M
         fun <M, A> just(MA: Monad<M>, a: A): GenT<M, A> = GenT {
             Rose.just(OptionT.applicative(MA), a)
         }
+        fun <A> just(a: A): Gen<A> = just(Id.monad(), a)
     }
 }
 
@@ -196,6 +198,8 @@ fun <M> GenT.Companion.monadGen(MM: Monad<M>): MonadGen<GenTPartialOf<M>, M> = o
         fix().genMap(BM(), f)
     override fun <A, B> Kind<GenTPartialOf<M>, A>.ap(ff: Kind<GenTPartialOf<M>, (A) -> B>): Kind<GenTPartialOf<M>, B> =
         fix().genAp(BM(), ff.fix())
+    override fun <A, B> Kind<GenTPartialOf<M>, A>.lazyAp(ff: () -> Kind<GenTPartialOf<M>, (A) -> B>): Kind<GenTPartialOf<M>, B> =
+        fix().genAp(BM(), ff().fix())
     override fun <A, B> Kind<GenTPartialOf<M>, A>.flatMap(f: (A) -> Kind<GenTPartialOf<M>, B>): Kind<GenTPartialOf<M>, B> =
         MM().run { flatMap(f) }
     override fun <A> just(a: A): Kind<GenTPartialOf<M>, A> = MM().just(a)
@@ -208,7 +212,38 @@ fun <M> GenT.Companion.monadGen(MM: Monad<M>): MonadGen<GenTPartialOf<M>, M> = o
 }
 
 // for convenience and to not throw on non-arrow users
-fun GenT.Companion.monadGen(): MonadGen<GenTPartialOf<ForId>, ForId> = monadGen(Id.monad())
+fun GenT.Companion.monadGen(): MonadGen<GenTPartialOf<ForId>, ForId> = object: MonadGen<GenTPartialOf<ForId>, ForId> {
+    override fun BM(): Monad<ForId> = Id.monad()
+    override fun MM(): Monad<GenTPartialOf<ForId>> = GenT.monad(Id.monad())
+    override fun <A> GenT<ForId, A>.fromGenT(): Kind<GenTPartialOf<ForId>, A> = this
+    override fun <A> Kind<GenTPartialOf<ForId>, A>.toGenT(): GenT<ForId, A> = fix()
+    override fun <A, B> Kind<GenTPartialOf<ForId>, A>.map(f: (A) -> B): Kind<GenTPartialOf<ForId>, B> =
+        fix().genMap(BM(), f)
+    override fun <A, B> Kind<GenTPartialOf<ForId>, A>.ap(ff: Kind<GenTPartialOf<ForId>, (A) -> B>): Kind<GenTPartialOf<ForId>, B> =
+        fix().genAp(BM(), ff.fix())
+    override fun <A, B> Kind<GenTPartialOf<ForId>, A>.flatMap(f: (A) -> Kind<GenTPartialOf<ForId>, B>): Kind<GenTPartialOf<ForId>, B> =
+        MM().run { flatMap(f) }
+    override fun <A> just(a: A): Kind<GenTPartialOf<ForId>, A> = MM().just(a)
+    override fun <A, B> tailRecM(a: A, f: (A) -> Kind<GenTPartialOf<ForId>, Either<A, B>>): Kind<GenTPartialOf<ForId>, B> =
+        MM().tailRecM(a, f)
+    override fun <A> empty(): Kind<GenTPartialOf<ForId>, A> = GenT.alternative(BM()).empty()
+    override fun <A> Kind<GenTPartialOf<ForId>, A>.orElse(b: Kind<GenTPartialOf<ForId>, A>): Kind<GenTPartialOf<ForId>, A> = GenT.alternative(BM()).run {
+        orElse(b.fix())
+    }
+
+    override fun <A> Kind<GenTPartialOf<ForId>, A>.list(range: Range<Int>): Kind<GenTPartialOf<ForId>, List<A>> = GenT.monadGen(Eval.monad()).run {
+        GenT(AndThen(this@list.toGenT().generalize(Eval.monad()).list(range).toGenT().runGen).andThen {
+            it.hoist(object: FunctionK<OptionTPartialOf<ForEval>, OptionTPartialOf<ForId>> {
+                override fun <A> invoke(fa: Kind<OptionTPartialOf<ForEval>, A>): Kind<OptionTPartialOf<ForId>, A> =
+                    OptionT(Id(fa.value().value()))
+            }, OptionT.monad(Eval.monad()))
+        }).fromGenT()
+    }
+}
+
+fun <M, A> GenT.Companion.monadGen(MM: Monad<M>, f: MonadGen<GenTPartialOf<M>, M>.() -> GenTOf<M, A>): GenT<M, A> = monadGen(MM).f().fix()
+
+fun <A> GenT.Companion.monadGen(f: MonadGen<GenTPartialOf<ForId>, ForId>.() -> GenTOf<ForId, A>): Gen<A> = monadGen().f().fix()
 
 fun <M, A> Gen<A>.generalize(MM: Monad<M>): GenT<M, A> = GenT { (r, s) ->
     runGen(r toT s).hoist(object : FunctionK<OptionTPartialOf<ForId>, OptionTPartialOf<M>> {
@@ -340,7 +375,7 @@ interface MonadGen<M, B> : Monad<M>, MonadFilter<M>, Alternative<M> {
         boolean_().shrink { if (it) sequenceOf(false) else emptySequence() }
 
     fun boolean_(): Kind<M, Boolean> = generate { randSeed, _ ->
-        randSeed.nextInt(0, 1).a != 0
+        randSeed.nextInt(0, 2).a != 0
     }
 
     // chars TODO Arrow codegen bug when trying to generate @extension versions of this
@@ -468,6 +503,7 @@ interface MonadGen<M, B> : Monad<M>, MonadFilter<M>, Alternative<M> {
         )
     }
 
+    // TODO This stackoverflows for nonstacksafe M. This is solved for ForId, by overwriting it and using Eval and later transforming it
     fun <A> Kind<M, A>.list(range: Range<Int>): Kind<M, List<A>> = sized { s ->
         MM().run {
             fx.monad {
@@ -492,6 +528,11 @@ interface MonadGen<M, B> : Monad<M>, MonadFilter<M>, Alternative<M> {
                 .ensure { it.size >= range.lowerBound(s) }
         }
     }
+
+    // TODO arrow pr
+    private fun <A> Kind<M, A>.replicateLazy(n: Int): Kind<M, List<A>> =
+        if (n <= 0) just(emptyList())
+        else lazyAp { this@replicateLazy.replicate(n - 1).map { xs -> { x: A -> listOf(x) + xs } } }
 
     fun <A> Kind<M, A>.list(range: IntRange): Kind<M, List<A>> = list(Range.constant(range.first, range.last))
 

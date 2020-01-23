@@ -27,6 +27,12 @@
    
 ## Usage
 
+---
+
+The latest version `0.10.x` includes major changes and is experimental. I will write a migration guide at soon when I consider it stable, but up untill then I'd suggest sticking to `0.9.6`.
+
+---
+
 Add the following to your `build.gradle`:
 ```groovy
 repositories {
